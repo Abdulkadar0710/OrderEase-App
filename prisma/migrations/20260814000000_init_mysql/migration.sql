@@ -37,6 +37,16 @@ CREATE TABLE `OrderEditTimeLimit` (
     `timeLimit` VARCHAR(191) NOT NULL DEFAULT '1h',
     `customValue` INTEGER NULL,
     `customUnit` VARCHAR(191) NULL,
+    `maxEdits` INTEGER NULL DEFAULT 3,
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`shop`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `GooglePlacesConfig` (
+    `shop` VARCHAR(191) NOT NULL,
+    `apiKey` VARCHAR(191) NULL,
     `updatedAt` DATETIME(3) NOT NULL,
 
     PRIMARY KEY (`shop`)
