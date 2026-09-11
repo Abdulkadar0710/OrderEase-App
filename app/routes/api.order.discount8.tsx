@@ -1020,15 +1020,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const bxgyMeta: BxgyMetadata = {
         code: resolved.code,
-        buyVariantIds: Array.from(resolved.buyRule.variantIds),
-        buyProductIds: Array.from(resolved.buyRule.productIds),
-        buyCollectionIds: Array.from(resolved.buyRule.collectionIds),
-        minQuantity: resolved.buyRule.minQuantity,
-        minAmount: resolved.buyRule.minAmount,
-        getVariantIds: Array.from(resolved.getRule.variantIds),
-        getProductIds: Array.from(resolved.getRule.productIds),
-        getCollectionIds: Array.from(resolved.getRule.collectionIds),
-        getQuantity: resolved.getRule.quantity,
       };
 
       const newTag: DecodedTag = {

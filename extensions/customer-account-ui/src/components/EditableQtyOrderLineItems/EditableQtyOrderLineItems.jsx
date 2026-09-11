@@ -328,7 +328,7 @@ function EditableLineItem({ line, orderId, activeLineId, setActiveLineId, onUpda
               gap="base"
             >
               <s-text size="small" tone="warning">
-                Unsaved change: set to {quantity} (originallysss{" "}
+                Unsaved change: set to {quantity} (originally{" "}
                 {currentSavedQuantity}).
               </s-text>
               <s-stack direction="inline" gap="small-200">

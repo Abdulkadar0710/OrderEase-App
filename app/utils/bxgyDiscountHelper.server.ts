@@ -12,15 +12,6 @@ export const TAG_PREFIX = "@d2:";
 
 export interface BxgyMetadata {
   code: string;
-  buyVariantIds?: string[];
-  buyProductIds?: string[];
-  buyCollectionIds?: string[];
-  minQuantity?: number;
-  minAmount?: number;
-  getVariantIds?: string[];
-  getProductIds?: string[];
-  getCollectionIds?: string[];
-  getQuantity?: number;
 }
 
 export interface DecodedTag {
@@ -82,6 +73,7 @@ export function decodeTag(description?: string | null): DecodedTag | null {
 
 /**
  * Encodes tag metadata into the description field string.
+ * Guaranteed to stay well within Shopify's 255 character limit.
  */
 export function encodeTag(tag: DecodedTag): string {
   const payload: Record<string, unknown> = {
@@ -89,11 +81,16 @@ export function encodeTag(tag: DecodedTag): string {
     p: round2(tag.productAmount),
     o: round2(tag.orderAmount),
   };
-  if (tag.bxgy) {
-    payload.bxgy = tag.bxgy;
+  if (tag.bxgy?.code) {
+    payload.bxgy = { code: tag.bxgy.code };
   }
   const raw = JSON.stringify(payload);
-  return `${TAG_PREFIX}${raw} ${tag.label}`.trim();
+  const cleanLabel = (tag.label || "").trim().slice(0, 40);
+  const result = `${TAG_PREFIX}${raw} ${cleanLabel}`.trim();
+  if (result.length > 255) {
+    return result.slice(0, 255);
+  }
+  return result;
 }
 
 type AdminClient = {
@@ -134,18 +131,32 @@ interface LineItemNodeForBxgy {
 function lineItemMatchesBuyX(
   item: LineItemNodeForBxgy,
   buyRule: {
-    variantIds: Set<string>;
-    productIds: Set<string>;
-    collectionIds: Set<string>;
+    buyVariantIds?: Set<string>;
+    buyProductIds?: Set<string>;
+    buyCollectionIds?: Set<string>;
+    variantIds?: Set<string>;
+    productIds?: Set<string>;
+    collectionIds?: Set<string>;
   },
 ): boolean {
+  const variantIds = buyRule.buyVariantIds || buyRule.variantIds;
+  const productIds = buyRule.buyProductIds || buyRule.productIds;
+  const collectionIds = buyRule.buyCollectionIds || buyRule.collectionIds;
+
+  const hasSpecific =
+    (variantIds && variantIds.size > 0) ||
+    (productIds && productIds.size > 0) ||
+    (collectionIds && collectionIds.size > 0);
+
+  if (!hasSpecific) return true;
+
   const variantId = item.variant?.id;
   const productId = item.variant?.product?.id;
-  const collectionIds = item.variant?.product?.collections?.nodes?.map((c) => c.id) ?? [];
+  const itemCollectionIds = item.variant?.product?.collections?.nodes?.map((c) => c.id) ?? [];
 
-  if (variantId && buyRule.variantIds.has(variantId)) return true;
-  if (productId && buyRule.productIds.has(productId)) return true;
-  if (collectionIds.some((id) => buyRule.collectionIds.has(id))) return true;
+  if (variantId && variantIds?.has(variantId)) return true;
+  if (productId && productIds?.has(productId)) return true;
+  if (collectionIds && itemCollectionIds.some((id) => collectionIds.has(id))) return true;
 
   return false;
 }
@@ -284,8 +295,9 @@ export async function checkAndRemoveInvalidBxgyDiscounts(
   removedCount: number;
   removedProducts: string[];
 }> {
-  // Query all line items in the current calculated order session
-  const res = await admin.graphql(
+  try {
+    // Query all line items in the current calculated order session
+    const res = await admin.graphql(
     `#graphql
     query GetCalculatedOrderForBxgy($id: ID!) {
       node(id: $id) {
@@ -361,30 +373,19 @@ export async function checkAndRemoveInvalidBxgyDiscounts(
       const app = alloc.discountApplication;
       if (!app) continue;
 
-      // 1. Check if the app description contains our encoded BXGY tag
+      let code = "";
       const decoded = decodeTag(app.description);
-      if (decoded?.bxgy) {
-        candidates.push({
-          lineItemId: item.id,
-          lineItemTitle: item.variant?.product?.title || item.title || "Product",
-          discountApplicationId: app.id,
-          rule: {
-            code: decoded.bxgy.code,
-            buyVariantIds: new Set(decoded.bxgy.buyVariantIds ?? []),
-            buyProductIds: new Set(decoded.bxgy.buyProductIds ?? []),
-            buyCollectionIds: new Set(decoded.bxgy.buyCollectionIds ?? []),
-            minQuantity: decoded.bxgy.minQuantity ?? 1,
-            minAmount: decoded.bxgy.minAmount ?? 0,
-            getQuantity: decoded.bxgy.getQuantity ?? 1,
-          },
-        });
-        continue;
+      if (decoded?.bxgy?.code) {
+        code = decoded.bxgy.code;
+      } else {
+        const potentialCode = (app.description || "").trim();
+        if (potentialCode && !potentialCode.startsWith(TAG_PREFIX)) {
+          code = potentialCode;
+        }
       }
 
-      // 2. Check if the description or title corresponds to a known BXGY discount code (e.g. checkout-applied)
-      const potentialCode = (app.description || "").trim();
-      if (potentialCode && !potentialCode.startsWith(TAG_PREFIX)) {
-        const bxgyRule = await getBxgyRuleForCode(admin, potentialCode);
+      if (code) {
+        const bxgyRule = await getBxgyRuleForCode(admin, code);
         if (bxgyRule) {
           candidates.push({
             lineItemId: item.id,
@@ -475,4 +476,8 @@ export async function checkAndRemoveInvalidBxgyDiscounts(
   }
 
   return { removedCount, removedProducts };
+  } catch (err) {
+    console.warn("[bxgy] Error in checkAndRemoveInvalidBxgyDiscounts:", err);
+    return { removedCount: 0, removedProducts: [] };
+  }
 }

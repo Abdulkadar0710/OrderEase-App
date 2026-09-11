@@ -281,25 +281,36 @@ function decodeTag$3(description) {
   }
 }
 function encodeTag$3(tag) {
+  var _a2;
   const payload = {
     c: round2$3(tag.checkoutAmount),
     p: round2$3(tag.productAmount),
     o: round2$3(tag.orderAmount)
   };
-  if (tag.bxgy) {
-    payload.bxgy = tag.bxgy;
+  if ((_a2 = tag.bxgy) == null ? void 0 : _a2.code) {
+    payload.bxgy = { code: tag.bxgy.code };
   }
   const raw = JSON.stringify(payload);
-  return `${TAG_PREFIX$3}${raw} ${tag.label}`.trim();
+  const cleanLabel = (tag.label || "").trim().slice(0, 40);
+  const result = `${TAG_PREFIX$3}${raw} ${cleanLabel}`.trim();
+  if (result.length > 255) {
+    return result.slice(0, 255);
+  }
+  return result;
 }
 function lineItemMatchesBuyX(item, buyRule) {
   var _a2, _b, _c, _d, _e, _f, _g;
+  const variantIds = buyRule.buyVariantIds || buyRule.variantIds;
+  const productIds = buyRule.buyProductIds || buyRule.productIds;
+  const collectionIds = buyRule.buyCollectionIds || buyRule.collectionIds;
+  const hasSpecific = variantIds && variantIds.size > 0 || productIds && productIds.size > 0 || collectionIds && collectionIds.size > 0;
+  if (!hasSpecific) return true;
   const variantId = (_a2 = item.variant) == null ? void 0 : _a2.id;
   const productId = (_c = (_b = item.variant) == null ? void 0 : _b.product) == null ? void 0 : _c.id;
-  const collectionIds = ((_g = (_f = (_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.collections) == null ? void 0 : _f.nodes) == null ? void 0 : _g.map((c) => c.id)) ?? [];
-  if (variantId && buyRule.variantIds.has(variantId)) return true;
-  if (productId && buyRule.productIds.has(productId)) return true;
-  if (collectionIds.some((id) => buyRule.collectionIds.has(id))) return true;
+  const itemCollectionIds = ((_g = (_f = (_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.collections) == null ? void 0 : _f.nodes) == null ? void 0 : _g.map((c) => c.id)) ?? [];
+  if (variantId && (variantIds == null ? void 0 : variantIds.has(variantId))) return true;
+  if (productId && (productIds == null ? void 0 : productIds.has(productId))) return true;
+  if (collectionIds && itemCollectionIds.some((id) => collectionIds.has(id))) return true;
   return false;
 }
 async function getBxgyRuleForCode(admin, code) {
@@ -400,9 +411,10 @@ async function getBxgyRuleForCode(admin, code) {
   }
 }
 async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
-  const res = await admin.graphql(
-    `#graphql
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i;
+  try {
+    const res = await admin.graphql(
+      `#graphql
     query GetCalculatedOrderForBxgy($id: ID!) {
       node(id: $id) {
         ... on CalculatedOrder {
@@ -436,120 +448,115 @@ async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
         }
       }
     }`,
-    { variables: { id: calculatedOrderId } }
-  );
-  const json = await res.json();
-  const calculatedOrder = (_a2 = json.data) == null ? void 0 : _a2.node;
-  const lineItems = ((_b = calculatedOrder == null ? void 0 : calculatedOrder.lineItems) == null ? void 0 : _b.nodes) ?? [];
-  if (lineItems.length === 0) {
-    return { removedCount: 0, removedProducts: [] };
-  }
-  const activeItems = lineItems.filter((item) => {
-    const qty = item.editableQuantity ?? item.quantity;
-    return qty > 0;
-  });
-  const candidates = [];
-  for (const item of activeItems) {
-    const allocations = item.calculatedDiscountAllocations ?? [];
-    for (const alloc of allocations) {
-      const app2 = alloc.discountApplication;
-      if (!app2) continue;
-      const decoded = decodeTag$3(app2.description);
-      if (decoded == null ? void 0 : decoded.bxgy) {
-        candidates.push({
-          lineItemId: item.id,
-          lineItemTitle: ((_d = (_c = item.variant) == null ? void 0 : _c.product) == null ? void 0 : _d.title) || item.title || "Product",
-          discountApplicationId: app2.id,
-          rule: {
-            code: decoded.bxgy.code,
-            buyVariantIds: new Set(decoded.bxgy.buyVariantIds ?? []),
-            buyProductIds: new Set(decoded.bxgy.buyProductIds ?? []),
-            buyCollectionIds: new Set(decoded.bxgy.buyCollectionIds ?? []),
-            minQuantity: decoded.bxgy.minQuantity ?? 1,
-            minAmount: decoded.bxgy.minAmount ?? 0,
-            getQuantity: decoded.bxgy.getQuantity ?? 1
-          }
-        });
-        continue;
-      }
-      const potentialCode = (app2.description || "").trim();
-      if (potentialCode && !potentialCode.startsWith(TAG_PREFIX$3)) {
-        const bxgyRule = await getBxgyRuleForCode(admin, potentialCode);
-        if (bxgyRule) {
-          candidates.push({
-            lineItemId: item.id,
-            lineItemTitle: ((_f = (_e = item.variant) == null ? void 0 : _e.product) == null ? void 0 : _f.title) || item.title || "Product",
-            discountApplicationId: app2.id,
-            rule: {
-              code: bxgyRule.code,
-              buyVariantIds: new Set(bxgyRule.buyVariantIds),
-              buyProductIds: new Set(bxgyRule.buyProductIds),
-              buyCollectionIds: new Set(bxgyRule.buyCollectionIds),
-              minQuantity: bxgyRule.minQuantity,
-              minAmount: bxgyRule.minAmount,
-              getQuantity: bxgyRule.getQuantity ?? 1
-            }
-          });
-        }
-      }
+      { variables: { id: calculatedOrderId } }
+    );
+    const json = await res.json();
+    const calculatedOrder = (_a2 = json.data) == null ? void 0 : _a2.node;
+    const lineItems = ((_b = calculatedOrder == null ? void 0 : calculatedOrder.lineItems) == null ? void 0 : _b.nodes) ?? [];
+    if (lineItems.length === 0) {
+      return { removedCount: 0, removedProducts: [] };
     }
-  }
-  if (candidates.length === 0) {
-    return { removedCount: 0, removedProducts: [] };
-  }
-  let removedCount = 0;
-  const removedProducts = [];
-  for (const candidate of candidates) {
-    let totalMatchingQty = 0;
-    let totalMatchingAmt = 0;
-    const getQty = candidate.rule.getQuantity || 1;
-    for (const activeItem of activeItems) {
-      if (lineItemMatchesBuyX(activeItem, candidate.rule)) {
-        const itemQty = activeItem.editableQuantity ?? activeItem.quantity;
-        const itemPrice = parseFloat(((_h = (_g = activeItem.originalUnitPriceSet) == null ? void 0 : _g.shopMoney) == null ? void 0 : _h.amount) ?? "0");
-        if (activeItem.id === candidate.lineItemId) {
-          if (itemQty > getQty) {
-            totalMatchingQty += itemQty - getQty;
-            totalMatchingAmt += itemPrice * (itemQty - getQty);
-          }
+    const activeItems = lineItems.filter((item) => {
+      const qty = item.editableQuantity ?? item.quantity;
+      return qty > 0;
+    });
+    const candidates = [];
+    for (const item of activeItems) {
+      const allocations = item.calculatedDiscountAllocations ?? [];
+      for (const alloc of allocations) {
+        const app2 = alloc.discountApplication;
+        if (!app2) continue;
+        let code = "";
+        const decoded = decodeTag$3(app2.description);
+        if ((_c = decoded == null ? void 0 : decoded.bxgy) == null ? void 0 : _c.code) {
+          code = decoded.bxgy.code;
         } else {
-          totalMatchingQty += itemQty;
-          totalMatchingAmt += itemPrice * itemQty;
+          const potentialCode = (app2.description || "").trim();
+          if (potentialCode && !potentialCode.startsWith(TAG_PREFIX$3)) {
+            code = potentialCode;
+          }
+        }
+        if (code) {
+          const bxgyRule = await getBxgyRuleForCode(admin, code);
+          if (bxgyRule) {
+            candidates.push({
+              lineItemId: item.id,
+              lineItemTitle: ((_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.title) || item.title || "Product",
+              discountApplicationId: app2.id,
+              rule: {
+                code: bxgyRule.code,
+                buyVariantIds: new Set(bxgyRule.buyVariantIds),
+                buyProductIds: new Set(bxgyRule.buyProductIds),
+                buyCollectionIds: new Set(bxgyRule.buyCollectionIds),
+                minQuantity: bxgyRule.minQuantity,
+                minAmount: bxgyRule.minAmount,
+                getQuantity: bxgyRule.getQuantity ?? 1
+              }
+            });
+          }
         }
       }
     }
-    const hasRequiredQty = totalMatchingQty >= candidate.rule.minQuantity;
-    const hasRequiredAmt = candidate.rule.minAmount <= 0 || totalMatchingAmt >= candidate.rule.minAmount;
-    if (!hasRequiredQty || !hasRequiredAmt) {
-      console.log(
-        `[bxgy] Removing BXGY discount "${candidate.rule.code}" from "${candidate.lineItemTitle}" (ID: ${candidate.lineItemId}) because qualifying Product X was removed or replaced (found matching qty: ${totalMatchingQty}, required: ${candidate.rule.minQuantity}).`
-      );
-      const removeRes = await admin.graphql(
-        `#graphql
+    if (candidates.length === 0) {
+      return { removedCount: 0, removedProducts: [] };
+    }
+    let removedCount = 0;
+    const removedProducts = [];
+    for (const candidate of candidates) {
+      let totalMatchingQty = 0;
+      let totalMatchingAmt = 0;
+      const getQty = candidate.rule.getQuantity || 1;
+      for (const activeItem of activeItems) {
+        if (lineItemMatchesBuyX(activeItem, candidate.rule)) {
+          const itemQty = activeItem.editableQuantity ?? activeItem.quantity;
+          const itemPrice = parseFloat(((_g = (_f = activeItem.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.amount) ?? "0");
+          if (activeItem.id === candidate.lineItemId) {
+            if (itemQty > getQty) {
+              totalMatchingQty += itemQty - getQty;
+              totalMatchingAmt += itemPrice * (itemQty - getQty);
+            }
+          } else {
+            totalMatchingQty += itemQty;
+            totalMatchingAmt += itemPrice * itemQty;
+          }
+        }
+      }
+      const hasRequiredQty = totalMatchingQty >= candidate.rule.minQuantity;
+      const hasRequiredAmt = candidate.rule.minAmount <= 0 || totalMatchingAmt >= candidate.rule.minAmount;
+      if (!hasRequiredQty || !hasRequiredAmt) {
+        console.log(
+          `[bxgy] Removing BXGY discount "${candidate.rule.code}" from "${candidate.lineItemTitle}" (ID: ${candidate.lineItemId}) because qualifying Product X was removed or replaced (found matching qty: ${totalMatchingQty}, required: ${candidate.rule.minQuantity}).`
+        );
+        const removeRes = await admin.graphql(
+          `#graphql
         mutation RemoveInvalidBxgyDiscount($id: ID!, $discountApplicationId: ID!) {
           orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
             calculatedOrder { id }
             userErrors { field message }
           }
         }`,
-        {
-          variables: {
-            id: calculatedOrderId,
-            discountApplicationId: candidate.discountApplicationId
+          {
+            variables: {
+              id: calculatedOrderId,
+              discountApplicationId: candidate.discountApplicationId
+            }
           }
+        );
+        const removeJson = await removeRes.json();
+        const errors = ((_i = (_h = removeJson.data) == null ? void 0 : _h.orderEditRemoveDiscount) == null ? void 0 : _i.userErrors) ?? [];
+        if (errors.length) {
+          console.warn(`[bxgy] Failed to remove discount application ${candidate.discountApplicationId}:`, errors);
+        } else {
+          removedCount++;
+          removedProducts.push(candidate.lineItemTitle);
         }
-      );
-      const removeJson = await removeRes.json();
-      const errors = ((_j = (_i = removeJson.data) == null ? void 0 : _i.orderEditRemoveDiscount) == null ? void 0 : _j.userErrors) ?? [];
-      if (errors.length) {
-        console.warn(`[bxgy] Failed to remove discount application ${candidate.discountApplicationId}:`, errors);
-      } else {
-        removedCount++;
-        removedProducts.push(candidate.lineItemTitle);
       }
     }
+    return { removedCount, removedProducts };
+  } catch (err) {
+    console.warn("[bxgy] Error in checkAndRemoveInvalidBxgyDiscounts:", err);
+    return { removedCount: 0, removedProducts: [] };
   }
-  return { removedCount, removedProducts };
 }
 async function loader$t({
   request
@@ -715,7 +722,11 @@ async function action$o({
         status: 422
       }));
     }
-    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    try {
+      await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    } catch (bxgyErr) {
+      console.warn("[update-quantity] BXGY discount check warning:", bxgyErr);
+    }
     const commitResponse = await admin.graphql(`#graphql
       mutation OrderEditCommit($id: ID!) {
         orderEditCommit(id: $id, notifyCustomer: true, staffNote: "Quantity updated via customer account") {
@@ -940,7 +951,11 @@ async function action$n({
         status: 422
       }));
     }
-    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    try {
+      await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    } catch (bxgyErr) {
+      console.warn("[change-variant] BXGY discount check warning:", bxgyErr);
+    }
     const commitResponse = await admin.graphql(`#graphql
       mutation OrderEditCommit($id: ID!) {
         orderEditCommit(id: $id, notifyCustomer: true, staffNote: "Variant changed via customer account") {
@@ -5725,16 +5740,7 @@ async function action$9({
         }
       }
       const bxgyMeta = {
-        code: resolved.code,
-        buyVariantIds: Array.from(resolved.buyRule.variantIds),
-        buyProductIds: Array.from(resolved.buyRule.productIds),
-        buyCollectionIds: Array.from(resolved.buyRule.collectionIds),
-        minQuantity: resolved.buyRule.minQuantity,
-        minAmount: resolved.buyRule.minAmount,
-        getVariantIds: Array.from(resolved.getRule.variantIds),
-        getProductIds: Array.from(resolved.getRule.productIds),
-        getCollectionIds: Array.from(resolved.getRule.collectionIds),
-        getQuantity: resolved.getRule.quantity
+        code: resolved.code
       };
       const newTag = {
         checkoutAmount: 0,

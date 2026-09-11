@@ -149,7 +149,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Step 3.5: Revalidate any active Buy X Get Y discounts
     // If the replaced product was qualifying item X for a BXGY discount on item Y, remove Y's discount.
-    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    try {
+      await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    } catch (bxgyErr) {
+      console.warn("[change-variant] BXGY discount check warning:", bxgyErr);
+    }
 
     // Step 4: commit
     const commitResponse = await admin.graphql(
