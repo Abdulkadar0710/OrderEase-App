@@ -3,6 +3,7 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
 import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
+import { checkAndRemoveInvalidBxgyDiscounts } from "../utils/bxgyDiscountHelper.server";
 
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -166,6 +167,10 @@ export async function action({ request }: ActionFunctionArgs) {
     if (updateErrors.length) {
       return cors(Response.json({ userErrors: updateErrors }, { status: 422 }));
     }
+
+    // Step 2.5: Revalidate active Buy X Get Y discounts
+    // If the removed item was qualifying item X for a BXGY discount on item Y, remove Y's discount.
+    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
 
     // Step 3: commit
     const commitResponse = await admin.graphql(

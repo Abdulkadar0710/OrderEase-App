@@ -3,6 +3,7 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
 import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
+import { checkAndRemoveInvalidBxgyDiscounts } from "../utils/bxgyDiscountHelper.server";
 
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -145,6 +146,10 @@ export async function action({ request }: ActionFunctionArgs) {
     if (addJson.data?.orderEditAddVariant?.userErrors?.length) {
       return cors(Response.json({ userErrors: addJson.data.orderEditAddVariant.userErrors }, { status: 422 }));
     }
+
+    // Step 3.5: Revalidate any active Buy X Get Y discounts
+    // If the replaced product was qualifying item X for a BXGY discount on item Y, remove Y's discount.
+    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
 
     // Step 4: commit
     const commitResponse = await admin.graphql(

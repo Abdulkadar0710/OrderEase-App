@@ -244,6 +244,313 @@ async function checkOrderEditLimit({
     maxEdits
   };
 }
+const TAG_PREFIX$3 = "@d2:";
+function round2$3(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+function decodeTag$3(description) {
+  if (!description || !description.startsWith(TAG_PREFIX$3)) return null;
+  const rest = description.slice(TAG_PREFIX$3.length).trim();
+  if (!rest.startsWith("{")) return null;
+  let depth = 0;
+  let endIdx = -1;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "{") depth++;
+    else if (rest[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        endIdx = i;
+        break;
+      }
+    }
+  }
+  if (endIdx === -1) return null;
+  const rawJson = rest.slice(0, endIdx + 1);
+  const label2 = rest.slice(endIdx + 1).trim();
+  try {
+    const parsed = JSON.parse(rawJson);
+    return {
+      checkoutAmount: parsed.c ?? 0,
+      productAmount: parsed.p ?? 0,
+      orderAmount: parsed.o ?? 0,
+      label: label2,
+      bxgy: parsed.bxgy
+    };
+  } catch {
+    return null;
+  }
+}
+function encodeTag$3(tag) {
+  const payload = {
+    c: round2$3(tag.checkoutAmount),
+    p: round2$3(tag.productAmount),
+    o: round2$3(tag.orderAmount)
+  };
+  if (tag.bxgy) {
+    payload.bxgy = tag.bxgy;
+  }
+  const raw = JSON.stringify(payload);
+  return `${TAG_PREFIX$3}${raw} ${tag.label}`.trim();
+}
+function lineItemMatchesBuyX(item, buyRule) {
+  var _a2, _b, _c, _d, _e, _f, _g;
+  const variantId = (_a2 = item.variant) == null ? void 0 : _a2.id;
+  const productId = (_c = (_b = item.variant) == null ? void 0 : _b.product) == null ? void 0 : _c.id;
+  const collectionIds = ((_g = (_f = (_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.collections) == null ? void 0 : _f.nodes) == null ? void 0 : _g.map((c) => c.id)) ?? [];
+  if (variantId && buyRule.variantIds.has(variantId)) return true;
+  if (productId && buyRule.productIds.has(productId)) return true;
+  if (collectionIds.some((id) => buyRule.collectionIds.has(id))) return true;
+  return false;
+}
+async function getBxgyRuleForCode(admin, code) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+  try {
+    const res = await admin.graphql(
+      `#graphql
+      query LookupBxgyCode($code: String!) {
+        codeDiscountNodeByCode(code: $code) {
+          codeDiscount {
+            __typename
+            ... on DiscountCodeBxgy {
+              title
+              status
+              customerBuys {
+                value {
+                  ... on DiscountQuantity { quantity }
+                  ... on DiscountPurchaseAmount { amount }
+                }
+                items {
+                  __typename
+                  ... on DiscountProducts {
+                    productVariants(first: 250) { nodes { id } }
+                    products(first: 250) { nodes { id } }
+                  }
+                  ... on DiscountCollections {
+                    collections(first: 250) { nodes { id } }
+                  }
+                }
+              }
+              customerGets {
+                value {
+                  ... on DiscountOnQuantity {
+                    quantity { quantity }
+                    effect {
+                      ... on DiscountPercentage { percentage }
+                      ... on DiscountAmount { amount { amount currencyCode } }
+                    }
+                  }
+                }
+                items {
+                  __typename
+                  ... on DiscountProducts {
+                    productVariants(first: 250) { nodes { id } }
+                    products(first: 250) { nodes { id } }
+                  }
+                  ... on DiscountCollections {
+                    collections(first: 250) { nodes { id } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { code: code.trim().toUpperCase() } }
+    );
+    const json = await res.json();
+    const node = (_a2 = json.data) == null ? void 0 : _a2.codeDiscountNodeByCode;
+    const discount = node == null ? void 0 : node.codeDiscount;
+    if (!discount || discount.__typename !== "DiscountCodeBxgy") {
+      return null;
+    }
+    const buyItems = (_b = discount.customerBuys) == null ? void 0 : _b.items;
+    const buyVal = (_c = discount.customerBuys) == null ? void 0 : _c.value;
+    const getItems = (_d = discount.customerGets) == null ? void 0 : _d.items;
+    const buyVariantIds = (((_e = buyItems == null ? void 0 : buyItems.productVariants) == null ? void 0 : _e.nodes) ?? []).map((n) => n.id);
+    const buyProductIds = (((_f = buyItems == null ? void 0 : buyItems.products) == null ? void 0 : _f.nodes) ?? []).map((n) => n.id);
+    const buyCollectionIds = (((_g = buyItems == null ? void 0 : buyItems.collections) == null ? void 0 : _g.nodes) ?? []).map((n) => n.id);
+    const getVariantIds = (((_h = getItems == null ? void 0 : getItems.productVariants) == null ? void 0 : _h.nodes) ?? []).map((n) => n.id);
+    const getProductIds = (((_i = getItems == null ? void 0 : getItems.products) == null ? void 0 : _i.nodes) ?? []).map((n) => n.id);
+    const getCollectionIds = (((_j = getItems == null ? void 0 : getItems.collections) == null ? void 0 : _j.nodes) ?? []).map((n) => n.id);
+    let minQuantity = 1;
+    let minAmount = 0;
+    if (buyVal == null ? void 0 : buyVal.quantity) {
+      minQuantity = parseInt(String(buyVal.quantity), 10) || 1;
+    } else if (buyVal == null ? void 0 : buyVal.amount) {
+      minAmount = parseFloat(String(buyVal.amount)) || 0;
+    }
+    const getQuantity = parseInt(String(((_m = (_l = (_k = discount.customerGets) == null ? void 0 : _k.value) == null ? void 0 : _l.quantity) == null ? void 0 : _m.quantity) || 1), 10) || 1;
+    return {
+      isBxgy: true,
+      code: code.trim().toUpperCase(),
+      title: discount.title || code,
+      buyVariantIds,
+      buyProductIds,
+      buyCollectionIds,
+      minQuantity,
+      minAmount,
+      getVariantIds,
+      getProductIds,
+      getCollectionIds,
+      getQuantity
+    };
+  } catch (err) {
+    console.warn("[bxgy] Error resolving discount code:", err);
+    return null;
+  }
+}
+async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  const res = await admin.graphql(
+    `#graphql
+    query GetCalculatedOrderForBxgy($id: ID!) {
+      node(id: $id) {
+        ... on CalculatedOrder {
+          id
+          lineItems(first: 100) {
+            nodes {
+              id
+              quantity
+              editableQuantity
+              title
+              variant {
+                id
+                title
+                product {
+                  id
+                  title
+                  collections(first: 50) { nodes { id } }
+                }
+              }
+              originalUnitPriceSet { shopMoney { amount currencyCode } }
+              calculatedDiscountAllocations {
+                allocatedAmountSet { shopMoney { amount currencyCode } }
+                discountApplication {
+                  id
+                  __typename
+                  description
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { variables: { id: calculatedOrderId } }
+  );
+  const json = await res.json();
+  const calculatedOrder = (_a2 = json.data) == null ? void 0 : _a2.node;
+  const lineItems = ((_b = calculatedOrder == null ? void 0 : calculatedOrder.lineItems) == null ? void 0 : _b.nodes) ?? [];
+  if (lineItems.length === 0) {
+    return { removedCount: 0, removedProducts: [] };
+  }
+  const activeItems = lineItems.filter((item) => {
+    const qty = item.editableQuantity ?? item.quantity;
+    return qty > 0;
+  });
+  const candidates = [];
+  for (const item of activeItems) {
+    const allocations = item.calculatedDiscountAllocations ?? [];
+    for (const alloc of allocations) {
+      const app2 = alloc.discountApplication;
+      if (!app2) continue;
+      const decoded = decodeTag$3(app2.description);
+      if (decoded == null ? void 0 : decoded.bxgy) {
+        candidates.push({
+          lineItemId: item.id,
+          lineItemTitle: ((_d = (_c = item.variant) == null ? void 0 : _c.product) == null ? void 0 : _d.title) || item.title || "Product",
+          discountApplicationId: app2.id,
+          rule: {
+            code: decoded.bxgy.code,
+            buyVariantIds: new Set(decoded.bxgy.buyVariantIds ?? []),
+            buyProductIds: new Set(decoded.bxgy.buyProductIds ?? []),
+            buyCollectionIds: new Set(decoded.bxgy.buyCollectionIds ?? []),
+            minQuantity: decoded.bxgy.minQuantity ?? 1,
+            minAmount: decoded.bxgy.minAmount ?? 0,
+            getQuantity: decoded.bxgy.getQuantity ?? 1
+          }
+        });
+        continue;
+      }
+      const potentialCode = (app2.description || "").trim();
+      if (potentialCode && !potentialCode.startsWith(TAG_PREFIX$3)) {
+        const bxgyRule = await getBxgyRuleForCode(admin, potentialCode);
+        if (bxgyRule) {
+          candidates.push({
+            lineItemId: item.id,
+            lineItemTitle: ((_f = (_e = item.variant) == null ? void 0 : _e.product) == null ? void 0 : _f.title) || item.title || "Product",
+            discountApplicationId: app2.id,
+            rule: {
+              code: bxgyRule.code,
+              buyVariantIds: new Set(bxgyRule.buyVariantIds),
+              buyProductIds: new Set(bxgyRule.buyProductIds),
+              buyCollectionIds: new Set(bxgyRule.buyCollectionIds),
+              minQuantity: bxgyRule.minQuantity,
+              minAmount: bxgyRule.minAmount,
+              getQuantity: bxgyRule.getQuantity ?? 1
+            }
+          });
+        }
+      }
+    }
+  }
+  if (candidates.length === 0) {
+    return { removedCount: 0, removedProducts: [] };
+  }
+  let removedCount = 0;
+  const removedProducts = [];
+  for (const candidate of candidates) {
+    let totalMatchingQty = 0;
+    let totalMatchingAmt = 0;
+    const getQty = candidate.rule.getQuantity || 1;
+    for (const activeItem of activeItems) {
+      if (lineItemMatchesBuyX(activeItem, candidate.rule)) {
+        const itemQty = activeItem.editableQuantity ?? activeItem.quantity;
+        const itemPrice = parseFloat(((_h = (_g = activeItem.originalUnitPriceSet) == null ? void 0 : _g.shopMoney) == null ? void 0 : _h.amount) ?? "0");
+        if (activeItem.id === candidate.lineItemId) {
+          if (itemQty > getQty) {
+            totalMatchingQty += itemQty - getQty;
+            totalMatchingAmt += itemPrice * (itemQty - getQty);
+          }
+        } else {
+          totalMatchingQty += itemQty;
+          totalMatchingAmt += itemPrice * itemQty;
+        }
+      }
+    }
+    const hasRequiredQty = totalMatchingQty >= candidate.rule.minQuantity;
+    const hasRequiredAmt = candidate.rule.minAmount <= 0 || totalMatchingAmt >= candidate.rule.minAmount;
+    if (!hasRequiredQty || !hasRequiredAmt) {
+      console.log(
+        `[bxgy] Removing BXGY discount "${candidate.rule.code}" from "${candidate.lineItemTitle}" (ID: ${candidate.lineItemId}) because qualifying Product X was removed or replaced (found matching qty: ${totalMatchingQty}, required: ${candidate.rule.minQuantity}).`
+      );
+      const removeRes = await admin.graphql(
+        `#graphql
+        mutation RemoveInvalidBxgyDiscount($id: ID!, $discountApplicationId: ID!) {
+          orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
+            calculatedOrder { id }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            id: calculatedOrderId,
+            discountApplicationId: candidate.discountApplicationId
+          }
+        }
+      );
+      const removeJson = await removeRes.json();
+      const errors = ((_j = (_i = removeJson.data) == null ? void 0 : _i.orderEditRemoveDiscount) == null ? void 0 : _j.userErrors) ?? [];
+      if (errors.length) {
+        console.warn(`[bxgy] Failed to remove discount application ${candidate.discountApplicationId}:`, errors);
+      } else {
+        removedCount++;
+        removedProducts.push(candidate.lineItemTitle);
+      }
+    }
+  }
+  return { removedCount, removedProducts };
+}
 async function loader$t({
   request
 }) {
@@ -408,6 +715,7 @@ async function action$o({
         status: 422
       }));
     }
+    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
     const commitResponse = await admin.graphql(`#graphql
       mutation OrderEditCommit($id: ID!) {
         orderEditCommit(id: $id, notifyCustomer: true, staffNote: "Quantity updated via customer account") {
@@ -632,6 +940,7 @@ async function action$n({
         status: 422
       }));
     }
+    await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
     const commitResponse = await admin.graphql(`#graphql
       mutation OrderEditCommit($id: ID!) {
         orderEditCommit(id: $id, notifyCustomer: true, staffNote: "Variant changed via customer account") {
@@ -1591,12 +1900,12 @@ const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   action: action$g,
   loader: loader$n
 }, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX$3 = "@d2:";
+const TAG_PREFIX$2 = "@d2:";
 const CHECKOUT_ORIGIN_TYPENAMES = /* @__PURE__ */ new Set(["DiscountCodeApplication", "AutomaticDiscountApplication", "ScriptDiscountApplication"]);
 const APP_ORIGIN_TYPENAME$3 = "ManualDiscountApplication";
-function decodeTag$3(description) {
-  if (!description || !description.startsWith(TAG_PREFIX$3)) return null;
-  const rest = description.slice(TAG_PREFIX$3.length);
+function decodeTag$2(description) {
+  if (!description || !description.startsWith(TAG_PREFIX$2)) return null;
+  const rest = description.slice(TAG_PREFIX$2.length);
   const closeIdx = rest.indexOf("}");
   if (closeIdx === -1) return null;
   const raw = rest.slice(0, closeIdx + 1);
@@ -1613,15 +1922,15 @@ function decodeTag$3(description) {
     return null;
   }
 }
-function encodeTag$3(tag) {
+function encodeTag$2(tag) {
   const raw = JSON.stringify({
-    c: round2$3(tag.checkoutAmount),
-    p: round2$3(tag.productAmount),
-    o: round2$3(tag.orderAmount)
+    c: round2$2(tag.checkoutAmount),
+    p: round2$2(tag.productAmount),
+    o: round2$2(tag.orderAmount)
   });
-  return `${TAG_PREFIX$3}${raw} ${tag.label}`.trim();
+  return `${TAG_PREFIX$2}${raw} ${tag.label}`.trim();
 }
-function round2$3(n) {
+function round2$2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 function readLineItemDiscountState$3(item) {
@@ -1659,7 +1968,7 @@ function readLineItemDiscountState$3(item) {
       resolvedCurrency = allocation.allocatedAmountSet.shopMoney.currencyCode;
     }
     if (app2.__typename === APP_ORIGIN_TYPENAME$3) {
-      const decoded = decodeTag$3(app2.description);
+      const decoded = decodeTag$2(app2.description);
       if (decoded) {
         tag = decoded;
       } else {
@@ -1952,7 +2261,7 @@ async function action$f({
                 amount: combinedAmount.toFixed(2),
                 currencyCode
               },
-              description: encodeTag$3(newTag)
+              description: encodeTag$2(newTag)
             }
           }
         });
@@ -2018,7 +2327,7 @@ async function action$f({
                 amount: combinedAmount.toFixed(2),
                 currencyCode
               },
-              description: encodeTag$3(newTag)
+              description: encodeTag$2(newTag)
             }
           }
         });
@@ -3528,7 +3837,7 @@ const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   action: action$c,
   loader: loader$j
 }, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX$2 = "@d2:";
+const TAG_PREFIX$1 = "@d2:";
 function lineItemDisplayName$2(item) {
   var _a2, _b, _c;
   const productTitle = ((_b = (_a2 = item.variant) == null ? void 0 : _a2.product) == null ? void 0 : _b.title) || item.title || "this product";
@@ -3539,9 +3848,9 @@ function lineItemDisplayName$2(item) {
   return productTitle;
 }
 const APP_ORIGIN_TYPENAME$2 = "ManualDiscountApplication";
-function decodeTag$2(description) {
-  if (!description || !description.startsWith(TAG_PREFIX$2)) return null;
-  const rest = description.slice(TAG_PREFIX$2.length);
+function decodeTag$1(description) {
+  if (!description || !description.startsWith(TAG_PREFIX$1)) return null;
+  const rest = description.slice(TAG_PREFIX$1.length);
   const closeIdx = rest.indexOf("}");
   if (closeIdx === -1) return null;
   const raw = rest.slice(0, closeIdx + 1);
@@ -3558,15 +3867,15 @@ function decodeTag$2(description) {
     return null;
   }
 }
-function encodeTag$2(tag) {
+function encodeTag$1(tag) {
   const raw = JSON.stringify({
-    c: round2$2(tag.checkoutAmount),
-    p: round2$2(tag.productAmount),
-    o: round2$2(tag.orderAmount)
+    c: round2$1(tag.checkoutAmount),
+    p: round2$1(tag.productAmount),
+    o: round2$1(tag.orderAmount)
   });
-  return `${TAG_PREFIX$2}${raw} ${tag.label}`.trim();
+  return `${TAG_PREFIX$1}${raw} ${tag.label}`.trim();
 }
-function round2$2(n) {
+function round2$1(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 function readLineItemDiscountState$2(item) {
@@ -3607,7 +3916,7 @@ function readLineItemDiscountState$2(item) {
     }
     if (app2.__typename === APP_ORIGIN_TYPENAME$2) {
       existingIsOurs = true;
-      const decoded = decodeTag$2(app2.description);
+      const decoded = decodeTag$1(app2.description);
       if (decoded) {
         tag = decoded;
       } else {
@@ -3972,7 +4281,7 @@ async function action$b({
               amount: combinedAmount.toFixed(2),
               currencyCode
             },
-            description: encodeTag$2(newTag)
+            description: encodeTag$1(newTag)
           }
         }
       });
@@ -4050,7 +4359,7 @@ const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   action: action$b,
   loader: loader$i
 }, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX$1 = "@d2:";
+const TAG_PREFIX = "@d2:";
 function lineItemDisplayName$1(item) {
   var _a2, _b, _c;
   const productTitle = ((_b = (_a2 = item.variant) == null ? void 0 : _a2.product) == null ? void 0 : _b.title) || item.title || "this product";
@@ -4061,9 +4370,9 @@ function lineItemDisplayName$1(item) {
   return productTitle;
 }
 const APP_ORIGIN_TYPENAME$1 = "ManualDiscountApplication";
-function decodeTag$1(description) {
-  if (!description || !description.startsWith(TAG_PREFIX$1)) return null;
-  const rest = description.slice(TAG_PREFIX$1.length);
+function decodeTag(description) {
+  if (!description || !description.startsWith(TAG_PREFIX)) return null;
+  const rest = description.slice(TAG_PREFIX.length);
   const closeIdx = rest.indexOf("}");
   if (closeIdx === -1) return null;
   const raw = rest.slice(0, closeIdx + 1);
@@ -4080,15 +4389,15 @@ function decodeTag$1(description) {
     return null;
   }
 }
-function encodeTag$1(tag) {
+function encodeTag(tag) {
   const raw = JSON.stringify({
-    c: round2$1(tag.checkoutAmount),
-    p: round2$1(tag.productAmount),
-    o: round2$1(tag.orderAmount)
+    c: round2(tag.checkoutAmount),
+    p: round2(tag.productAmount),
+    o: round2(tag.orderAmount)
   });
-  return `${TAG_PREFIX$1}${raw} ${tag.label}`.trim();
+  return `${TAG_PREFIX}${raw} ${tag.label}`.trim();
 }
-function round2$1(n) {
+function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 function readLineItemDiscountState$1(item) {
@@ -4131,7 +4440,7 @@ function readLineItemDiscountState$1(item) {
       if (!blocked) {
         existingIsOurs = true;
       }
-      const decoded = decodeTag$1(app2.description);
+      const decoded = decodeTag(app2.description);
       if (decoded) {
         tag = decoded;
       } else {
@@ -4522,7 +4831,7 @@ async function action$a({
               amount: combinedAmount.toFixed(2),
               currencyCode
             },
-            description: encodeTag$1(newTag)
+            description: encodeTag(newTag)
           }
         }
       });
@@ -4608,7 +4917,6 @@ const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   action: action$a,
   loader: loader$h
 }, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX = "@d2:";
 function lineItemDisplayName(item) {
   var _a2, _b, _c;
   const productTitle = ((_b = (_a2 = item.variant) == null ? void 0 : _a2.product) == null ? void 0 : _b.title) || item.title || "this product";
@@ -4619,36 +4927,6 @@ function lineItemDisplayName(item) {
   return productTitle;
 }
 const APP_ORIGIN_TYPENAME = "ManualDiscountApplication";
-function decodeTag(description) {
-  if (!description || !description.startsWith(TAG_PREFIX)) return null;
-  const rest = description.slice(TAG_PREFIX.length);
-  const closeIdx = rest.indexOf("}");
-  if (closeIdx === -1) return null;
-  const raw = rest.slice(0, closeIdx + 1);
-  const label2 = rest.slice(closeIdx + 1).trim();
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      checkoutAmount: parsed.c ?? 0,
-      productAmount: parsed.p ?? 0,
-      orderAmount: parsed.o ?? 0,
-      label: label2
-    };
-  } catch {
-    return null;
-  }
-}
-function encodeTag(tag) {
-  const raw = JSON.stringify({
-    c: round2(tag.checkoutAmount),
-    p: round2(tag.productAmount),
-    o: round2(tag.orderAmount)
-  });
-  return `${TAG_PREFIX}${raw} ${tag.label}`.trim();
-}
-function round2(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 function readLineItemDiscountState(item) {
   var _a2, _b, _c, _d, _e, _f;
   const allocations = item.calculatedDiscountAllocations ?? [];
@@ -4689,7 +4967,7 @@ function readLineItemDiscountState(item) {
       if (!blocked) {
         existingIsOurs = true;
       }
-      const decoded = decodeTag(app2.description);
+      const decoded = decodeTag$3(app2.description);
       if (decoded) {
         tag = decoded;
       } else {
@@ -4726,8 +5004,21 @@ function readLineItemDiscountState(item) {
     tag
   };
 }
-async function resolveDiscountCode(admin, code) {
+function lineItemMatchesRule(item, rule) {
   var _a2, _b, _c, _d, _e, _f, _g;
+  const hasSpecific = rule.variantIds.size > 0 || rule.productIds.size > 0 || rule.collectionIds.size > 0;
+  if (!hasSpecific) return true;
+  const variantId = (_a2 = item.variant) == null ? void 0 : _a2.id;
+  const productId = (_c = (_b = item.variant) == null ? void 0 : _b.product) == null ? void 0 : _c.id;
+  const collectionIds = ((_g = (_f = (_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.collections) == null ? void 0 : _f.nodes) == null ? void 0 : _g.map((n) => n.id)) ?? [];
+  if (variantId && rule.variantIds.has(variantId)) return true;
+  if (productId && rule.productIds.has(productId)) return true;
+  if (collectionIds.some((id) => rule.collectionIds.has(id))) return true;
+  return false;
+}
+async function resolveDiscountCode(admin, code) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
+  const cleanCode = code.trim().toUpperCase();
   const res = await admin.graphql(`#graphql
     query LookupDiscountCode($code: String!) {
       codeDiscountNodeByCode(code: $code) {
@@ -4756,11 +5047,70 @@ async function resolveDiscountCode(admin, code) {
               }
             }
           }
+          ... on DiscountCodeBxgy {
+            status
+            title
+            customerBuys {
+              value {
+                ... on DiscountQuantity { quantity }
+                ... on DiscountPurchaseAmount { amount }
+              }
+              items {
+                __typename
+                ... on DiscountProducts {
+                  productVariants(first: 250) { nodes { id } }
+                  products(first: 250) { nodes { id } }
+                }
+                ... on DiscountCollections {
+                  collections(first: 250) { nodes { id } }
+                }
+              }
+            }
+            customerGets {
+              value {
+                ... on DiscountOnQuantity {
+                  quantity { quantity }
+                  effect {
+                    ... on DiscountPercentage { percentage }
+                    ... on DiscountAmount { amount { amount currencyCode } }
+                  }
+                }
+              }
+              items {
+                __typename
+                ... on DiscountProducts {
+                  productVariants(first: 250) { nodes { id } }
+                  products(first: 250) { nodes { id } }
+                }
+                ... on DiscountCollections {
+                  collections(first: 250) { nodes { id } }
+                }
+              }
+            }
+          }
+          ... on DiscountCodeFreeShipping {
+            status
+            title
+            maximumShippingPrice {
+              amount
+            }
+            minimumRequirement {
+              ... on DiscountMinimumQuantity {
+                greaterThanOrEqualToQuantity
+              }
+              ... on DiscountMinimumSubtotal {
+                greaterThanOrEqualToSubtotal {
+                  amount
+                  currencyCode
+                }
+              }
+            }
+          }
         }
       }
     }`, {
     variables: {
-      code: code.trim().toUpperCase()
+      code: cleanCode
     }
   });
   const json = await res.json();
@@ -4772,10 +5122,10 @@ async function resolveDiscountCode(admin, code) {
     };
   }
   const codeDiscount = node.codeDiscount;
-  if ((codeDiscount == null ? void 0 : codeDiscount.__typename) !== "DiscountCodeBasic") {
+  if (!codeDiscount) {
     return {
       ok: false,
-      message: `Discount code "${code}" is not a supported type.`
+      message: `Discount code "${code}" was not found.`
     };
   }
   if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
@@ -4784,52 +5134,142 @@ async function resolveDiscountCode(admin, code) {
       message: `Discount code "${code}" is ${String(codeDiscount.status).toLowerCase()}.`
     };
   }
-  const items = (_b = codeDiscount.customerGets) == null ? void 0 : _b.items;
-  if (!items || items.__typename === "AllDiscountItems") {
+  if (codeDiscount.__typename === "DiscountCodeBasic") {
+    const items = (_b = codeDiscount.customerGets) == null ? void 0 : _b.items;
+    if (!items || items.__typename === "AllDiscountItems") {
+      return {
+        ok: false,
+        message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
+      };
+    }
+    const variantIds = new Set((((_c = items.productVariants) == null ? void 0 : _c.nodes) ?? []).map((n) => n.id));
+    const productIds = new Set((((_d = items.products) == null ? void 0 : _d.nodes) ?? []).map((n) => n.id));
+    const collectionIds = new Set((((_e = items.collections) == null ? void 0 : _e.nodes) ?? []).map((n) => n.id));
+    if (variantIds.size === 0 && productIds.size === 0 && collectionIds.size === 0) {
+      return {
+        ok: false,
+        message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
+      };
+    }
+    const targeting = {
+      type: "selection",
+      variantIds,
+      productIds,
+      collectionIds
+    };
+    const value = (_f = codeDiscount.customerGets) == null ? void 0 : _f.value;
+    const label2 = codeDiscount.title || cleanCode;
+    if ((value == null ? void 0 : value.percentage) != null) {
+      return {
+        ok: true,
+        type: "basic",
+        kind: "percentage",
+        percentage: value.percentage * 100,
+        label: label2,
+        targeting
+      };
+    }
+    if ((_g = value == null ? void 0 : value.amount) == null ? void 0 : _g.amount) {
+      return {
+        ok: true,
+        type: "basic",
+        kind: "fixed",
+        amount: value.amount.amount,
+        currencyCode: value.amount.currencyCode,
+        label: label2,
+        targeting
+      };
+    }
     return {
       ok: false,
-      message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
+      message: `Discount code "${code}" does not have a supported percentage or fixed value.`
     };
   }
-  const variantIds = new Set((((_c = items.productVariants) == null ? void 0 : _c.nodes) ?? []).map((n) => n.id));
-  const productIds = new Set((((_d = items.products) == null ? void 0 : _d.nodes) ?? []).map((n) => n.id));
-  const collectionIds = new Set((((_e = items.collections) == null ? void 0 : _e.nodes) ?? []).map((n) => n.id));
-  if (variantIds.size === 0 && productIds.size === 0 && collectionIds.size === 0) {
-    return {
-      ok: false,
-      message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
-    };
-  }
-  const targeting = {
-    type: "selection",
-    variantIds,
-    productIds,
-    collectionIds
-  };
-  const value = (_f = codeDiscount.customerGets) == null ? void 0 : _f.value;
-  const label2 = codeDiscount.title || code.trim().toUpperCase();
-  if ((value == null ? void 0 : value.percentage) != null) {
+  if (codeDiscount.__typename === "DiscountCodeBxgy") {
+    const buyItems = (_h = codeDiscount.customerBuys) == null ? void 0 : _h.items;
+    const buyVal = (_i = codeDiscount.customerBuys) == null ? void 0 : _i.value;
+    const getItems = (_j = codeDiscount.customerGets) == null ? void 0 : _j.items;
+    const getVal = (_k = codeDiscount.customerGets) == null ? void 0 : _k.value;
+    const buyVariantIds = new Set((((_l = buyItems == null ? void 0 : buyItems.productVariants) == null ? void 0 : _l.nodes) ?? []).map((n) => n.id));
+    const buyProductIds = new Set((((_m = buyItems == null ? void 0 : buyItems.products) == null ? void 0 : _m.nodes) ?? []).map((n) => n.id));
+    const buyCollectionIds = new Set((((_n = buyItems == null ? void 0 : buyItems.collections) == null ? void 0 : _n.nodes) ?? []).map((n) => n.id));
+    const getVariantIds = new Set((((_o = getItems == null ? void 0 : getItems.productVariants) == null ? void 0 : _o.nodes) ?? []).map((n) => n.id));
+    const getProductIds = new Set((((_p = getItems == null ? void 0 : getItems.products) == null ? void 0 : _p.nodes) ?? []).map((n) => n.id));
+    const getCollectionIds = new Set((((_q = getItems == null ? void 0 : getItems.collections) == null ? void 0 : _q.nodes) ?? []).map((n) => n.id));
+    let minQuantity = 1;
+    let minAmount = 0;
+    if (buyVal == null ? void 0 : buyVal.quantity) {
+      minQuantity = parseInt(String(buyVal.quantity), 10) || 1;
+    } else if (buyVal == null ? void 0 : buyVal.amount) {
+      minAmount = parseFloat(String(buyVal.amount)) || 0;
+    }
+    const getQty = parseInt(String(((_r = getVal == null ? void 0 : getVal.quantity) == null ? void 0 : _r.quantity) || 1), 10) || 1;
+    const effect = getVal == null ? void 0 : getVal.effect;
+    let getKind = "percentage";
+    let getPercentage;
+    let getAmount;
+    let getCurrencyCode;
+    if ((effect == null ? void 0 : effect.percentage) != null) {
+      getKind = "percentage";
+      getPercentage = effect.percentage * 100;
+    } else if ((_s = effect == null ? void 0 : effect.amount) == null ? void 0 : _s.amount) {
+      getKind = "fixed";
+      getAmount = effect.amount.amount;
+      getCurrencyCode = effect.amount.currencyCode;
+    } else {
+      getKind = "percentage";
+      getPercentage = 100;
+    }
     return {
       ok: true,
-      kind: "percentage",
-      percentage: value.percentage * 100,
-      label: label2,
-      targeting
+      type: "bxgy",
+      label: codeDiscount.title || cleanCode,
+      code: cleanCode,
+      buyRule: {
+        variantIds: buyVariantIds,
+        productIds: buyProductIds,
+        collectionIds: buyCollectionIds,
+        minQuantity,
+        minAmount
+      },
+      getRule: {
+        variantIds: getVariantIds,
+        productIds: getProductIds,
+        collectionIds: getCollectionIds,
+        quantity: getQty,
+        kind: getKind,
+        percentage: getPercentage,
+        amount: getAmount,
+        currencyCode: getCurrencyCode
+      }
     };
   }
-  if ((_g = value == null ? void 0 : value.amount) == null ? void 0 : _g.amount) {
+  if (codeDiscount.__typename === "DiscountCodeFreeShipping") {
+    const maxPrice = ((_t = codeDiscount.maximumShippingPrice) == null ? void 0 : _t.amount) ? parseFloat(codeDiscount.maximumShippingPrice.amount) : null;
+    let minQty = null;
+    let minSubtotal = null;
+    const minReq = codeDiscount.minimumRequirement;
+    if ((minReq == null ? void 0 : minReq.__typename) === "DiscountMinimumQuantity" && minReq.greaterThanOrEqualToQuantity) {
+      minQty = parseInt(String(minReq.greaterThanOrEqualToQuantity), 10);
+    } else if ((minReq == null ? void 0 : minReq.__typename) === "DiscountMinimumSubtotal" && minReq.greaterThanOrEqualToSubtotal) {
+      minSubtotal = {
+        amount: parseFloat(minReq.greaterThanOrEqualToSubtotal.amount),
+        currencyCode: minReq.greaterThanOrEqualToSubtotal.currencyCode
+      };
+    }
     return {
       ok: true,
-      kind: "fixed",
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode,
-      label: label2,
-      targeting
+      type: "free_shipping",
+      label: codeDiscount.title || cleanCode,
+      code: cleanCode,
+      maximumShippingPrice: maxPrice,
+      minimumQuantity: minQty,
+      minimumSubtotal: minSubtotal
     };
   }
   return {
     ok: false,
-    message: `Discount code "${code}" does not have a supported percentage or fixed value.`
+    message: `Discount code "${code}" is not a supported type.`
   };
 }
 function discountAmountAgainst(resolved, base) {
@@ -4867,7 +5307,7 @@ async function loader$g({
 async function action$9({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y;
   const {
     sessionToken,
     cors
@@ -4928,6 +5368,16 @@ async function action$9({
         orderEditBegin(id: $id) {
           calculatedOrder {
             id
+            shippingLines {
+              id
+              title
+              price {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+            }
             lineItems(first: 100) {
               nodes {
                 id
@@ -4981,10 +5431,391 @@ async function action$9({
     if (allLineItems.length === 0) {
       return cors(Response.json({
         userErrors: [{
-          message: "This order has no active line items to discount."
+          message: "This order has no active line items."
         }]
       }, {
         status: 422
+      }));
+    }
+    if (resolved.type === "free_shipping") {
+      let totalActiveQty = 0;
+      let totalActiveSubtotal = 0;
+      let currencyCode = "USD";
+      for (const item of allLineItems) {
+        const qty = item.editableQuantity ?? item.quantity;
+        const unitPrice = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.shopMoney) == null ? void 0 : _e.amount) ?? "0");
+        if ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.currencyCode) {
+          currencyCode = item.originalUnitPriceSet.shopMoney.currencyCode;
+        }
+        totalActiveQty += qty;
+        totalActiveSubtotal += qty * unitPrice;
+      }
+      if (resolved.minimumQuantity != null && totalActiveQty < resolved.minimumQuantity) {
+        return cors(Response.json({
+          userErrors: [{
+            message: `Discount code "${discountCode}" requires a minimum of ${resolved.minimumQuantity} item(s) in the order.`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+      if (resolved.minimumSubtotal != null && totalActiveSubtotal < resolved.minimumSubtotal.amount) {
+        return cors(Response.json({
+          userErrors: [{
+            message: `Discount code "${discountCode}" requires a minimum subtotal of ${resolved.minimumSubtotal.amount.toFixed(2)} ${resolved.minimumSubtotal.currencyCode}.`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+      const shippingLines = calculatedOrder.shippingLines ?? [];
+      let existingShippingLineId = null;
+      let existingShippingTitle = "Standard Shipping";
+      let existingShippingAmount = 0;
+      if (shippingLines.length > 0) {
+        const firstLine = shippingLines[0];
+        existingShippingLineId = firstLine.id;
+        if (firstLine.title) existingShippingTitle = firstLine.title;
+        existingShippingAmount = parseFloat(((_i = (_h = firstLine.price) == null ? void 0 : _h.shopMoney) == null ? void 0 : _i.amount) ?? "0");
+        if ((_k = (_j = firstLine.price) == null ? void 0 : _j.shopMoney) == null ? void 0 : _k.currencyCode) {
+          currencyCode = firstLine.price.shopMoney.currencyCode;
+        }
+      }
+      if (existingShippingLineId && existingShippingAmount === 0) {
+        return cors(Response.json({
+          success: false,
+          applied: false,
+          appliedCount: 0,
+          appliedProducts: [],
+          skippedProducts: ["Shipping"],
+          discountLabel: resolved.label,
+          warnings: ["This order already has free shipping."],
+          userErrors: []
+        }));
+      }
+      if (resolved.maximumShippingPrice != null && existingShippingAmount > resolved.maximumShippingPrice) {
+        return cors(Response.json({
+          userErrors: [{
+            message: `Shipping rate of ${existingShippingAmount.toFixed(2)} ${currencyCode} exceeds the maximum shipping rate allowed for discount code "${discountCode}" (${resolved.maximumShippingPrice.toFixed(2)} ${currencyCode}).`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+      if (existingShippingLineId) {
+        const removeShipRes = await admin.graphql(`#graphql
+          mutation RemoveShippingLine($id: ID!, $shippingLineId: ID!) {
+            orderEditRemoveShippingLine(id: $id, shippingLineId: $shippingLineId) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            id: calculatedOrderId,
+            shippingLineId: existingShippingLineId
+          }
+        });
+        const removeShipJson = await removeShipRes.json();
+        const removeShipErrors = ((_m = (_l = removeShipJson.data) == null ? void 0 : _l.orderEditRemoveShippingLine) == null ? void 0 : _m.userErrors) ?? [];
+        if (removeShipErrors.length) {
+          return cors(Response.json({
+            userErrors: removeShipErrors
+          }, {
+            status: 422
+          }));
+        }
+      }
+      const freeShippingTitle = existingShippingTitle ? `${existingShippingTitle} (Free)` : `Free Shipping (${discountCode})`;
+      const addShipRes = await admin.graphql(`#graphql
+        mutation AddFreeShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
+          orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
+            calculatedOrder { id }
+            calculatedShippingLine { id }
+            userErrors { field message }
+          }
+        }`, {
+        variables: {
+          id: calculatedOrderId,
+          shippingLine: {
+            title: freeShippingTitle,
+            price: {
+              amount: "0.00",
+              currencyCode
+            }
+          }
+        }
+      });
+      const addShipJson = await addShipRes.json();
+      const addShipErrors = ((_o = (_n = addShipJson.data) == null ? void 0 : _n.orderEditAddShippingLine) == null ? void 0 : _o.userErrors) ?? [];
+      if (addShipErrors.length) {
+        return cors(Response.json({
+          userErrors: addShipErrors
+        }, {
+          status: 422
+        }));
+      }
+      const commitRes2 = await admin.graphql(`#graphql
+        mutation CommitEdit($id: ID!, $staffNote: String) {
+          orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
+            order {
+              id
+              name
+              statusPageUrl
+              totalOutstandingSet { shopMoney { amount currencyCode } }
+            }
+            userErrors { field message }
+          }
+        }`, {
+        variables: {
+          id: calculatedOrderId,
+          staffNote: `Free shipping discount "${discountCode}" applied via customer account`
+        }
+      });
+      const commitJson2 = await commitRes2.json();
+      const commitErrors2 = ((_q = (_p = commitJson2.data) == null ? void 0 : _p.orderEditCommit) == null ? void 0 : _q.userErrors) ?? [];
+      if (commitErrors2.length) {
+        return cors(Response.json({
+          userErrors: commitErrors2
+        }, {
+          status: 422
+        }));
+      }
+      await trackOrderEdit({
+        shop: storeDomain,
+        orderId,
+        featureId: "apply-discount",
+        source
+      });
+      return cors(Response.json({
+        success: true,
+        applied: true,
+        order: commitJson2.data.orderEditCommit.order,
+        appliedCount: 1,
+        appliedProducts: ["Shipping (Free)"],
+        replacedCount: existingShippingLineId ? 1 : 0,
+        skippedProducts: [],
+        discountLabel: resolved.label,
+        warnings: [],
+        userErrors: []
+      }));
+    }
+    if (resolved.type === "bxgy") {
+      let totalBuyQty = 0;
+      let totalBuyAmt = 0;
+      for (const item of allLineItems) {
+        if (lineItemMatchesRule(item, resolved.buyRule)) {
+          const qty = item.editableQuantity ?? item.quantity;
+          const unitPrice = parseFloat(((_s = (_r = item.originalUnitPriceSet) == null ? void 0 : _r.shopMoney) == null ? void 0 : _s.amount) ?? "0");
+          totalBuyQty += qty;
+          totalBuyAmt += qty * unitPrice;
+        }
+      }
+      const hasRequiredBuyQty = totalBuyQty >= resolved.buyRule.minQuantity;
+      const hasRequiredBuyAmt = resolved.buyRule.minAmount <= 0 || totalBuyAmt >= resolved.buyRule.minAmount;
+      if (!hasRequiredBuyQty || !hasRequiredBuyAmt) {
+        const reqMsg = resolved.buyRule.minAmount > 0 ? `purchase at least ${resolved.buyRule.minAmount.toFixed(2)} worth of qualifying products` : `purchase at least ${resolved.buyRule.minQuantity} qualifying product${resolved.buyRule.minQuantity > 1 ? "s" : ""}`;
+        return cors(Response.json({
+          userErrors: [{
+            message: `Discount code "${discountCode}" requires you to ${reqMsg} first.`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+      const eligibleYItems = allLineItems.filter((item) => lineItemMatchesRule(item, resolved.getRule));
+      if (eligibleYItems.length === 0) {
+        return cors(Response.json({
+          userErrors: [{
+            message: `The promotional item for discount code "${discountCode}" is not in this order. Please add it to your order first.`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+      const isSameLineItem = eligibleYItems.length === 1 && lineItemMatchesRule(eligibleYItems[0], resolved.buyRule);
+      if (isSameLineItem) {
+        const itemQty = eligibleYItems[0].editableQuantity ?? eligibleYItems[0].quantity;
+        const neededQty = resolved.buyRule.minQuantity + resolved.getRule.quantity;
+        if (itemQty < neededQty) {
+          return cors(Response.json({
+            userErrors: [{
+              message: `Discount code "${discountCode}" requires at least ${neededQty} units of "${lineItemDisplayName(eligibleYItems[0])}" in your order (Buy ${resolved.buyRule.minQuantity}, Get ${resolved.getRule.quantity}). Current quantity is ${itemQty}.`
+            }]
+          }, {
+            status: 422
+          }));
+        }
+      }
+      const targetItem = eligibleYItems[0];
+      const targetDisplayName = lineItemDisplayName(targetItem);
+      const targetActiveQty = targetItem.editableQuantity ?? targetItem.quantity;
+      const targetUnit = parseFloat(((_u = (_t = targetItem.originalUnitPriceSet) == null ? void 0 : _t.shopMoney) == null ? void 0 : _u.amount) ?? "0");
+      const targetCurrency = ((_w = (_v = targetItem.originalUnitPriceSet) == null ? void 0 : _v.shopMoney) == null ? void 0 : _w.currencyCode) || "USD";
+      const discountQty = Math.min(resolved.getRule.quantity, targetActiveQty);
+      let calculatedDiscount = 0;
+      if (resolved.getRule.kind === "percentage") {
+        const pct = resolved.getRule.percentage ?? 100;
+        calculatedDiscount = round2$3(targetUnit * (pct / 100) * discountQty);
+      } else {
+        const fixedVal = parseFloat(resolved.getRule.amount ?? "0");
+        calculatedDiscount = round2$3(Math.min(fixedVal * discountQty, targetUnit * discountQty));
+      }
+      const state = readLineItemDiscountState(targetItem);
+      if (state.blocked) {
+        if (calculatedDiscount <= state.tag.checkoutAmount) {
+          return cors(Response.json({
+            success: false,
+            applied: false,
+            appliedCount: 0,
+            appliedProducts: [],
+            skippedProducts: [targetDisplayName],
+            discountLabel: resolved.label,
+            warnings: [`"${targetDisplayName}" already has a checkout discount worth ${state.tag.checkoutAmount.toFixed(2)} ${targetCurrency}. "${discountCode}" would only be worth ${calculatedDiscount.toFixed(2)} ${targetCurrency}, so the existing discount was kept.`],
+            userErrors: []
+          }));
+        }
+        if (state.existingApplicationId) {
+          const removeRes = await admin.graphql(`#graphql
+            mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
+              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
+                userErrors { field message }
+              }
+            }`, {
+            variables: {
+              id: calculatedOrderId,
+              discountApplicationId: state.existingApplicationId
+            }
+          });
+          const removeJson = await removeRes.json();
+          if ((_z = (_y = (_x = removeJson.data) == null ? void 0 : _x.orderEditRemoveDiscount) == null ? void 0 : _y.userErrors) == null ? void 0 : _z.length) {
+            return cors(Response.json({
+              userErrors: [{
+                message: `"${targetDisplayName}" already has a discount that cannot be removed.`
+              }]
+            }, {
+              status: 422
+            }));
+          }
+        }
+      } else {
+        if (state.tag.productAmount > 0 && calculatedDiscount <= state.tag.productAmount) {
+          return cors(Response.json({
+            success: false,
+            applied: false,
+            appliedCount: 0,
+            appliedProducts: [],
+            skippedProducts: [targetDisplayName],
+            discountLabel: resolved.label,
+            warnings: [`"${targetDisplayName}" already has a discount applied worth ${state.tag.productAmount.toFixed(2)} ${targetCurrency}. "${discountCode}" would only be worth ${calculatedDiscount.toFixed(2)} ${targetCurrency}, so the existing discount was kept.`],
+            userErrors: []
+          }));
+        }
+        if (state.existingApplicationId && state.existingIsOurs) {
+          await admin.graphql(`#graphql
+            mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
+              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
+                userErrors { field message }
+              }
+            }`, {
+            variables: {
+              id: calculatedOrderId,
+              discountApplicationId: state.existingApplicationId
+            }
+          });
+        }
+      }
+      const bxgyMeta = {
+        code: resolved.code,
+        buyVariantIds: Array.from(resolved.buyRule.variantIds),
+        buyProductIds: Array.from(resolved.buyRule.productIds),
+        buyCollectionIds: Array.from(resolved.buyRule.collectionIds),
+        minQuantity: resolved.buyRule.minQuantity,
+        minAmount: resolved.buyRule.minAmount,
+        getVariantIds: Array.from(resolved.getRule.variantIds),
+        getProductIds: Array.from(resolved.getRule.productIds),
+        getCollectionIds: Array.from(resolved.getRule.collectionIds),
+        getQuantity: resolved.getRule.quantity
+      };
+      const newTag = {
+        checkoutAmount: 0,
+        productAmount: calculatedDiscount,
+        orderAmount: state.tag.orderAmount,
+        label: resolved.label,
+        bxgy: bxgyMeta
+      };
+      const combinedAmount = calculatedDiscount + state.tag.orderAmount;
+      const perUnitAmount = Math.min(combinedAmount / targetActiveQty, targetUnit);
+      const applyRes = await admin.graphql(`#graphql
+        mutation ApplyBxgyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
+          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
+            calculatedLineItem { id }
+            userErrors { field message }
+          }
+        }`, {
+        variables: {
+          id: calculatedOrderId,
+          lineItemId: targetItem.id,
+          discount: {
+            fixedValue: {
+              amount: perUnitAmount.toFixed(2),
+              currencyCode: targetCurrency
+            },
+            description: encodeTag$3(newTag)
+          }
+        }
+      });
+      const applyJson = await applyRes.json();
+      const applyErrors = ((_B = (_A = applyJson.data) == null ? void 0 : _A.orderEditAddLineItemDiscount) == null ? void 0 : _B.userErrors) ?? [];
+      if (applyErrors.length) {
+        return cors(Response.json({
+          userErrors: applyErrors
+        }, {
+          status: 422
+        }));
+      }
+      const commitRes2 = await admin.graphql(`#graphql
+        mutation CommitEdit($id: ID!, $staffNote: String) {
+          orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
+            order {
+              id
+              name
+              statusPageUrl
+              totalOutstandingSet { shopMoney { amount currencyCode } }
+            }
+            userErrors { field message }
+          }
+        }`, {
+        variables: {
+          id: calculatedOrderId,
+          staffNote: `Buy X Get Y discount "${discountCode}" applied via customer account`
+        }
+      });
+      const commitJson2 = await commitRes2.json();
+      const commitErrors2 = ((_D = (_C = commitJson2.data) == null ? void 0 : _C.orderEditCommit) == null ? void 0 : _D.userErrors) ?? [];
+      if (commitErrors2.length) {
+        return cors(Response.json({
+          userErrors: commitErrors2
+        }, {
+          status: 422
+        }));
+      }
+      await trackOrderEdit({
+        shop: storeDomain,
+        orderId,
+        featureId: "apply-discount",
+        source
+      });
+      return cors(Response.json({
+        success: true,
+        applied: true,
+        order: commitJson2.data.orderEditCommit.order,
+        appliedCount: 1,
+        appliedProducts: [targetDisplayName],
+        replacedCount: state.blocked || state.tag.productAmount > 0 ? 1 : 0,
+        skippedProducts: [],
+        discountLabel: resolved.label,
+        warnings: [],
+        userErrors: []
       }));
     }
     const targetLineItems = allLineItems.filter((item) => lineItemMatchesTargeting(item, resolved.targeting));
@@ -5006,9 +5837,9 @@ async function action$9({
       const displayName = lineItemDisplayName(item);
       const state = readLineItemDiscountState(item);
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.shopMoney) == null ? void 0 : _e.amount) ?? "0");
+      const originalUnit = parseFloat(((_F = (_E = item.originalUnitPriceSet) == null ? void 0 : _E.shopMoney) == null ? void 0 : _F.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
-      const currencyCode = state.currencyCode || ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.currencyCode) || "USD";
+      const currencyCode = state.currencyCode || ((_H = (_G = item.originalUnitPriceSet) == null ? void 0 : _G.shopMoney) == null ? void 0 : _H.currencyCode) || "USD";
       const newProductAmount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
         percentage: resolved.percentage
@@ -5036,10 +5867,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_i = (_h = removeJson.data) == null ? void 0 : _h.orderEditRemoveDiscount) == null ? void 0 : _i.userErrors) ?? [];
-          if (((_j = removeJson.errors) == null ? void 0 : _j.length) || removeErrors.length) {
-            const rawMessage = ((_k = removeErrors[0]) == null ? void 0 : _k.message) ?? ((_m = (_l = removeJson.errors) == null ? void 0 : _l[0]) == null ? void 0 : _m.message) ?? "unknown error";
-            warnings.push(`"${displayName}" already has a discount that was applied during checkout and cannot be replaced or removed. Please contact support if you need to change the discount on this product.`);
+          const removeErrors = ((_J = (_I = removeJson.data) == null ? void 0 : _I.orderEditRemoveDiscount) == null ? void 0 : _J.userErrors) ?? [];
+          if (((_K = removeJson.errors) == null ? void 0 : _K.length) || removeErrors.length) {
+            warnings.push(`"${displayName}" already has a discount that was applied during checkout and cannot be replaced or removed.`);
             skippedProducts.push(displayName);
             continue;
           }
@@ -5064,14 +5894,10 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_o = (_n = removeJson.data) == null ? void 0 : _n.orderEditRemoveDiscount) == null ? void 0 : _o.userErrors) ?? [];
-          if (((_p = removeJson.errors) == null ? void 0 : _p.length) || removeErrors.length) {
-            const rawMessage = ((_q = removeErrors[0]) == null ? void 0 : _q.message) ?? ((_s = (_r = removeJson.errors) == null ? void 0 : _r[0]) == null ? void 0 : _s.message) ?? "unknown error";
-            if (/discount code/i.test(rawMessage) && /can'?t be removed/i.test(rawMessage)) {
-              warnings.push(`"${displayName}" already has a discount applied — skipped.`);
-            } else {
-              warnings.push(`Could not update the discount on "${displayName}": ${rawMessage}.`);
-            }
+          const removeErrors = ((_M = (_L = removeJson.data) == null ? void 0 : _L.orderEditRemoveDiscount) == null ? void 0 : _M.userErrors) ?? [];
+          if (((_N = removeJson.errors) == null ? void 0 : _N.length) || removeErrors.length) {
+            const rawMessage = ((_O = removeErrors[0]) == null ? void 0 : _O.message) ?? ((_Q = (_P = removeJson.errors) == null ? void 0 : _P[0]) == null ? void 0 : _Q.message) ?? "unknown error";
+            warnings.push(`Could not update the discount on "${displayName}": ${rawMessage}.`);
             skippedProducts.push(displayName);
             continue;
           }
@@ -5106,19 +5932,15 @@ async function action$9({
               amount: perUnitAmount.toFixed(2),
               currencyCode
             },
-            description: encodeTag(newTag)
+            description: encodeTag$3(newTag)
           }
         }
       });
       const applyJson = await applyRes.json();
-      const applyErrors = ((_u = (_t = applyJson.data) == null ? void 0 : _t.orderEditAddLineItemDiscount) == null ? void 0 : _u.userErrors) ?? [];
-      if (((_v = applyJson.errors) == null ? void 0 : _v.length) || applyErrors.length) {
-        const rawMessage = ((_x = (_w = applyJson.errors) == null ? void 0 : _w[0]) == null ? void 0 : _x.message) ?? ((_y = applyErrors[0]) == null ? void 0 : _y.message) ?? "unknown error";
-        if (state.tag.checkoutAmount > 0 && /discount/i.test(rawMessage)) {
-          warnings.push(`"${displayName}" already has an order-level discount from checkout — could not add another discount on top.`);
-        } else {
-          warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);
-        }
+      const applyErrors = ((_S = (_R = applyJson.data) == null ? void 0 : _R.orderEditAddLineItemDiscount) == null ? void 0 : _S.userErrors) ?? [];
+      if (((_T = applyJson.errors) == null ? void 0 : _T.length) || applyErrors.length) {
+        const rawMessage = ((_V = (_U = applyJson.errors) == null ? void 0 : _U[0]) == null ? void 0 : _V.message) ?? ((_W = applyErrors[0]) == null ? void 0 : _W.message) ?? "unknown error";
+        warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);
         skippedProducts.push(displayName);
         continue;
       }
@@ -5159,7 +5981,7 @@ async function action$9({
       }
     });
     const commitJson = await commitRes.json();
-    const commitErrors = ((_A = (_z = commitJson.data) == null ? void 0 : _z.orderEditCommit) == null ? void 0 : _A.userErrors) ?? [];
+    const commitErrors = ((_Y = (_X = commitJson.data) == null ? void 0 : _X.orderEditCommit) == null ? void 0 : _Y.userErrors) ?? [];
     if (commitErrors.length) {
       return cors(Response.json({
         userErrors: commitErrors
@@ -5186,7 +6008,7 @@ async function action$9({
       userErrors: []
     }));
   } catch (err) {
-    console.error("[order-discount2] Unexpected error:", err);
+    console.error("[order-discount8] Unexpected error:", err);
     const message = err instanceof Error ? err.message : "Internal server error";
     return cors(Response.json({
       userErrors: [{
