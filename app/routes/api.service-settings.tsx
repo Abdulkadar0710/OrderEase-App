@@ -64,7 +64,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Check order edit limit if orderId is provided
   const editLimitInfo = orderId && storeDomain
     ? await checkOrderEditLimit({ shop: storeDomain, orderId })
-    : { isLimitReached: false, currentEditCount: 0, maxEdits: timeLimitRecord?.maxEdits ?? 3 };
+    : { isLimitReached: false, currentEditCount: 0, maxEdits: timeLimitRecord ? timeLimitRecord.maxEdits : 3 };
 
   const settings: Record<string, boolean> = {};
   for (const row of rows) {

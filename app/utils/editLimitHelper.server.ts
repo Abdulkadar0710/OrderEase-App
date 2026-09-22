@@ -31,7 +31,7 @@ export async function checkOrderEditLimit({
     where: { shop },
   });
 
-  const maxEdits = timeLimitRecord?.maxEdits ?? 3; // Default 3 if not explicitly set
+  const maxEdits = timeLimitRecord ? timeLimitRecord.maxEdits : 3; // Default 3 if not explicitly set
 
   // If maxEdits is null or <= 0, editing is unlimited
   if (maxEdits === null || maxEdits <= 0) {
