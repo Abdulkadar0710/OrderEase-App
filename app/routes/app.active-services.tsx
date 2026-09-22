@@ -232,7 +232,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       timeLimit: timeLimitRecord.timeLimit,
       customValue: timeLimitRecord.customValue ?? 1,
       customUnit: timeLimitRecord.customUnit ?? "hours",
-      maxEdits: timeLimitRecord.maxEdits ?? 3,
+      maxEdits: timeLimitRecord.maxEdits ?? null,
     },
     googleApiKey: googleConfig?.apiKey || "",
     initialProducts,
@@ -370,9 +370,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "saveMaxEdits") {
     const maxEditsStr = formData.get("maxEdits") as string;
+    // Store 0 for "unlimited" to avoid MySQL NULL/DEFAULT-3 ambiguity.
+    // The helpers already treat null or <= 0 as unlimited.
     const maxEdits =
       !maxEditsStr || maxEditsStr === "0" || maxEditsStr === "unlimited"
-        ? null
+        ? 0
         : parseInt(maxEditsStr, 10);
 
     console.log(
@@ -508,50 +510,81 @@ interface MaxEditsSectionProps {
   initialMaxEdits: number | null;
 }
 
+const getMaxEditsPreset = (val: number | null | undefined): string => {
+  if (val === null || val === undefined || val === 0) {
+    return "unlimited";
+  }
+  const num = Number(val);
+  if ([1, 2, 3, 5].includes(num)) {
+    return String(num);
+  }
+  return "custom";
+};
+
 function MaxEditsSection({
   initialMaxEdits,
 }: MaxEditsSectionProps): JSX.Element {
   const fetcher = useFetcher();
-  const initialPreset =
-    initialMaxEdits === null || initialMaxEdits === 0
-      ? "unlimited"
-      : [1, 2, 3, 5].includes(initialMaxEdits)
-        ? String(initialMaxEdits)
-        : "custom";
+  const initialPreset = getMaxEditsPreset(initialMaxEdits);
 
-  const [selectedPreset, setSelectedPreset] = useEffectState(initialPreset);
-  const [customVal, setCustomVal] = useEffectState(initialMaxEdits ?? 3);
-  const [isSaved, setIsSaved] = useEffectState(false);
+  // Use a ref to track the last explicitly saved value so we can prevent
+  // stale loader data from overriding an in-progress or just-saved selection.
+  const lastSavedPresetRef = useRef<string | null>(null);
 
+  const [selectedPreset, setSelectedPreset] = useState(initialPreset);
+  const [customVal, setCustomVal] = useState(
+    typeof initialMaxEdits === "number" && initialMaxEdits > 0
+      ? initialMaxEdits
+      : 3,
+  );
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Sync from loader data ONLY when there is no in-flight or just-completed save.
+  // This prevents the loader re-validation from overriding the user's click.
   useEffect(() => {
-    const preset =
-      initialMaxEdits === null || initialMaxEdits === 0
-        ? "unlimited"
-        : [1, 2, 3, 5].includes(initialMaxEdits)
-          ? String(initialMaxEdits)
-          : "custom";
-    setSelectedPreset(preset);
-    setCustomVal(initialMaxEdits ?? 3);
+    if (lastSavedPresetRef.current === null) {
+      setSelectedPreset(getMaxEditsPreset(initialMaxEdits));
+      if (typeof initialMaxEdits === "number" && initialMaxEdits > 0) {
+        setCustomVal(initialMaxEdits);
+      }
+    }
   }, [initialMaxEdits]);
 
   useEffect(() => {
+    if (fetcher.state === "submitting") {
+      // Mark that a save is in progress; block loader sync until confirmed.
+      return;
+    }
     if (
       fetcher.state === "idle" &&
       fetcher.data?.ok &&
       fetcher.data?.type === "maxEdits"
     ) {
+      const savedMax = fetcher.data.result?.maxEdits;
+      const savedPreset = getMaxEditsPreset(savedMax);
+      lastSavedPresetRef.current = savedPreset;
+      setSelectedPreset(savedPreset);
+      if (typeof savedMax === "number" && savedMax > 0) {
+        setCustomVal(savedMax);
+      }
       setIsSaved(true);
       if (typeof window !== "undefined" && (window as any).shopify?.toast) {
         (window as any).shopify.toast.show(
           "Maximum order edit limit updated successfully!",
         );
       }
-      const timer = setTimeout(() => setIsSaved(false), 4000);
+      const timer = setTimeout(() => {
+        setIsSaved(false);
+        // Allow loader to sync again after toast clears.
+        lastSavedPresetRef.current = null;
+      }, 4000);
       return () => clearTimeout(timer);
     }
   }, [fetcher.state, fetcher.data]);
 
   const handleSave = (preset: string, cVal?: number) => {
+    // Optimistically lock the selection immediately.
+    lastSavedPresetRef.current = preset;
     let valToSend = preset;
     if (preset === "custom") {
       valToSend = String(cVal ?? customVal);
