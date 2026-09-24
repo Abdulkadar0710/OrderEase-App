@@ -27,7 +27,8 @@ export function ApplyDiscountCode() {
       setResult(res);
       if (res?.applied) {
         setCode('');
-        notifyUpdateSuccess(res?.order?.statusPageUrl);
+        const statusUrl = res?.order?.statusPageUrl ?? order?.statusPageUrl ?? null;
+        notifyUpdateSuccess(statusUrl);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply discount code.');
