@@ -427,6 +427,33 @@ export async function getServiceSettings(orderId) {
  */
 export async function checkVariantQuantity(variantId) {
   if (!variantId) return null;
+
+  // Try backend Admin API first to get reliable real-time inventory quantity
+  try {
+    let token = '';
+    if (typeof shopify !== 'undefined' && shopify.sessionToken?.get) {
+      token = await shopify.sessionToken.get();
+    }
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${APP_URL}/api/order-edit/variant-stock?variantId=${encodeURIComponent(variantId)}`, {
+      headers,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (typeof data.inventoryQuantity === 'number' || data.availableForSale !== undefined)) {
+        return {
+          availableForSale: Boolean(data.availableForSale),
+          quantityAvailable: typeof data.inventoryQuantity === 'number' ? data.inventoryQuantity : null,
+        };
+      }
+    }
+  } catch (backendErr) {
+    console.warn('Backend inventory check failed, trying storefront fallback:', backendErr);
+  }
+
+  // Fallback to storefront API
   const QUERY = `#graphql
     query GetVariantQuantity($id: ID!) {
       node(id: $id) {

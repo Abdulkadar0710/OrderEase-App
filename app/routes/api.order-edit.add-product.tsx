@@ -10,21 +10,57 @@ import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
  */
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { cors } = await authenticate.public.customerAccount(request);
+  const { sessionToken, cors } = await authenticate.public.customerAccount(request);
 
-  return cors(
-    new Response(
-      JSON.stringify({
+  const url = new URL(request.url);
+  const variantId = url.searchParams.get("variantId");
+
+  if (!variantId) {
+    return cors(
+      Response.json({
         success: true,
         message: "Customer Account GET working!",
       }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+    );
+  }
+
+  const storeDomain = sessionToken?.dest?.replace(/^https?:\/\//, "");
+  if (!storeDomain) {
+    return cors(Response.json({ error: "Missing store domain" }, { status: 400 }));
+  }
+
+  const { admin } = await unauthenticated.admin(storeDomain);
+
+  try {
+    const variantRes = await admin.graphql(
+      `#graphql
+      query GetVariantStock($id: ID!) {
+        productVariant(id: $id) {
+          id
+          title
+          availableForSale
+          inventoryQuantity
+        }
+      }`,
+      { variables: { id: variantId } },
+    );
+    const variantJson = await variantRes.json();
+    const variant = variantJson.data?.productVariant;
+    const invQty = variant?.inventoryQuantity;
+
+    return cors(
+      Response.json({
+        id: variant?.id || variantId,
+        availableForSale: Boolean(variant?.availableForSale),
+        inventoryQuantity: typeof invQty === "number" ? invQty : null,
+      }),
+    );
+  } catch (err: unknown) {
+    console.error("[add-product loader] Error fetching inventory:", err);
+    return cors(Response.json({ error: "Failed to fetch stock" }, { status: 500 }));
+  }
 }
+
 
 export async function action({ request }: ActionFunctionArgs) {
   const { sessionToken, cors } =
