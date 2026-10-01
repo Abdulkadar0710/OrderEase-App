@@ -32,11 +32,19 @@ import {
 
 type Money = { amount: string; currencyCode: string };
 
+export interface DiscountCombinesWith {
+  orderDiscounts: boolean;
+  productDiscounts: boolean;
+  shippingDiscounts: boolean;
+}
+
 type DiscountApplicationNode = {
   id: string;
   __typename: string;
   description?: string | null;
   targetSelection?: string | null;
+  appliedTo?: "LINE" | "ORDER" | string | null;
+  code?: string | null;
 };
 
 type AllocationNode = {
@@ -180,6 +188,7 @@ type ResolvedDiscount =
       currencyCode?: string;
       label: string;
       targeting: Targeting;
+      combinesWith: DiscountCombinesWith;
     }
   | {
       type: "bxgy";
@@ -202,6 +211,7 @@ type ResolvedDiscount =
         amount?: string;
         currencyCode?: string;
       };
+      combinesWith: DiscountCombinesWith;
     }
   | {
       type: "free_shipping";
@@ -210,7 +220,151 @@ type ResolvedDiscount =
       maximumShippingPrice?: number | null;
       minimumQuantity?: number | null;
       minimumSubtotal?: { amount: number; currencyCode: string } | null;
+      combinesWith: DiscountCombinesWith;
     };
+
+export interface ExistingDiscountSummary {
+  id: string;
+  typename: string;
+  codeOrLabel: string;
+  appliedTo: "LINE" | "ORDER";
+  totalAmount: number;
+  currencyCode: string;
+  lineItemIds: string[];
+  isOurs: boolean;
+}
+
+function collectExistingDiscounts(allLineItems: LineItemNode[]): Map<string, ExistingDiscountSummary> {
+  const map = new Map<string, ExistingDiscountSummary>();
+
+  for (const item of allLineItems) {
+    const allocations = item.calculatedDiscountAllocations ?? [];
+    for (const alloc of allocations) {
+      const app = alloc.discountApplication;
+      if (!app || !app.id) continue;
+
+      const amount = parseFloat(alloc.allocatedAmountSet?.shopMoney?.amount ?? "0");
+      const currency = alloc.allocatedAmountSet?.shopMoney?.currencyCode ?? "USD";
+
+      let codeOrLabel = "";
+      if (app.code) {
+        codeOrLabel = app.code;
+      } else if (app.description) {
+        const decoded = decodeTag(app.description);
+        codeOrLabel = (decoded?.bxgy?.code || decoded?.label || app.description).trim();
+      }
+
+      const appliedTo = app.appliedTo === "ORDER" || app.targetSelection === "ALL" ? "ORDER" : "LINE";
+      const isOurs = app.__typename === APP_ORIGIN_TYPENAME || app.__typename === "CalculatedManualDiscountApplication";
+
+      if (!map.has(app.id)) {
+        map.set(app.id, {
+          id: app.id,
+          typename: app.__typename,
+          codeOrLabel,
+          appliedTo,
+          totalAmount: amount,
+          currencyCode: currency,
+          lineItemIds: [item.id],
+          isOurs,
+        });
+      } else {
+        const existing = map.get(app.id)!;
+        existing.totalAmount = round2(existing.totalAmount + amount);
+        if (!existing.lineItemIds.includes(item.id)) {
+          existing.lineItemIds.push(item.id);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+async function getCombinesWithForExistingDiscount(
+  admin: Awaited<ReturnType<typeof unauthenticated.admin>>["admin"],
+  code: string,
+): Promise<DiscountCombinesWith> {
+  const cleanCode = code.trim().toUpperCase();
+  if (!cleanCode) {
+    return { orderDiscounts: false, productDiscounts: false, shippingDiscounts: false };
+  }
+
+  try {
+    const res = await admin.graphql(
+      `#graphql
+      query LookupExistingDiscountCode($code: String!) {
+        codeDiscountNodeByCode(code: $code) {
+          codeDiscount {
+            __typename
+            ... on DiscountCodeBasic {
+              combinesWith {
+                orderDiscounts
+                productDiscounts
+                shippingDiscounts
+              }
+            }
+            ... on DiscountCodeBxgy {
+              combinesWith {
+                orderDiscounts
+                productDiscounts
+                shippingDiscounts
+              }
+            }
+            ... on DiscountCodeFreeShipping {
+              combinesWith {
+                orderDiscounts
+                productDiscounts
+                shippingDiscounts
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { code: cleanCode } },
+    );
+    const json = await res.json();
+    const codeDiscount = json.data?.codeDiscountNodeByCode?.codeDiscount;
+    if (codeDiscount?.combinesWith) {
+      return {
+        orderDiscounts: !!codeDiscount.combinesWith.orderDiscounts,
+        productDiscounts: !!codeDiscount.combinesWith.productDiscounts,
+        shippingDiscounts: !!codeDiscount.combinesWith.shippingDiscounts,
+      };
+    }
+  } catch (e) {
+    console.error("[getCombinesWithForExistingDiscount] error:", e);
+  }
+
+  return {
+    orderDiscounts: false,
+    productDiscounts: false,
+    shippingDiscounts: false,
+  };
+}
+
+function canDiscountsCombine(
+  incoming: { type: "product" | "order" | "shipping"; combinesWith: DiscountCombinesWith },
+  existing: { appliedTo: "LINE" | "ORDER"; combinesWith: DiscountCombinesWith },
+): boolean {
+  if (incoming.type === "product") {
+    if (existing.appliedTo === "LINE") {
+      return incoming.combinesWith.productDiscounts && existing.combinesWith.productDiscounts;
+    } else {
+      return incoming.combinesWith.orderDiscounts && existing.combinesWith.productDiscounts;
+    }
+  }
+
+  if (incoming.type === "shipping") {
+    if (existing.appliedTo === "LINE") {
+      return incoming.combinesWith.productDiscounts && existing.combinesWith.shippingDiscounts;
+    } else {
+      return incoming.combinesWith.orderDiscounts && existing.combinesWith.shippingDiscounts;
+    }
+  }
+
+  return false;
+}
 
 /** Checks whether a line item matches targeting criteria. */
 function lineItemMatchesRule(
@@ -253,10 +407,18 @@ async function resolveDiscountCode(
           ... on DiscountCodeBasic {
             status
             title
+            combinesWith {
+              orderDiscounts
+              productDiscounts
+              shippingDiscounts
+            }
             customerGets {
               value {
                 ... on DiscountPercentage { percentage }
-                ... on DiscountAmount { amount { amount currencyCode } }
+                ... on DiscountAmount {
+                  amount { amount currencyCode }
+                  appliesOnEachItem
+                }
               }
               items {
                 __typename
@@ -276,6 +438,11 @@ async function resolveDiscountCode(
           ... on DiscountCodeBxgy {
             status
             title
+            combinesWith {
+              orderDiscounts
+              productDiscounts
+              shippingDiscounts
+            }
             customerBuys {
               value {
                 ... on DiscountQuantity { quantity }
@@ -317,6 +484,11 @@ async function resolveDiscountCode(
           ... on DiscountCodeFreeShipping {
             status
             title
+            combinesWith {
+              orderDiscounts
+              productDiscounts
+              shippingDiscounts
+            }
             maximumShippingPrice {
               amount
             }
@@ -354,7 +526,17 @@ async function resolveDiscountCode(
 
   // 1. DiscountCodeBasic (Amount off products)
   if (codeDiscount.__typename === "DiscountCodeBasic") {
+    const value = codeDiscount.customerGets?.value;
     const items = codeDiscount.customerGets?.items;
+
+    // Check if amount has appliesOnEachItem === false (order-level amount off)
+    const amountVal = value && "amount" in value ? value.amount : null;
+    if (amountVal && amountVal.appliesOnEachItem === false) {
+      return {
+        ok: false,
+        message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`,
+      };
+    }
 
     // "AllDiscountItems" means the code discounts everything in the cart —
     // that's an order-level discount code, which this route does not allow.
@@ -383,11 +565,15 @@ async function resolveDiscountCode(
     }
 
     const targeting: Targeting = { type: "selection", variantIds, productIds, collectionIds };
-    const value = codeDiscount.customerGets?.value;
     const label = codeDiscount.title || cleanCode;
+    const combinesWith: DiscountCombinesWith = {
+      orderDiscounts: !!codeDiscount.combinesWith?.orderDiscounts,
+      productDiscounts: !!codeDiscount.combinesWith?.productDiscounts,
+      shippingDiscounts: !!codeDiscount.combinesWith?.shippingDiscounts,
+    };
 
     if (value?.percentage != null) {
-      return { ok: true, type: "basic", kind: "percentage", percentage: value.percentage * 100, label, targeting };
+      return { ok: true, type: "basic", kind: "percentage", percentage: value.percentage * 100, label, targeting, combinesWith };
     }
     if (value?.amount?.amount) {
       return {
@@ -398,6 +584,7 @@ async function resolveDiscountCode(
         currencyCode: value.amount.currencyCode,
         label,
         targeting,
+        combinesWith,
       };
     }
     return { ok: false, message: `Discount code "${code}" does not have a supported percentage or fixed value.` };
@@ -446,11 +633,18 @@ async function resolveDiscountCode(
       getPercentage = 100;
     }
 
+    const combinesWith: DiscountCombinesWith = {
+      orderDiscounts: !!codeDiscount.combinesWith?.orderDiscounts,
+      productDiscounts: !!codeDiscount.combinesWith?.productDiscounts,
+      shippingDiscounts: !!codeDiscount.combinesWith?.shippingDiscounts,
+    };
+
     return {
       ok: true,
       type: "bxgy",
       label: codeDiscount.title || cleanCode,
       code: cleanCode,
+      combinesWith,
       buyRule: {
         variantIds: buyVariantIds,
         productIds: buyProductIds,
@@ -490,11 +684,18 @@ async function resolveDiscountCode(
       };
     }
 
+    const combinesWith: DiscountCombinesWith = {
+      orderDiscounts: !!codeDiscount.combinesWith?.orderDiscounts,
+      productDiscounts: !!codeDiscount.combinesWith?.productDiscounts,
+      shippingDiscounts: !!codeDiscount.combinesWith?.shippingDiscounts,
+    };
+
     return {
       ok: true,
       type: "free_shipping",
       label: codeDiscount.title || cleanCode,
       code: cleanCode,
+      combinesWith,
       maximumShippingPrice: maxPrice,
       minimumQuantity: minQty,
       minimumSubtotal: minSubtotal,
@@ -621,8 +822,12 @@ export async function action({ request }: ActionFunctionArgs) {
                   discountApplication {
                     id
                     __typename
+                    appliedTo
                     description
                     targetSelection
+                    ... on CalculatedDiscountCodeApplication {
+                      code
+                    }
                   }
                 }
               }
@@ -745,6 +950,76 @@ export async function action({ request }: ActionFunctionArgs) {
             { status: 422 },
           ),
         );
+      }
+
+      // Combinations check with existing discounts on the order:
+      const existingDiscounts = collectExistingDiscounts(allLineItems);
+      const incompatibleDiscounts: ExistingDiscountSummary[] = [];
+
+      for (const existingApp of existingDiscounts.values()) {
+        const existingCombinesWith = await getCombinesWithForExistingDiscount(admin, existingApp.codeOrLabel);
+        const canCombine = canDiscountsCombine(
+          { type: "shipping", combinesWith: resolved.combinesWith },
+          { appliedTo: existingApp.appliedTo, combinesWith: existingCombinesWith },
+        );
+
+        if (!canCombine) {
+          incompatibleDiscounts.push(existingApp);
+        }
+      }
+
+      if (incompatibleDiscounts.length > 0) {
+        const totalIncompatibleAmount = round2(
+          incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0),
+        );
+
+        if (totalIncompatibleAmount >= existingShippingAmount) {
+          const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
+          return cors(
+            Response.json({
+              success: false,
+              applied: false,
+              appliedCount: 0,
+              appliedProducts: [],
+              skippedProducts: ["Shipping"],
+              discountLabel: resolved.label,
+              warnings: [
+                `Discount code "${discountCode}" cannot be combined with existing discount "${incompNames}". The existing discount (${totalIncompatibleAmount.toFixed(2)} ${currencyCode}) was kept because it offers a higher discount than "${discountCode}" (${existingShippingAmount.toFixed(2)} ${currencyCode}).`,
+              ],
+              userErrors: [],
+            }),
+          );
+        }
+
+        // Free shipping offers a higher discount: remove incompatible discounts
+        for (const incomp of incompatibleDiscounts) {
+          const removeRes = await admin.graphql(
+            `#graphql
+            mutation RemoveIncompatibleDiscount($id: ID!, $discountApplicationId: ID!) {
+              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
+                userErrors { field message }
+              }
+            }`,
+            { variables: { id: calculatedOrderId, discountApplicationId: incomp.id } },
+          );
+          const removeJson = await removeRes.json();
+          const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
+          if (removeJson.errors?.length || removeErrors.length) {
+            const rawMsg = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
+            return cors(
+              Response.json(
+                {
+                  userErrors: [
+                    {
+                      message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`,
+                    },
+                  ],
+                },
+                { status: 422 },
+              ),
+            );
+          }
+        }
       }
 
       if (existingShippingLineId) {
@@ -945,6 +1220,81 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const state = readLineItemDiscountState(targetItem);
 
+      // Combinations check with other existing discounts on the order:
+      const existingDiscounts = collectExistingDiscounts(allLineItems);
+      const incompatibleDiscounts: ExistingDiscountSummary[] = [];
+
+      for (const existingApp of existingDiscounts.values()) {
+        // If this existing discount is on targetItem, it is handled via line-level replacement below
+        if (existingApp.id === state.existingApplicationId) {
+          continue;
+        }
+
+        const existingCombinesWith = await getCombinesWithForExistingDiscount(admin, existingApp.codeOrLabel);
+        const canCombine = canDiscountsCombine(
+          { type: "product", combinesWith: resolved.combinesWith },
+          { appliedTo: existingApp.appliedTo, combinesWith: existingCombinesWith },
+        );
+
+        if (!canCombine) {
+          incompatibleDiscounts.push(existingApp);
+        }
+      }
+
+      if (incompatibleDiscounts.length > 0) {
+        const totalIncompatibleAmount = round2(
+          incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0),
+        );
+
+        if (totalIncompatibleAmount >= calculatedDiscount) {
+          const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
+          return cors(
+            Response.json({
+              success: false,
+              applied: false,
+              appliedCount: 0,
+              appliedProducts: [],
+              skippedProducts: [targetDisplayName],
+              discountLabel: resolved.label,
+              warnings: [
+                `Discount code "${discountCode}" cannot be combined with existing discount "${incompNames}". The existing discount (${totalIncompatibleAmount.toFixed(2)} ${targetCurrency}) was kept because it offers a higher discount than "${discountCode}" (${calculatedDiscount.toFixed(2)} ${targetCurrency}).`,
+              ],
+              userErrors: [],
+            }),
+          );
+        }
+
+        // New discount offers a higher discount: remove incompatible discounts
+        for (const incomp of incompatibleDiscounts) {
+          const removeRes = await admin.graphql(
+            `#graphql
+            mutation RemoveIncompatibleDiscount($id: ID!, $discountApplicationId: ID!) {
+              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
+                userErrors { field message }
+              }
+            }`,
+            { variables: { id: calculatedOrderId, discountApplicationId: incomp.id } },
+          );
+          const removeJson = await removeRes.json();
+          const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
+          if (removeJson.errors?.length || removeErrors.length) {
+            const rawMsg = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
+            return cors(
+              Response.json(
+                {
+                  userErrors: [
+                    {
+                      message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`,
+                    },
+                  ],
+                },
+                { status: 422 },
+              ),
+            );
+          }
+        }
+      }
+
       if (state.blocked) {
         if (calculatedDiscount <= state.tag.checkoutAmount) {
           return cors(
@@ -1126,6 +1476,100 @@ export async function action({ request }: ActionFunctionArgs) {
     const skippedProducts: string[] = [];
     let appliedCount = 0;
     let replacedCount = 0;
+
+    // Precalculate total new discount across eligible target items
+    let totalNewDiscount = 0;
+    for (const item of targetLineItems) {
+      const activeQty = item.editableQuantity ?? item.quantity;
+      const originalUnit = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount ?? "0");
+      const originalLineTotal = originalUnit * activeQty;
+      const amount = discountAmountAgainst(
+        resolved.kind === "percentage"
+          ? { kind: "percentage", percentage: resolved.percentage! }
+          : { kind: "fixed", amount: resolved.amount! },
+        originalLineTotal,
+      );
+      totalNewDiscount = round2(totalNewDiscount + amount);
+    }
+
+    // Combinations check with other existing discounts on the order:
+    const targetItemIds = new Set(targetLineItems.map((i) => i.id));
+    const existingDiscounts = collectExistingDiscounts(allLineItems);
+    const incompatibleDiscounts: ExistingDiscountSummary[] = [];
+
+    for (const existingApp of existingDiscounts.values()) {
+      // If all line items for this existing discount are within targetItemIds and it's a line-level discount,
+      // it is handled via item-level replacement/comparison
+      const allOnTargetItems = existingApp.lineItemIds.every((id) => targetItemIds.has(id));
+      if (allOnTargetItems && existingApp.appliedTo === "LINE") {
+        continue;
+      }
+
+      const existingCombinesWith = await getCombinesWithForExistingDiscount(admin, existingApp.codeOrLabel);
+      const canCombine = canDiscountsCombine(
+        { type: "product", combinesWith: resolved.combinesWith },
+        { appliedTo: existingApp.appliedTo, combinesWith: existingCombinesWith },
+      );
+
+      if (!canCombine) {
+        incompatibleDiscounts.push(existingApp);
+      }
+    }
+
+    if (incompatibleDiscounts.length > 0) {
+      const totalIncompatibleAmount = round2(
+        incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0),
+      );
+      const orderCurrency = targetLineItems[0]?.originalUnitPriceSet?.shopMoney?.currencyCode || "USD";
+
+      if (totalIncompatibleAmount >= totalNewDiscount) {
+        const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
+        return cors(
+          Response.json({
+            success: false,
+            applied: false,
+            appliedCount: 0,
+            appliedProducts: [],
+            skippedProducts: targetLineItems.map((i) => lineItemDisplayName(i)),
+            discountLabel: resolved.label,
+            warnings: [
+              `Discount code "${discountCode}" cannot be combined with existing discount "${incompNames}". The existing discount (${totalIncompatibleAmount.toFixed(2)} ${orderCurrency}) was kept because it offers a higher discount than "${discountCode}" (${totalNewDiscount.toFixed(2)} ${orderCurrency}).`,
+            ],
+            userErrors: [],
+          }),
+        );
+      }
+
+      // New discount offers a higher discount: remove incompatible discounts
+      for (const incomp of incompatibleDiscounts) {
+        const removeRes = await admin.graphql(
+          `#graphql
+          mutation RemoveIncompatibleDiscount($id: ID!, $discountApplicationId: ID!) {
+            orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
+              userErrors { field message }
+            }
+          }`,
+          { variables: { id: calculatedOrderId, discountApplicationId: incomp.id } },
+        );
+        const removeJson = await removeRes.json();
+        const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
+        if (removeJson.errors?.length || removeErrors.length) {
+          const rawMsg = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
+          return cors(
+            Response.json(
+              {
+                userErrors: [
+                  {
+                    message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`,
+                  },
+                ],
+              },
+              { status: 422 },
+            ),
+          );
+        }
+      }
+    }
 
     for (const item of targetLineItems) {
       const displayName = lineItemDisplayName(item);
