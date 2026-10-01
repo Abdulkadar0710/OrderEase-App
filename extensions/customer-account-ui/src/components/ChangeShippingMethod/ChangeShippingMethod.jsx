@@ -80,10 +80,15 @@ export function ChangeShippingMethod() {
     selectedOption &&
     (
       normalizeTitle(currentShipping.title) === normalizeTitle(selectedOption.title) ||
-      normalizeTitle(currentShipping.title).includes(normalizeTitle(selectedOption.title)) ||
-      normalizeTitle(selectedOption.title).includes(normalizeTitle(currentShipping.title))
+      normalizeTitle(currentShipping.title).replace(/alreadyapplied/g, '') === normalizeTitle(selectedOption.title).replace(/alreadyapplied/g, '')
     )
   );
+
+  const handleSelectOption = (optId) => {
+    setSelectedOptionId(optId);
+    setSuccess(false);
+    setError(null);
+  };
 
   const handleSave = async () => {
     if (!orderId || !selectedOption || isSameAsCurrent) return;
@@ -101,7 +106,11 @@ export function ChangeShippingMethod() {
       });
 
       setLastResult(result);
-      notifyUpdateSuccess(result?.order?.statusPageUrl);
+      setCurrentShipping({
+        title: selectedOption.title,
+        amount: String(selectedOption.price),
+      });
+      notifyUpdateSuccess?.(result?.order?.statusPageUrl);
 
       if (result.balanceDue?.amount > 0) {
         // Balance due handled statically
@@ -114,6 +123,8 @@ export function ChangeShippingMethod() {
       setSubmitting(false);
     }
   };
+
+  const isButtonDisabled = submitting || isSameAsCurrent || !selectedOption || success;
 
   return (
     <s-stack direction="block" gap="base">
@@ -190,7 +201,7 @@ export function ChangeShippingMethod() {
                             >
                               <s-clickable
                                 disabled={submitting}
-                                onClick={() => setSelectedOptionId(option.id)}
+                                onClick={() => handleSelectOption(option.id)}
                               >
                                 <s-stack direction="inline" alignItems="center" justifyContent="space-between" gap="base">
                                   <s-stack direction="inline" alignItems="center" gap="small-200">
@@ -225,7 +236,7 @@ export function ChangeShippingMethod() {
                     <s-stack direction="inline" justifyContent="end">
                       <s-button
                         variant="primary"
-                        disabled={submitting || isSameAsCurrent || !selectedOption}
+                        disabled={isButtonDisabled}
                         loading={submitting}
                         onClick={handleSave}
                       >

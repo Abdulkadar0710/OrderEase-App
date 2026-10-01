@@ -78,10 +78,15 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
     selectedOption &&
     (
       normalizeTitle(currentShipping.title) === normalizeTitle(selectedOption.title) ||
-      normalizeTitle(currentShipping.title).includes(normalizeTitle(selectedOption.title)) ||
-      normalizeTitle(selectedOption.title).includes(normalizeTitle(currentShipping.title))
+      normalizeTitle(currentShipping.title).replace(/alreadyapplied/g, '') === normalizeTitle(selectedOption.title).replace(/alreadyapplied/g, '')
     )
   );
+
+  const handleSelectOption = (optId) => {
+    setSelectedOptionId(optId);
+    setSuccess(false);
+    setError(null);
+  };
 
   const handleSave = async () => {
     if (!orderId || !selectedOption || isSameAsCurrent) return;
@@ -99,6 +104,10 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
       });
 
       setLastResult(result);
+      setCurrentShipping({
+        title: selectedOption.title,
+        amount: String(selectedOption.price),
+      });
 
       if (result.balanceDue?.amount > 0) {
         // BalanceDueRedirect handles user redirect
@@ -111,6 +120,8 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
       setSubmitting(false);
     }
   };
+
+  const isButtonDisabled = submitting || isSameAsCurrent || !selectedOption || success;
 
   return (
     <s-stack direction="block" gap="base">
@@ -187,7 +198,7 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
                             >
                               <s-clickable
                                 disabled={submitting}
-                                onClick={() => setSelectedOptionId(option.id)}
+                                onClick={() => handleSelectOption(option.id)}
                               >
                                 <s-stack direction="inline" alignItems="center" justifyContent="space-between" gap="base">
                                   <s-stack direction="inline" alignItems="center" gap="small-200">
@@ -222,7 +233,7 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
                     <s-stack direction="inline" justifyContent="end">
                       <s-button
                         variant="primary"
-                        disabled={submitting || isSameAsCurrent || !selectedOption}
+                        disabled={isButtonDisabled}
                         loading={submitting}
                         onClick={handleSave}
                       >
