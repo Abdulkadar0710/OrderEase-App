@@ -768,19 +768,6 @@ export default function HelpPage(): JSX.Element {
               Insights & Analytics
             </Link>
           </s-list-item>
-          <s-list-item>
-            <Link
-              to={`/app${location.search}`}
-              style={{
-                color: "#2c6ecb",
-                textDecoration: "underline",
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-            >
-              Dashboard
-            </Link>
-          </s-list-item>
         </s-unordered-list>
       </s-section>
     </s-page>
