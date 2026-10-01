@@ -27,7 +27,7 @@ export function formatOrderId(id) {
 /** 
  * Adds a product variant to the current order.
  */
-export async function addProductToOrder({ orderId, variantId, quantity }) {
+export async function addProductToOrder({ orderId, variantId, quantity, confirmAvailableQuantity = false }) {
   const token = await shopify.sessionToken.get();
   const formattedOrderId = formatOrderId(orderId);
 
@@ -37,7 +37,7 @@ export async function addProductToOrder({ orderId, variantId, quantity }) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ orderId: formattedOrderId, variantId, quantity, source: 'checkout_ui' }),
+    body: JSON.stringify({ orderId: formattedOrderId, variantId, quantity, confirmAvailableQuantity, source: 'checkout_ui' }),
   });
 
   const result = await response.json();
@@ -45,7 +45,11 @@ export async function addProductToOrder({ orderId, variantId, quantity }) {
   if (!response.ok || result.userErrors?.length) {
     const message =
       result.userErrors?.[0]?.message || 'Could not add product to order.';
-    throw new Error(message);
+    const err = new Error(message);
+    if (result.availableQuantity !== undefined) {
+      err.availableQuantity = result.availableQuantity;
+    }
+    throw err;
   }
 
   return result;
@@ -420,6 +424,7 @@ export async function checkVariantQuantity(variantId) {
           id
           title
           availableForSale
+          quantityAvailable
         }
       }
     }
@@ -432,7 +437,7 @@ export async function checkVariantQuantity(variantId) {
     if (errors?.length || !data?.node) return null;
     return {
       availableForSale: Boolean(data.node.availableForSale),
-      quantityAvailable: null,
+      quantityAvailable: typeof data.node.quantityAvailable === 'number' ? data.node.quantityAvailable : null,
     };
   } catch (err) {
     console.warn('Inventory check failed:', err);

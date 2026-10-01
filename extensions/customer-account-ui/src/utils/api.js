@@ -20,7 +20,7 @@ const APP_URL = 'https://orderease-app-production.up.railway.app';
  * @param {number} params.quantity - Quantity to add.
  * @returns {Promise<{order: Object, balanceDue: Object|null}>}
  */
-export async function addProductToOrder({ orderId, variantId, quantity }) {
+export async function addProductToOrder({ orderId, variantId, quantity, confirmAvailableQuantity = false }) {
   const token = await shopify.sessionToken.get();
 
   const response = await fetch(`${APP_URL}/api/order-edit/add-product`, {
@@ -29,7 +29,7 @@ export async function addProductToOrder({ orderId, variantId, quantity }) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ orderId, variantId, quantity, source: 'customer_account_ui' }),
+    body: JSON.stringify({ orderId, variantId, quantity, confirmAvailableQuantity, source: 'customer_account_ui' }),
   });
 
   const result = await response.json();
@@ -37,7 +37,11 @@ export async function addProductToOrder({ orderId, variantId, quantity }) {
   if (!response.ok || result.userErrors?.length) {
     const message =
       result.userErrors?.[0]?.message || 'Could not add product to order.';
-    throw new Error(message);
+    const err = new Error(message);
+    if (result.availableQuantity !== undefined) {
+      err.availableQuantity = result.availableQuantity;
+    }
+    throw err;
   }
 
   return result;
@@ -430,6 +434,7 @@ export async function checkVariantQuantity(variantId) {
           id
           title
           availableForSale
+          quantityAvailable
         }
       }
     }
@@ -442,7 +447,7 @@ export async function checkVariantQuantity(variantId) {
     if (errors?.length || !data?.node) return null;
     return {
       availableForSale: Boolean(data.node.availableForSale),
-      quantityAvailable: null,
+      quantityAvailable: typeof data.node.quantityAvailable === 'number' ? data.node.quantityAvailable : null,
     };
   } catch (err) {
     console.warn('Inventory check failed:', err);

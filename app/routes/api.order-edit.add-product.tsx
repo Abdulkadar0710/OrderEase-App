@@ -44,7 +44,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const { admin } = await unauthenticated.admin(storeDomain);
 
   const body = await request.json();
-  const { orderId, variantId, quantity, source } = body || {};
+  const { orderId, variantId, quantity, confirmAvailableQuantity, source } = body || {};
 
   if (!orderId || !variantId || !quantity) {
     return cors(
@@ -103,6 +103,21 @@ export async function action({ request }: ActionFunctionArgs) {
           );
         }
         if (actualQuantity > invQty) {
+          if (!confirmAvailableQuantity) {
+            return cors(
+              Response.json(
+                {
+                  userErrors: [
+                    {
+                      message: `This product is not available in the required quantity of ${actualQuantity}. Only ${invQty} units are available in stock. Please confirm to add ${invQty} units to your order.`,
+                    },
+                  ],
+                  availableQuantity: invQty,
+                },
+                { status: 422 },
+              ),
+            );
+          }
           quantityMessage = `Only ${invQty} quantity available in stock. Added ${invQty} quantity to your order instead of ${actualQuantity}.`;
           actualQuantity = invQty;
         }

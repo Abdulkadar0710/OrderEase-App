@@ -24,6 +24,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [liveInventory, setLiveInventory] = useState(null);
+  const [stockConfirmation, setStockConfirmation] = useState(null);
 
   const hasMultipleVariants = variants.length > 1;
   const selectedVariant = variants.find((v) => v.id === selectedVariantId) || variants[0];
@@ -45,50 +46,101 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
   }, [selectedVariantId, selectedVariant]);
 
   const availableStock = liveInventory;
-  const isOutOfStock = selectedVariant?.availableForSale === false;
+  const isOutOfStock = selectedVariant?.availableForSale === false || (availableStock !== null && availableStock <= 0);
   const isQuantityExceeded = availableStock !== null && availableStock > 0 && quantity > availableStock;
 
-  async function handleAdd() {
+  const handleSelectVariant = (variantId) => {
+    setSelectedVariantId(variantId);
+    setStockConfirmation(null);
+    setError(null);
+  };
+
+  const handleQuantityChange = (val) => {
+    setQuantity(Math.max(1, isNaN(val) ? 1 : val));
+    setStockConfirmation(null);
+    setError(null);
+  };
+
+  const handleCancelConfirmation = () => {
+    setStockConfirmation(null);
+  };
+
+  const handleConfirmAdd = () => {
+    if (!stockConfirmation) return;
+    const targetQty = stockConfirmation.availableQty;
+    setQuantity(targetQty);
+    handleAdd(true, targetQty);
+  };
+
+  async function handleAdd(isConfirmed = false, customQty = null) {
     if (!selectedVariantId) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      let qtyToAdd = quantity;
-      let qtyMessage = null;
+      let avail = availableStock;
 
-      const inventory = await checkVariantQuantity(selectedVariantId);
-      const avail = inventory?.quantityAvailable ?? availableStock;
-
-      if (inventory) {
-        if (!inventory.availableForSale) {
-          throw new Error('This item is currently out of stock.');
-        }
-        if (avail !== null && avail !== undefined) {
-          if (avail <= 0) {
+      try {
+        const inventory = await checkVariantQuantity(selectedVariantId);
+        if (inventory) {
+          if (!inventory.availableForSale) {
             throw new Error('This item is currently out of stock.');
           }
-          if (quantity > avail) {
-            qtyToAdd = avail;
-            qtyMessage = `This product is not available in the required quantity of ${quantity}. Only ${avail} units are available in stock. Added ${avail} quantity to your order.`;
+          if (typeof inventory.quantityAvailable === 'number') {
+            avail = inventory.quantityAvailable;
+            setLiveInventory(avail);
           }
         }
+      } catch (checkErr) {
+        if (checkErr instanceof Error && checkErr.message === 'This item is currently out of stock.') {
+          throw checkErr;
+        }
       }
+
+      if (avail !== null && avail !== undefined) {
+        if (avail <= 0) {
+          throw new Error('This item is currently out of stock.');
+        }
+        if (quantity > avail && !isConfirmed) {
+          setStockConfirmation({ requestedQty: quantity, availableQty: avail });
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      const qtyToAdd = isConfirmed && customQty !== null 
+        ? customQty 
+        : (isConfirmed && stockConfirmation ? stockConfirmation.availableQty : quantity);
 
       const result = await addProductToOrder({
         orderId,
         variantId: selectedVariantId,
         quantity: qtyToAdd,
+        confirmAvailableQuantity: isConfirmed,
       });
 
-      const messageToToast = qtyMessage || 'Product added to order';
+      const messageToToast = (isConfirmed || (avail !== null && quantity > avail))
+        ? `Added ${qtyToAdd} quantity to your order.`
+        : 'Product added to order';
+
       shopify.toast.show(messageToToast);
-      onAdded(result, qtyMessage || result.quantityMessage || null);
+      onAdded(
+        result,
+        (isConfirmed || (avail !== null && quantity > avail))
+          ? `This product is not available in the required quantity of ${quantity}. Added available quantity of ${qtyToAdd} to your order.`
+          : result.quantityMessage || null
+      );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err) || 'Failed to add product';
-      setError(msg);
-      shopify.toast.show(msg);
+      const availFromErr = err.availableQuantity;
+      if (typeof availFromErr === 'number' && availFromErr > 0 && !isConfirmed) {
+        setLiveInventory(availFromErr);
+        setStockConfirmation({ requestedQty: quantity, availableQty: availFromErr });
+      } else {
+        const msg = err instanceof Error ? err.message : String(err) || 'Failed to add product';
+        setError(msg);
+        shopify.toast.show(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -120,7 +172,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
           <s-text type="strong">{product.title}</s-text>
           {availableStock !== null && availableStock !== undefined ? (
             <s-text color={availableStock <= 0 ? 'critical' : 'subdued'}>
-              {availableStock <= 0 ? 'Out of stock' : `Available in stock: ${availableStock} units`}
+              {availableStock <= 0 ? 'Out of stock' : `Available in stock: ${availableStock} unit${availableStock === 1 ? '' : 's'}`}
             </s-text>
           ) : null}
         </s-stack>
@@ -135,7 +187,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
                 <s-clickable
                   key={variant.id}
                   disabled={!variant.availableForSale}
-                  onClick={() => setSelectedVariantId(variant.id)}
+                  onClick={() => handleSelectVariant(variant.id)}
                 >
                   <s-box padding="small-200" background={selectedVariantId === variant.id ? 'subdued' : 'transparent'} borderRadius="base">
                     <s-stack direction="inline" alignItems="center" justifyContent="space-between">
@@ -169,16 +221,44 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
         onInput={(e) => {
           const target = e.currentTarget;
           if (target && 'value' in target) {
-            setQuantity(Math.max(1, Number(target.value)));
+            handleQuantityChange(Number(target.value));
           }
         }}
       />
 
-      {isQuantityExceeded ? (
+      {isQuantityExceeded && !stockConfirmation ? (
         <s-banner tone="warning">
-          This product is not available in the required quantity of {quantity}. Only {availableStock} unitss are available in stock. Adding to order will set quantity to {availableStock}.
+          This product is not available in the required quantity of {quantity}. Only {availableStock} unit{availableStock === 1 ? '' : 's'} available in stock.
         </s-banner>
       ) : null}
+
+      {stockConfirmation && (
+        <s-banner tone="warning">
+          <s-stack direction="block" gap="small-200">
+            <s-text type="strong">Confirm Available Quantity</s-text>
+            <s-text>
+              Only {stockConfirmation.availableQty} unit{stockConfirmation.availableQty === 1 ? '' : 's'} are available in stock (you requested {stockConfirmation.requestedQty}). Would you like to add the available {stockConfirmation.availableQty} unit{stockConfirmation.availableQty === 1 ? '' : 's'} to your order?
+            </s-text>
+            <s-stack direction="inline" gap="small-200" justifyContent="end">
+              <s-button
+                variant="tertiary"
+                disabled={submitting}
+                onClick={handleCancelConfirmation}
+              >
+                Cancel
+              </s-button>
+              <s-button
+                variant="primary"
+                disabled={submitting}
+                loading={submitting}
+                onClick={handleConfirmAdd}
+              >
+                Add {stockConfirmation.availableQty} to order
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </s-banner>
+      )}
 
       {isOutOfStock ? (
         <s-banner tone="critical">
@@ -188,16 +268,18 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
 
       {error ? <s-banner tone="critical">{error}</s-banner> : null}
 
-      <s-stack direction="inline" justifyContent="end">
-        <s-button
-          variant="primary"
-          disabled={!selectedVariantId || submitting || isOutOfStock}
-          loading={submitting}
-          onClick={handleAdd}
-        >
-          Add to order
-        </s-button>
-      </s-stack>
+      {!stockConfirmation && (
+        <s-stack direction="inline" justifyContent="end">
+          <s-button
+            variant="primary"
+            disabled={!selectedVariantId || submitting || isOutOfStock}
+            loading={submitting}
+            onClick={() => handleAdd(false)}
+          >
+            Add to order
+          </s-button>
+        </s-stack>
+      )}
     </s-stack>
   );
 }
