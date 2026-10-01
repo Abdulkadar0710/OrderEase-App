@@ -1047,7 +1047,7 @@ export async function action({ request }: ActionFunctionArgs) {
             lineItemId: targetItem.id,
             discount: {
               fixedValue: { amount: perUnitAmount.toFixed(2), currencyCode: targetCurrency },
-              description: encodeTag(newTag),
+              description: (resolved.code || resolved.label || discountCode).trim().slice(0, 40),
             },
           },
         },
@@ -1237,7 +1237,7 @@ export async function action({ request }: ActionFunctionArgs) {
             lineItemId: item.id,
             discount: {
               fixedValue: { amount: perUnitAmount.toFixed(2), currencyCode },
-              description: encodeTag(newTag),
+              description: (resolved.label || discountCode).trim().slice(0, 40),
             },
           },
         },

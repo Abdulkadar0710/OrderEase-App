@@ -280,24 +280,6 @@ function decodeTag$3(description) {
     return null;
   }
 }
-function encodeTag$3(tag) {
-  var _a2;
-  const payload = {
-    c: round2$3(tag.checkoutAmount),
-    p: round2$3(tag.productAmount),
-    o: round2$3(tag.orderAmount)
-  };
-  if ((_a2 = tag.bxgy) == null ? void 0 : _a2.code) {
-    payload.bxgy = { code: tag.bxgy.code };
-  }
-  const raw = JSON.stringify(payload);
-  const cleanLabel = (tag.label || "").trim().slice(0, 40);
-  const result = `${TAG_PREFIX$3}${raw} ${cleanLabel}`.trim();
-  if (result.length > 255) {
-    return result.slice(0, 255);
-  }
-  return result;
-}
 function lineItemMatchesBuyX(item, buyRule) {
   var _a2, _b, _c, _d, _e, _f, _g;
   const variantIds = buyRule.buyVariantIds || buyRule.variantIds;
@@ -5902,7 +5884,7 @@ async function action$9({
               amount: perUnitAmount.toFixed(2),
               currencyCode: targetCurrency
             },
-            description: encodeTag$3(newTag)
+            description: (resolved.code || resolved.label || discountCode).trim().slice(0, 40)
           }
         }
       });
@@ -6074,7 +6056,7 @@ async function action$9({
               amount: perUnitAmount.toFixed(2),
               currencyCode
             },
-            description: encodeTag$3(newTag)
+            description: (resolved.label || discountCode).trim().slice(0, 40)
           }
         }
       });

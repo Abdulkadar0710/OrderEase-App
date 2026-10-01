@@ -72,25 +72,11 @@ export function decodeTag(description?: string | null): DecodedTag | null {
 }
 
 /**
- * Encodes tag metadata into the description field string.
- * Guaranteed to stay well within Shopify's 255 character limit.
+ * Returns clean discount code / label for the description field string.
+ * Keeps customer-facing order summary clean and well within Shopify's 255 character limit.
  */
 export function encodeTag(tag: DecodedTag): string {
-  const payload: Record<string, unknown> = {
-    c: round2(tag.checkoutAmount),
-    p: round2(tag.productAmount),
-    o: round2(tag.orderAmount),
-  };
-  if (tag.bxgy?.code) {
-    payload.bxgy = { code: tag.bxgy.code };
-  }
-  const raw = JSON.stringify(payload);
-  const cleanLabel = (tag.label || "").trim().slice(0, 40);
-  const result = `${TAG_PREFIX}${raw} ${cleanLabel}`.trim();
-  if (result.length > 255) {
-    return result.slice(0, 255);
-  }
-  return result;
+  return (tag.bxgy?.code || tag.label || "").trim().slice(0, 40);
 }
 
 type AdminClient = {
