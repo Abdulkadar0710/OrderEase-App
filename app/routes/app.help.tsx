@@ -1,4 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { Link, useNavigate, useLocation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { useState } from "react";
@@ -13,13 +14,18 @@ export const headers: HeadersFunction = (headersArgs) => {
 };
 
 export default function HelpPage(): JSX.Element {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<
     "overview" | "features" | "settings" | "faq"
   >("overview");
 
   return (
     <s-page heading="OrderEase Help & Merchant Guide">
-      <s-button slot="primary-action" href="/app/active-services">
+      <s-button
+        slot="primary-action"
+        onClick={() => navigate(`/app/active-services${location.search}`)}
+      >
         Manage Active Services
       </s-button>
 
@@ -737,15 +743,43 @@ export default function HelpPage(): JSX.Element {
       <s-section slot="aside" heading="Quick Links">
         <s-unordered-list>
           <s-list-item>
-            <s-link href="/app/active-services">
+            <Link
+              to={`/app/active-services${location.search}`}
+              style={{
+                color: "#2c6ecb",
+                textDecoration: "underline",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
               Active Services & Controls
-            </s-link>
+            </Link>
           </s-list-item>
           <s-list-item>
-            <s-link href="/app/insights">Insights & Analytics</s-link>
+            <Link
+              to={`/app/insights${location.search}`}
+              style={{
+                color: "#2c6ecb",
+                textDecoration: "underline",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              Insights & Analytics
+            </Link>
           </s-list-item>
           <s-list-item>
-            <s-link href="/app">Dashboard</s-link>
+            <Link
+              to={`/app${location.search}`}
+              style={{
+                color: "#2c6ecb",
+                textDecoration: "underline",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              Dashboard
+            </Link>
           </s-list-item>
         </s-unordered-list>
       </s-section>
