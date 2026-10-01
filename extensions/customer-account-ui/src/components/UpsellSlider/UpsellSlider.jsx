@@ -11,7 +11,7 @@ import { useOrderEdit } from '../../context/OrderEditContext.jsx';
  */
 export function UpsellSlider() {
   const order = shopify.order.value;
-  const { products, loading, error } = useUpsellProducts(order?.id);
+  const { products, loading, error, addExcludedProductId } = useUpsellProducts(order?.id);
   const { notifyUpdateSuccess, needsRefresh, startRefreshCountdown } = useOrderEdit();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -66,11 +66,14 @@ export function UpsellSlider() {
   const handleAdded = (result, qtyMsg) => {
     setLastResult(result);
     setQuantityMessage(qtyMsg || null);
+    if (selectedProduct?.id && typeof addExcludedProductId === 'function') {
+      addExcludedProductId(selectedProduct.id);
+    }
     setSelectedProduct(null);
     notifyUpdateSuccess(result?.order?.statusPageUrl);
   };
 
-  if (loading) {
+  if (loading && (!products || products.length === 0)) {
     return (
       <s-section heading="Frequently paired with your order">
         <s-box padding="large" background="subdued" borderRadius="large" borderWidth="base" inlineSize="100%">
@@ -83,13 +86,37 @@ export function UpsellSlider() {
     );
   }
 
+  const balanceDue = lastResult?.balanceDue;
+
   if (error || !products || products.length === 0) {
+    if (lastResult) {
+      return (
+        <s-section heading="Frequently paired with your order">
+          <s-stack direction="block" gap="large" inlineSize="100%">
+            <s-box padding="base" inlineSize="100%">
+              <s-stack direction="block" gap="small-200">
+                {quantityMessage ? (
+                  <s-banner tone="warning">{quantityMessage}</s-banner>
+                ) : null}
+                {balanceDue?.amount > 0 ? (
+                  <BalanceDueRedirect
+                    balanceDue={balanceDue}
+                    statusPageUrl={lastResult?.order?.statusPageUrl}
+                  />
+                ) : (
+                  <s-banner tone="success">Recommended item successfully added to your package!</s-banner>
+                )}
+              </s-stack>
+            </s-box>
+          </s-stack>
+        </s-section>
+      );
+    }
     return null;
   }
 
-  const balanceDue = lastResult?.balanceDue;
   // Ensure index remains in bounds if products list mutates
-  const activeIndex = Math.min(currentIndex, products.length - 1);
+  const activeIndex = Math.min(currentIndex, Math.max(0, products.length - 1));
   const currentProduct = products[activeIndex];
   const startingPrice = currentProduct?.variants?.nodes?.[0]?.price;
 

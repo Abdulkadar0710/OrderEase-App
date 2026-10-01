@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'preact/hooks';
-import { getUpsellTags } from '../utils/api';
+import { useState, useEffect, useCallback } from 'preact/hooks';
+import { getUpsellTags, getOrderDetails } from '../utils/api';
 import { getExtensionLines, getExtensionOrderId, formatOrderId } from '../utils/shopifyHelpers';
 
 /**
@@ -67,7 +67,13 @@ const FALLBACK_PRODUCTS_QUERY = `#graphql
 
 /**
  * Fetches upsell product recommendations based on tags of active order items.
- * If no specific upsell tags are found, falls back to top catalog products.
+ *
+ * Rules:
+ * 1. If upshell products for the products from order are available (tag-matched)
+ *    and not yet in the order, show ONLY those upshell products.
+ * 2. When upshell products for the order products are not available (no tags found,
+ *    or all tag-matched products have already been added to the order),
+ *    show the default fallback upshell products instead of hiding the upshell feature.
  */
 export function useUpsellProducts(initialOrderId) {
   const normalizedInitial = formatOrderId(initialOrderId);
@@ -75,6 +81,12 @@ export function useUpsellProducts(initialOrderId) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [resolvedOrderId, setResolvedOrderId] = useState(normalizedInitial || getExtensionOrderId());
+  const [locallyAddedIds, setLocallyAddedIds] = useState([]);
+
+  const addExcludedProductId = useCallback((id) => {
+    if (!id) return;
+    setLocallyAddedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -110,75 +122,92 @@ export function useUpsellProducts(initialOrderId) {
     };
   }, [initialOrderId]);
 
-  useEffect(() => {
+  const fetchUpsells = useCallback(async () => {
     if (!resolvedOrderId) return;
 
-    let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-    const fetchUpsells = async () => {
-      setLoading(true);
-      setError(null);
-      setProducts([]);
+    try {
+      // Step 1: Collect all product IDs currently in the customer's order
+      const orderProductIds = new Set(locallyAddedIds);
 
-      try {
-        let fetched = [];
-
-        // Step 1: Try fetching upsell tags from backend
-        try {
-          const { tags } = await getUpsellTags({ orderId: resolvedOrderId });
-
-          if (tags && tags.length > 0) {
-            const tagQuery = tags.map((t) => `tag:"${t}"`).join(' OR ');
-            const { data, errors } = await shopify.query(PRODUCTS_BY_TAG_QUERY, {
-              variables: { query: tagQuery, first: 8 },
-            });
-            if (!errors?.length) {
-              fetched = data?.products?.nodes ?? [];
-            }
-          }
-        } catch (e) {
-          console.warn('[useUpsellProducts] Tag query failed, using fallback catalog query:', e);
-        }
-
-        // Step 2: Fall back to general store catalog if no tag-matched products found
-        if (fetched.length === 0) {
-          const { data } = await shopify.query(FALLBACK_PRODUCTS_QUERY, {
-            variables: { first: 8 },
-          });
-          fetched = data?.products?.nodes ?? [];
-        }
-
-        // Step 3: Filter out any products already in the customer's order
-        const lines = getExtensionLines();
-        const orderProductIds = new Set(
-          lines
-            .filter((l) => l.merchandise?.product?.id && (l.currentQuantity !== 0 && l.quantity !== 0))
-            .map((l) => l.merchandise.product.id)
-        );
-
-        const deduped = fetched.filter((p) => !orderProductIds.has(p.id));
-
-        if (!cancelled) {
-          setProducts(deduped);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error(err);
-          setError(err.message || 'Could not load recommendations.');
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+      const lines = getExtensionLines();
+      for (const line of lines) {
+        const prodId = line.merchandise?.product?.id;
+        if (prodId && (line.currentQuantity !== 0 && line.quantity !== 0)) {
+          orderProductIds.add(prodId);
         }
       }
-    };
 
+      // Check live order details from backend Admin API
+      try {
+        const orderData = await getOrderDetails({ orderId: resolvedOrderId });
+        if (orderData?.lineItems?.length) {
+          for (const item of orderData.lineItems) {
+            const prodId = item.merchandise?.product?.id;
+            if (prodId && (item.currentQuantity ?? item.quantity) !== 0) {
+              orderProductIds.add(prodId);
+            }
+          }
+        }
+      } catch (detailsErr) {
+        console.warn('[useUpsellProducts] getOrderDetails fallback:', detailsErr);
+      }
+
+      // Step 2: Try fetching upshell products for the products from the order (tag-matched)
+      let tagMatchedAvailable = [];
+      try {
+        const { tags } = await getUpsellTags({ orderId: resolvedOrderId });
+
+        if (tags && tags.length > 0) {
+          const tagQuery = tags.map((t) => `tag:"${t}"`).join(' OR ');
+          const { data, errors } = await shopify.query(PRODUCTS_BY_TAG_QUERY, {
+            variables: { query: tagQuery, first: 12 },
+          });
+          if (!errors?.length && data?.products?.nodes) {
+            tagMatchedAvailable = data.products.nodes.filter(
+              (p) => !orderProductIds.has(p.id) && p.variants?.nodes?.some((v) => v.availableForSale)
+            );
+          }
+        }
+      } catch (tagErr) {
+        console.warn('[useUpsellProducts] Tag query failed:', tagErr);
+      }
+
+      // Step 3:
+      // - If upshell products for the products from order are available then show the upshell products only.
+      // - And when the upshell products for the product from order is not available then show the default fallback upshell products only.
+      let finalProducts = [];
+      if (tagMatchedAvailable.length > 0) {
+        finalProducts = tagMatchedAvailable;
+      } else {
+        try {
+          const { data, errors } = await shopify.query(FALLBACK_PRODUCTS_QUERY, {
+            variables: { first: 20 },
+          });
+          if (!errors?.length && data?.products?.nodes) {
+            finalProducts = data.products.nodes.filter(
+              (p) => !orderProductIds.has(p.id) && p.variants?.nodes?.some((v) => v.availableForSale)
+            );
+          }
+        } catch (fallbackErr) {
+          console.warn('[useUpsellProducts] Fallback query failed:', fallbackErr);
+        }
+      }
+
+      setProducts(finalProducts);
+    } catch (err) {
+      console.error('[useUpsellProducts] Error:', err);
+      setError(err instanceof Error ? err.message : 'Could not load recommendations.');
+    } finally {
+      setLoading(false);
+    }
+  }, [resolvedOrderId, locallyAddedIds]);
+
+  useEffect(() => {
     fetchUpsells();
+  }, [fetchUpsells]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [resolvedOrderId]);
-
-  return { products, loading, error, resolvedOrderId };
+  return { products, loading, error, resolvedOrderId, refetch: fetchUpsells, addExcludedProductId };
 }

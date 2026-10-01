@@ -11,7 +11,7 @@ import { getExtensionOrderId, formatOrderId } from '../../utils/shopifyHelpers.j
  */
 export function UpsellSlider({ orderId: propOrderId }) {
   const orderId = formatOrderId(propOrderId) || getExtensionOrderId();
-  const { products, loading, error, resolvedOrderId } = useUpsellProducts(orderId);
+  const { products, loading, error, resolvedOrderId, addExcludedProductId } = useUpsellProducts(orderId);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -62,10 +62,13 @@ export function UpsellSlider({ orderId: propOrderId }) {
 
   const handleAdded = (result) => {
     setLastResult(result);
+    if (selectedProduct?.id && typeof addExcludedProductId === 'function') {
+      addExcludedProductId(selectedProduct.id);
+    }
     setSelectedProduct(null);
   };
 
-  if (loading) {
+  if (loading && (!products || products.length === 0)) {
     return (
       <s-section heading="Frequently paired with your order">
         <s-box padding="large" background="subdued" borderRadius="large" borderWidth="base" inlineSize="100%">
@@ -78,13 +81,32 @@ export function UpsellSlider({ orderId: propOrderId }) {
     );
   }
 
+  const balanceDue = lastResult?.balanceDue;
+
   if (error || !products || products.length === 0) {
+    if (lastResult) {
+      return (
+        <s-section heading="Frequently paired with your order">
+          <s-stack direction="block" gap="large" inlineSize="100%">
+            <s-box padding="base" inlineSize="100%">
+              {balanceDue?.amount > 0 ? (
+                <BalanceDueRedirect
+                  balanceDue={balanceDue}
+                  statusPageUrl={lastResult?.order?.statusPageUrl}
+                />
+              ) : (
+                <s-banner tone="success">Recommended item successfully added to your package!</s-banner>
+              )}
+            </s-box>
+          </s-stack>
+        </s-section>
+      );
+    }
     return null;
   }
 
-  const balanceDue = lastResult?.balanceDue;
   // Ensure index remains in bounds if products list mutates
-  const activeIndex = Math.min(currentIndex, products.length - 1);
+  const activeIndex = Math.min(currentIndex, Math.max(0, products.length - 1));
   const currentProduct = products[activeIndex];
   const startingPrice = currentProduct?.variants?.nodes?.[0]?.price;
 
