@@ -11,17 +11,17 @@ import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
  * Google Places API key is configured.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Max-Age": "7200",
-      },
-    });
-  }
+  // if (request.method === "OPTIONS") {
+  //   return new Response(null, {
+  //     status: 204,
+  //     headers: {
+  //       "Access-Control-Allow-Origin": "*",
+  //       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  //       "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  //       "Access-Control-Max-Age": "7200",
+  //     },
+  //   });
+  // }
 
   let cors = (res: Response) => res;
   let storeDomain = "";
