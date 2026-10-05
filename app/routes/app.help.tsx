@@ -728,8 +728,8 @@ export default function HelpPage(): JSX.Element {
                   <s-paragraph color="subdued">
                     Go to the Active Services page. At the top of the page, you
                     will find configuration blocks for setting Maximum Order
-                    Edits Limit (e.g. 1, 2, 3, 5, unlimited, or custom) and
-                    Order Edit Time Limit (e.g. 30m, 1h, 2h, 1d, 2d, or custom
+                    Edits Limit (e.g 1, 2, 3, 5, unlimited, or custom) and
+                    Order Edit Time Limit (e.g 30m, 1h, 2h, 1d, 2d, or custom
                     duration).
                   </s-paragraph>
                 </s-stack>
@@ -764,7 +764,7 @@ export default function HelpPage(): JSX.Element {
                 cursor: "pointer",
                 fontWeight: 500,
               }}
-            >
+            > 
               Insights & Analytics
             </Link>
           </s-list-item>
