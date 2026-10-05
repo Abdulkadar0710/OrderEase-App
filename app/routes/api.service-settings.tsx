@@ -11,6 +11,18 @@ import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
  * Google Places API key is configured.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "7200",
+      },
+    });
+  }
+
   let cors = (res: Response) => res;
   let storeDomain = "";
 
@@ -26,11 +38,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       newHeaders.set("Access-Control-Allow-Origin", "*");
       newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return cors(new Response(res.body, {
+      return new Response(res.body, {
         status: res.status,
         statusText: res.statusText,
         headers: newHeaders,
-      }));
+      });
     };
   }
 
@@ -92,9 +104,33 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: LoaderFunctionArgs) {
-  const { cors } = await authenticate.public.customerAccount(request);
   if (request.method === "OPTIONS") {
-    return cors(new Response(null, { status: 200, headers: { "Content-Type": "application/json" } }));
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "7200",
+      },
+    });
+  }
+  let cors = (res: Response) => res;
+  try {
+    const authResult = await authenticate.public.customerAccount(request);
+    cors = authResult.cors;
+  } catch {
+    cors = (res: Response) => {
+      const newHeaders = new Headers(res.headers);
+      newHeaders.set("Access-Control-Allow-Origin", "*");
+      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return new Response(res.body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: newHeaders,
+      });
+    };
   }
   return cors(Response.json({ error: "Method not allowed" }, { status: 405 }));
 }

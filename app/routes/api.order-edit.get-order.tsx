@@ -60,6 +60,18 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
 `;
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "7200",
+      },
+    });
+  }
+
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
   const { admin } = await unauthenticated.admin(storeDomain);
@@ -76,7 +88,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       variables: { id: orderId },
     });
 
-    const json = await response.json();
+    const json = (await response.json()) as any;
 
     if (json.errors?.length) {
       return cors(Response.json({ error: json.errors[0].message }, { status: 400 }));
@@ -138,9 +150,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { cors } = await authenticate.public.customerAccount(request);
   if (request.method === "OPTIONS") {
-    return cors(new Response(null, { status: 200, headers: { "Content-Type": "application/json" } }));
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "7200",
+      },
+    });
   }
+  const { cors } = await authenticate.public.customerAccount(request);
   return cors(Response.json({ error: "Method not allowed" }, { status: 405 }));
 }
