@@ -2,7 +2,7 @@
 
 client_id = "d63bb57ad00ed8a805102bb439b85021"
 name = "OrderEase"
-application_url = "https://orderease-app-production.up.railway.app"
+application_url = "https://orderease-app-production-bf72.up.railway.app"
 embedded = true
 
 [build]
@@ -25,12 +25,12 @@ scopes = "read_customers,read_discounts,read_order_edits,read_orders,read_shippi
 
 [auth]
 redirect_urls = [
-  "https://orderease-app-production.up.railway.app/api/auth",
-  "https://orderease-app-production.up.railway.app/auth/shopify/callback"
+  "https://orderease-app-production-bf72.up.railway.app/api/auth",
+  "https://orderease-app-production-bf72.up.railway.app/auth/shopify/callback"
 ]
 
 [app_proxy]
-url = "https://orderease-app-production.up.railway.app"
+url = "https://orderease-app-production-bf72.up.railway.appp"
 subpath = "order-ease"
 prefix = "apps"
 
