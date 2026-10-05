@@ -26,11 +26,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       newHeaders.set("Access-Control-Allow-Origin", "*");
       newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
+      return cors(new Response(res.body, {
         status: res.status,
         statusText: res.statusText,
         headers: newHeaders,
-      });
+      }));
     };
   }
 
