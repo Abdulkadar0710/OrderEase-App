@@ -1,24 +1,64 @@
-import { useState } from 'preact/hooks';
-import { cancelOrder } from '../../utils/api';
-import { getExtensionOrderId, formatOrderId, safeNavigate } from '../../utils/shopifyHelpers.js';
+import { useState, useEffect } from 'preact/hooks';
+import { cancelOrder, getOrderDetails } from '../../utils/api';
+import { getExtensionOrderId, formatOrderId } from '../../utils/shopifyHelpers.js';
 
-export function CancelOrder({ orderId: propOrderId }) {
+export function CancelOrder({ orderId: propOrderId, isCancelled: propIsCancelled, onCancelled }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [alreadyCancelled, setAlreadyCancelled] = useState(false);
 
   const orderId = formatOrderId(propOrderId) || getExtensionOrderId();
 
+  const isOrderCancelled = Boolean(success || alreadyCancelled || propIsCancelled);
+
+  useEffect(() => {
+    if (isOrderCancelled) {
+      setAlreadyCancelled(true);
+      return;
+    }
+    if (orderId) {
+      getOrderDetails({ orderId })
+        .then((res) => {
+          if (res?.order?.cancelledAt) {
+            setAlreadyCancelled(true);
+            if (typeof onCancelled === 'function') {
+              onCancelled();
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [orderId, isOrderCancelled]);
+
   const handleCancel = async () => {
+    if (isOrderCancelled) return;
     try {
       setLoading(true);
       setError(null);
       await cancelOrder({ orderId });
       setSuccess(true);
+      setAlreadyCancelled(true);
+      if (typeof onCancelled === 'function') {
+        onCancelled();
+      }
     } catch (err) {
       console.error('Failed to cancel order:', err);
-      setError(err instanceof Error ? err.message : 'Could not submit order cancellation request at this time.');
+      const msg = err instanceof Error ? err.message : 'Could not submit order cancellation request at this time.';
+      if (
+        msg.toLowerCase().includes('already') ||
+        msg.toLowerCase().includes('cancelled') ||
+        msg.toLowerCase().includes('canceled')
+      ) {
+        setAlreadyCancelled(true);
+        if (typeof onCancelled === 'function') {
+          onCancelled();
+        }
+        setError('This order is already cancelled.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
       setShowConfirm(false);
@@ -27,6 +67,12 @@ export function CancelOrder({ orderId: propOrderId }) {
 
   return (
     <s-stack direction="block" gap="base">
+      {isOrderCancelled && (
+        <s-banner tone="critical" title="Order Cancelled">
+          This order has already been cancelled and your refund has been processed.
+        </s-banner>
+      )}
+
       {!showConfirm ? (
         <s-box background="surface" padding="base" borderRadius="base" borderWidth="base">
           <s-stack direction="block" gap="small-200">
@@ -41,15 +87,17 @@ export function CancelOrder({ orderId: propOrderId }) {
               <s-button
                 variant="tertiary"
                 tone="critical"
-                onClick={() => setShowConfirm(true)}
-                disabled={loading || success}
+                onClick={() => !isOrderCancelled && setShowConfirm(true)}
+                disabled={loading || success || isOrderCancelled}
               >
-                Cancel Order
+                {isOrderCancelled ? 'Order Cancelled' : 'Cancel Order'}
               </s-button>
             </s-stack>
 
-            <s-text size="small" color="subdued">
-              Canceling will halt all packaging and shipment processing immediately and initiate an automated full refund to your payment method.
+            <s-text size="small" color={isOrderCancelled ? 'critical' : 'subdued'}>
+              {isOrderCancelled
+                ? 'This order is already cancelled. No further cancellation action can be taken.'
+                : 'Canceling will halt all packaging and shipment processing immediately and initiate an automated full refund to your payment method.'}
             </s-text>
           </s-stack>
         </s-box>
@@ -78,7 +126,7 @@ export function CancelOrder({ orderId: propOrderId }) {
                 variant="primary"
                 tone="critical"
                 loading={loading}
-                disabled={loading}
+                disabled={loading || isOrderCancelled}
                 onClick={handleCancel}
               >
                 Yes, confirm cancellation

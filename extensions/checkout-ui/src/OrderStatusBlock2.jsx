@@ -154,6 +154,7 @@ export default function OrderStatusBlock2() {
   const [isExpired, setIsExpired] = useState(null);
   const [remainingTime, setRemainingTime] = useState("--:--:--");
   const [createdAtStr, setCreatedAtStr] = useState(null);
+  const [isCancelled, setIsCancelled] = useState(false);
 
   // Helper: returns true only when the service is explicitly enabled.
   const isEnabled = (serviceId) => serviceSettings !== null && serviceSettings[serviceId] === true;
@@ -162,7 +163,7 @@ export default function OrderStatusBlock2() {
   const showItemsCategory     = isEnabled('add-product') || isEnabled('edit-quantity') || isEnabled('swap-variant');
   const showDeliveryCategory  = isEnabled('change-address') || isEnabled('contact-info') || isEnabled('change-shipping-method') || isEnabled('order-note');
   const showPromotionsCategory = isEnabled('apply-discount') || isEnabled('download-invoice');
-  const showCancellationCategory = isEnabled('cancel-order');
+  const showCancellationCategory = isEnabled('cancel-order') && !isCancelled;
 
   // Fetch merchant service settings once on mount
   useEffect(() => {
@@ -179,11 +180,14 @@ export default function OrderStatusBlock2() {
       });
   }, [orderId]);
 
-  // Fetch order created timestamp
+  // Fetch order created timestamp and check cancelled status
   useEffect(() => {
     if (!orderId) return;
     getOrderDetails({ orderId })
       .then((data) => {
+        if (data?.order?.cancelledAt) {
+          setIsCancelled(true);
+        }
         if (data?.createdAt) {
           setCreatedAtStr(data.createdAt);
         } else if (data?.order?.createdAt) {
@@ -195,7 +199,15 @@ export default function OrderStatusBlock2() {
 
   // Timer & expiration calculation
   useEffect(() => {
-    if (!createdAtStr) return;
+    if (isCancelled) {
+      setIsExpired(false);
+      return;
+    }
+
+    if (!createdAtStr) {
+      setIsExpired(false);
+      return;
+    }
 
     const createdAt = new Date(createdAtStr).getTime();
     const limitMs = getLimitInMs(timeLimit);
@@ -216,7 +228,7 @@ export default function OrderStatusBlock2() {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [createdAtStr, timeLimit]);
+  }, [createdAtStr, timeLimit, isCancelled]);
 
   const isLimitReached = editLimit?.isLimitReached === true;
 
@@ -235,7 +247,11 @@ export default function OrderStatusBlock2() {
   return (
     <s-stack direction="block" gap="large" inlineSize="100%">
 
-      {isExpired ? (
+      {isCancelled ? (
+        <s-banner tone="critical" title="Order Cancelled">
+          This order has been cancelled and refunded. No further modifications can be made to this order.
+        </s-banner>
+      ) : isExpired ? (
         <s-banner tone="critical" title="Order Editing Window Expired">
           The time window configured by the merchant to edit this order has ended.
         </s-banner>
@@ -255,12 +271,12 @@ export default function OrderStatusBlock2() {
 
       {/* ── Standalone Upsell Feature Outside Manage Order ── */}
       {(() => {
-        if (!isExpired && !isLimitReached && isEnabled('product-upsell')) {
+        if (!isCancelled && !isExpired && !isLimitReached && isEnabled('product-upsell')) {
           return <UpsellSlider orderId={orderId} />;
         }
       })()}
 
-      {(isExpired || isLimitReached) ? (
+      {(isCancelled || isExpired || isLimitReached) ? (
         isEnabled('download-invoice') && (
           <s-section heading="Order documents">
             <s-stack direction="block" gap="base" inlineSize="100%">
@@ -457,7 +473,7 @@ export default function OrderStatusBlock2() {
                       tone="critical"
                     >
                       <s-stack direction="block" gap="large" inlineSize="100%">
-                        <CancelOrder orderId={orderId} />
+                        <CancelOrder orderId={orderId} isCancelled={isCancelled} onCancelled={() => setIsCancelled(true)} />
                       </s-stack>
                     </ModalSection>
                   )}

@@ -7,6 +7,8 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
       id
       name
       createdAt
+      cancelledAt
+      cancelReason
       currencyCode
       currentSubtotalPriceSet {
         shopMoney { amount currencyCode }

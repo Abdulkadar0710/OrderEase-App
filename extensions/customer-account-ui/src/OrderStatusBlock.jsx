@@ -142,7 +142,7 @@ function formatRemainingTime(remainingMs) {
 }
 
 function Extension() {
-  const { order } = useOrderSearch();
+  const { order, loading: loadingOrder } = useOrderSearch();
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [targetStatusUrl, setTargetStatusUrl] = useState(null);
   const [topPageCountdown, setTopPageCountdown] = useState(null);
@@ -152,7 +152,11 @@ function Extension() {
   const [timeLimit, setTimeLimit] = useState(null);
   const [editLimit, setEditLimit] = useState(null);
   const [remainingTime, setRemainingTime] = useState("--:--:--");
+  const [isOrderCancelled, setIsOrderCancelled] = useState(false);
 
+  // Detect whether the order is cancelled either via shopify API or our backend response or local state
+  const orderCancelledAt = shopify?.order?.value?.cancelledAt || order?.cancelledAt;
+  const isCancelled = isOrderCancelled || Boolean(orderCancelledAt);
 
   // Helper: returns true only when the service is explicitly enabled.
   const isEnabled = (serviceId) => serviceSettings !== null && serviceSettings[serviceId] === true;
@@ -161,7 +165,7 @@ function Extension() {
   const showItemsCategory     = isEnabled('add-product') || isEnabled('edit-quantity') || isEnabled('swap-variant');
   const showDeliveryCategory  = isEnabled('change-address') || isEnabled('contact-info') || isEnabled('change-shipping-method') || isEnabled('order-note');
   const showPromotionsCategory = isEnabled('apply-discount') || isEnabled('download-invoice');
-  const showCancellationCategory = isEnabled('cancel-order');
+  const showCancellationCategory = isEnabled('cancel-order') && !isCancelled;
 
   // Fetch merchant service settings and edit limit
   useEffect(() => {
@@ -180,8 +184,21 @@ function Extension() {
   }, [order?.id]);
 
   useEffect(() => {
-    const createdAtStr = order?.createdAt || shopify?.order?.value?.createdAt;
-    if (!createdAtStr) return;
+    if (isCancelled) {
+      setIsExpired(false);
+      return;
+    }
+
+    const createdAtStr =
+      order?.createdAt ||
+      shopify?.order?.value?.createdAt ||
+      shopify?.order?.value?.processedAt;
+
+    if (!createdAtStr) {
+      // Avoid getting stuck loading if createdAt is not immediately available
+      setIsExpired(false);
+      return;
+    }
 
     const createdAt = new Date(createdAtStr).getTime();
     const limitMs = getLimitInMs(timeLimit);
@@ -202,7 +219,7 @@ function Extension() {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [order?.createdAt, timeLimit]);
+  }, [order?.createdAt, timeLimit, isCancelled]);
 
   const notifyUpdateSuccess = (url) => {
     setNeedsRefresh(true);
@@ -212,58 +229,33 @@ function Extension() {
   };
 
   const performReload = (urlParam) => {
-    const destinationUrl = urlParam || targetStatusUrl || (typeof window !== 'undefined' && window.location ? window.location.href : null);
+    const destinationUrl = urlParam || targetStatusUrl;
 
-    if (typeof shopify !== 'undefined' && shopify.navigation && typeof shopify.navigation.navigate === 'function' && destinationUrl) {
-      try {
-        shopify.navigation.navigate(destinationUrl);
-        return;
-      } catch (e) {
-        console.warn('shopify.navigation.navigate failed:', e);
-      }
-    }
-
-    if (typeof window !== 'undefined' && window.location && destinationUrl) {
-      try {
-        window.location.href = destinationUrl;
-        return;
-      } catch (e) {
-        console.warn('window.location.href failed:', e);
-      }
-      try {
-        if (typeof window.location.replace === 'function') {
-          window.location.replace(destinationUrl);
-          return;
-        }
-      } catch (e) {
-        console.warn('window.location.replace failed:', e);
-      }
-      try {
-        if (typeof window.location.reload === 'function') {
-          window.location.reload();
-          return;
-        }
-      } catch (e) {
-        console.warn('window.location.reload failed:', e);
-      }
-    }
-
-    if (typeof window !== 'undefined' && destinationUrl) {
-      try {
-        if (window.top && window.top.location) {
+    if (destinationUrl && typeof destinationUrl === 'string' && destinationUrl.startsWith('http')) {
+      if (typeof window !== 'undefined' && window.top) {
+        try {
           window.top.location.href = destinationUrl;
           return;
+        } catch (e) {
+          console.warn('window.top.location.href failed:', e);
         }
-      } catch (e) {
-        console.warn('window.top.location.href failed:', e);
       }
-      try {
-        if (window.parent && window.parent.location) {
-          window.parent.location.href = destinationUrl;
+      if (typeof window !== 'undefined' && window.location) {
+        try {
+          window.location.href = destinationUrl;
           return;
+        } catch (e) {
+          console.warn('window.location.href failed:', e);
         }
+      }
+    }
+
+    if (typeof window !== 'undefined' && window.location && typeof window.location.reload === 'function') {
+      try {
+        window.location.reload();
+        return;
       } catch (e) {
-        console.warn('window.parent.location.href failed:', e);
+        console.warn('window.location.reload failed:', e);
       }
     }
   };
@@ -288,7 +280,7 @@ function Extension() {
   const isLimitReached = editLimit?.isLimitReached === true;
 
   // Show a loader until service settings have been fetched and expiry calculations are completed
-  if (serviceSettings === null || isExpired === null) {
+  if (serviceSettings === null || isExpired === null || (loadingOrder && !order && !shopify?.order?.value?.cancelledAt)) {
     return (
       <s-box inlineSize="100%" padding="large">
         <s-stack direction="block" alignItems="center" gap="base" inlineSize="100%">
@@ -300,7 +292,7 @@ function Extension() {
   }
 
   return (
-    <OrderEditContext.Provider value={{ notifyUpdateSuccess, needsRefresh, startRefreshCountdown, topPageCountdown }}>
+    <OrderEditContext.Provider value={{ notifyUpdateSuccess, needsRefresh, startRefreshCountdown, topPageCountdown, isCancelled, setIsCancelled: setIsOrderCancelled }}>
 
       {topPageCountdown !== null ? (
         <s-box inlineSize="100%" padding="large">
@@ -322,7 +314,11 @@ function Extension() {
       ) : (
       <s-stack direction="block" gap="large" inlineSize="100%">
 
-        {isExpired ? (
+        {isCancelled ? (
+          <s-banner tone="critical" title="Order Cancelled">
+            This order has been cancelled and your refund has been processed. No further modifications can be made to this order.
+          </s-banner>
+        ) : isExpired ? (
           <s-banner tone="critical" title="Order Editing Window Expired">
             The time window configured by the merchant to edit this order has ended.
           </s-banner>
@@ -340,14 +336,14 @@ function Extension() {
           </s-box>
         )}
 
-        {/* ── Standalone Upsell Feature Outside Manage Order ── */}
+        {/* ── Standalone Upsell Feature Outside Manage Order (hidden if cancelled) ── */}
         {(() => {
-          if (!isExpired && !isLimitReached && isEnabled('product-upsell')) {
+          if (!isCancelled && !isExpired && !isLimitReached && isEnabled('product-upsell')) {
             return <UpsellSlider />;
           }
         })()}
 
-        {(isExpired || isLimitReached) ? (
+        {(isCancelled || isExpired || isLimitReached) ? (
           isEnabled('download-invoice') && (
             <s-section heading="Order documents">
               <s-stack direction="block" gap="base" inlineSize="100%">
@@ -587,7 +583,7 @@ function Extension() {
                       tone="critical"
                     >
                       <s-stack direction="block" gap="large" inlineSize="100%">
-                        <CancelOrder />
+                        <CancelOrder isCancelled={isCancelled} order={order} />
                       </s-stack>
                     </ModalSection>
                   );

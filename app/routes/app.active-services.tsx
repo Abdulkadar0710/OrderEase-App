@@ -1167,42 +1167,49 @@ function GoogleApiKeySection({
               <div
                 style={{ display: "flex", gap: "12px", alignItems: "flex-end" }}
               >
-                <div style={{ flex: 1, position: "relative" }}>
+                <div style={{ flex: 1 }}>
                   <s-text color="subdued">
                     API Key (Places API & Geocoding API enabled)
                   </s-text>
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="e.g. AIzaSyD..."
-                    style={{
-                      marginTop: "6px",
-                      padding: "8px 40px 8px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #c9cccf",
-                      fontSize: "14px",
-                      width: "100%",
-                      boxSizing: "border-box",
-                      fontFamily: "monospace",
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey(!showKey)}
-                    style={{
-                      position: "absolute",
-                      right: "10px",
-                      top: "28px",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      color: "#5c5f62",
-                    }}
-                  >
-                    {showKey ? "Hide" : "Show"}
-                  </button>
+                  <div style={{ position: "relative", marginTop: "6px" }}>
+                    <input
+                      type={showKey ? "text" : "password"}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="e.g. AIzaSyD..."
+                      style={{
+                        padding: "8px 50px 8px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #c9cccf",
+                        fontSize: "14px",
+                        width: "100%",
+                        height: "36px",
+                        boxSizing: "border-box",
+                        fontFamily: "monospace",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      style={{
+                        position: "absolute",
+                        right: "10px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        color: "#5c5f62",
+                        padding: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {showKey ? "Hide" : "Show"}
+                    </button>
+                  </div>
                 </div>
                 <button
                   type="button"
