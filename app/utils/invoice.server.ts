@@ -757,17 +757,29 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
 
       // Totals Summary Section
       let totalsY = rowY + 16;
-      const totalsRow = (label: string, value?: Money | null, bold = false, isDiscount = false) => {
+      const labelX = 295;
+      const labelWidth = col.total - labelX - 10; // 175pt: provides ample room so shipping labels don't wrap awkwardly
+
+      const totalsRow = (
+        label: string,
+        value?: Money | null,
+        bold = false,
+        isDiscount = false,
+        extraSpacingBelow = 0,
+      ) => {
         if (!value) return;
         const valNum = Number(value.amount || 0);
         if (isDiscount && valNum <= 0) return;
 
         doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(9).fillColor("#000000");
-        doc.text(label, col.netPrice - 60, totalsY, { width: 120, align: "left" });
+        const labelHeight = Math.ceil(doc.heightOfString(label, { width: labelWidth }));
+        doc.text(label, labelX, totalsY, { width: labelWidth, align: "left" });
 
         const formattedVal = isDiscount ? `-${formatMoney(value, currency)}` : formatMoney(value, currency);
         doc.text(formattedVal, col.total, totalsY, { width: 65, align: "right" });
-        totalsY += 16;
+
+        const rowHeight = Math.max(16, labelHeight + 2);
+        totalsY += rowHeight + extraSpacingBelow;
       };
 
       totalsRow("Subtotal", getMoney(order.currentSubtotalPriceSet, currency));
@@ -810,7 +822,8 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       const isZeroShipping = Number(shippingMoney.amount) === 0;
       const shippingLabel = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
 
-      totalsRow(shippingLabel, shippingMoney);
+      // Add extra padding/margin between Shipping and Tax to prevent colliding
+      totalsRow(shippingLabel, shippingMoney, false, false, 5);
       if (order.currentTotalTaxSet?.presentmentMoney || order.currentTotalTaxSet?.shopMoney) {
         totalsRow("Tax", getMoney(order.currentTotalTaxSet, currency));
       }
@@ -818,18 +831,18 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       if (Number(discSet.amount) > 0) {
         totalsRow("Total Discounts", discSet, false, true);
       }
-      totalsRow("Total", getMoney(order.currentTotalPriceSet, currency), true);
+      totalsRow("Total", getMoney(order.currentTotalPriceSet, currency), true, false, 4);
 
       if (freeShippingCode) {
-        totalsY += 4;
+        totalsY += 2;
         doc.font("Helvetica-Oblique").fontSize(8.5).fillColor("#2e7d32");
         doc.text(
           `* Free shipping discount code "${freeShippingCode}" applied`,
-          col.netPrice - 60,
+          labelX,
           totalsY,
-          { width: 185, align: "right" },
+          { width: col.total + 65 - labelX, align: "right" },
         );
-        totalsY += 12;
+        totalsY += 14;
       }
 
       // Paid and Remaining Balance calculation
@@ -840,7 +853,7 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       const remainingMoney = getMoney(order.totalOutstandingSet, currency);
       const outstandingAmt = Number(remainingMoney.amount || 0);
 
-      totalsY += 4;
+      totalsY += 6;
       totalsRow("Amount Paid", paidMoney);
       totalsRow("Remaining Amount", remainingMoney, outstandingAmt > 0);
 
