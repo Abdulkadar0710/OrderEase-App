@@ -136,7 +136,17 @@ export async function detectActiveFreeShipping(
     }
   }
 
+function isShippingDestinationAllowed(dest: any, countryCode?: string | null): boolean {
+  if (!dest) return true;
+  if (dest.__typename === "DiscountCountryAll" || dest.allCountries) return true;
+  if (dest.includeRestOfWorld) return true;
+  if (!countryCode) return false;
+  const allowed = (dest.countries || []).map((c: string) => String(c).toUpperCase());
+  return allowed.includes(countryCode.trim().toUpperCase());
+}
+
   // 7. Check discountCodes list on order
+  const orderCountry = order.shippingAddress?.countryCode || null;
   const discountCodes = Array.isArray(order.discountCodes) ? order.discountCodes : [];
   if (!result.code && discountCodes.length > 0) {
     for (const dCode of discountCodes) {
@@ -150,6 +160,16 @@ export async function detectActiveFreeShipping(
                 ... on DiscountCodeFreeShipping {
                   status
                   maximumShippingPrice { amount }
+                  destinationSelection {
+                    __typename
+                    ... on DiscountCountryAll {
+                      allCountries
+                    }
+                    ... on DiscountCountries {
+                      countries
+                      includeRestOfWorld
+                    }
+                  }
                 }
               }
             }
@@ -159,6 +179,9 @@ export async function detectActiveFreeShipping(
         const checkJson = (await checkRes.json()) as any;
         const disc = checkJson.data?.codeDiscountNodeByCode?.codeDiscount;
         if (disc?.__typename === "DiscountCodeFreeShipping" && disc.status === "ACTIVE") {
+          if (!isShippingDestinationAllowed(disc.destinationSelection, orderCountry)) {
+            continue;
+          }
           result.code = dCode;
           result.hasFreeShipping = true;
           if (disc.maximumShippingPrice?.amount) {
@@ -172,8 +195,8 @@ export async function detectActiveFreeShipping(
     }
   }
 
-  // 8. If we know the code, lookup maximumShippingPrice condition if not loaded yet
-  if (result.code && result.maxPrice == null) {
+  // 8. If we know the code, lookup maximumShippingPrice & destination condition if not loaded yet
+  if (result.code) {
     try {
       const lookupRes = await admin.graphql(
         `#graphql
@@ -184,6 +207,16 @@ export async function detectActiveFreeShipping(
               ... on DiscountCodeFreeShipping {
                 status
                 maximumShippingPrice { amount }
+                destinationSelection {
+                  __typename
+                  ... on DiscountCountryAll {
+                    allCountries
+                  }
+                  ... on DiscountCountries {
+                    countries
+                    includeRestOfWorld
+                  }
+                }
               }
             }
           }
@@ -193,7 +226,13 @@ export async function detectActiveFreeShipping(
       const lookupJson = (await lookupRes.json()) as any;
       const disc = lookupJson.data?.codeDiscountNodeByCode?.codeDiscount;
       if (disc?.__typename === "DiscountCodeFreeShipping") {
-        if (disc.maximumShippingPrice?.amount) {
+        if (!isShippingDestinationAllowed(disc.destinationSelection, orderCountry)) {
+          // Discount code is not allowed for the order's shipping country!
+          result.hasFreeShipping = false;
+          result.code = null;
+          return result;
+        }
+        if (result.maxPrice == null && disc.maximumShippingPrice?.amount) {
           result.maxPrice = parseFloat(disc.maximumShippingPrice.amount);
         }
       }
@@ -217,6 +256,16 @@ export async function detectActiveFreeShipping(
                     nodes { code }
                   }
                   maximumShippingPrice { amount }
+                  destinationSelection {
+                    __typename
+                    ... on DiscountCountryAll {
+                      allCountries
+                    }
+                    ... on DiscountCountries {
+                      countries
+                      includeRestOfWorld
+                    }
+                  }
                 }
               }
             }
@@ -227,6 +276,9 @@ export async function detectActiveFreeShipping(
       const discNodes = nodesJson.data?.codeDiscountNodes?.nodes || [];
       for (const node of discNodes) {
         const disc = node.codeDiscount;
+        if (!isShippingDestinationAllowed(disc?.destinationSelection, orderCountry)) {
+          continue;
+        }
         const foundCode = disc?.codes?.nodes?.[0]?.code;
         if (foundCode) {
           result.code = foundCode;

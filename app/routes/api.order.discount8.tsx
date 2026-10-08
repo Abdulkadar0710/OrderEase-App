@@ -520,6 +520,16 @@ async function resolveDiscountCode(
                 }
               }
             }
+            destinationSelection {
+              __typename
+              ... on DiscountCountryAll {
+                allCountries
+              }
+              ... on DiscountCountries {
+                countries
+                includeRestOfWorld
+              }
+            }
           }
         }
       }
@@ -707,6 +717,33 @@ async function resolveDiscountCode(
       shippingDiscounts: !!codeDiscount.combinesWith?.shippingDiscounts,
     };
 
+    let destinationSelection: {
+      allCountries: boolean;
+      countries: string[];
+      includeRestOfWorld: boolean;
+    } = {
+      allCountries: true,
+      countries: [],
+      includeRestOfWorld: false,
+    };
+
+    const dest = codeDiscount.destinationSelection;
+    if (dest) {
+      if (dest.__typename === "DiscountCountryAll") {
+        destinationSelection = {
+          allCountries: true,
+          countries: [],
+          includeRestOfWorld: false,
+        };
+      } else if (dest.__typename === "DiscountCountries") {
+        destinationSelection = {
+          allCountries: false,
+          countries: (dest.countries || []).map((c: string) => String(c).toUpperCase()),
+          includeRestOfWorld: Boolean(dest.includeRestOfWorld),
+        };
+      }
+    }
+
     return {
       ok: true,
       type: "free_shipping",
@@ -716,6 +753,7 @@ async function resolveDiscountCode(
       maximumShippingPrice: maxPrice,
       minimumQuantity: minQty,
       minimumSubtotal: minSubtotal,
+      destinationSelection,
     };
   }
 
@@ -800,6 +838,53 @@ export async function action({ request }: ActionFunctionArgs) {
     const resolved = await resolveDiscountCode(admin, discountCode);
     if (!resolved.ok) {
       return cors(Response.json({ userErrors: [{ message: resolved.message }] }, { status: 422 }));
+    }
+
+    // Verify shipping destination country eligibility
+    if (resolved.type === "free_shipping") {
+      const destSel = (resolved as any).destinationSelection;
+      if (destSel && !destSel.allCountries) {
+        const orderDestRes = await admin.graphql(
+          `#graphql
+          query getOrderShippingCountry($id: ID!) {
+            order(id: $id) {
+              shippingAddress {
+                countryCode
+                country
+              }
+            }
+          }`,
+          { variables: { id: orderId } },
+        );
+        const orderDestJson = await orderDestRes.json();
+        const shippingAddress = orderDestJson.data?.order?.shippingAddress;
+        const currentCountryCode = shippingAddress?.countryCode
+          ? String(shippingAddress.countryCode).toUpperCase()
+          : null;
+        const currentCountryName =
+          shippingAddress?.country || currentCountryCode || "the current shipping address";
+
+        const allowedCountries = (destSel.countries || []).map((c: string) => c.toUpperCase());
+        const isEligible =
+          Boolean(destSel.includeRestOfWorld) ||
+          (Boolean(currentCountryCode) && allowedCountries.includes(currentCountryCode!));
+
+        if (!isEligible) {
+          const allowedDisplay = allowedCountries.length > 0 ? ` (eligible for: ${allowedCountries.join(", ")})` : "";
+          return cors(
+            Response.json(
+              {
+                userErrors: [
+                  {
+                    message: `Discount code "${discountCode}" cannot be applied because it is not valid for ${currentCountryName}${allowedDisplay}.`,
+                  },
+                ],
+              },
+              { status: 422 },
+            ),
+          );
+        }
+      }
     }
 
     const beginRes = await admin.graphql(
