@@ -6656,8 +6656,87 @@ const ORDER_INVOICE_QUERY = `#graphql
       currentSubtotalPriceSet {
         shopMoney { amount currencyCode }
       }
+      currentShippingPriceSet {
+        shopMoney { amount currencyCode }
+      }
       totalShippingPriceSet {
         shopMoney { amount currencyCode }
+      }
+      shippingLine {
+        id
+        title
+        code
+        originalPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        discountedPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        currentDiscountedPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        discountAllocations {
+          allocatedAmountSet {
+            shopMoney { amount currencyCode }
+          }
+          discountApplication {
+            targetType
+            targetSelection
+            allocationMethod
+            ... on DiscountCodeApplication {
+              code
+            }
+            ... on ManualDiscountApplication {
+              title
+              description
+            }
+            ... on ScriptDiscountApplication {
+              title
+            }
+            ... on AutomaticDiscountApplication {
+              title
+            }
+          }
+        }
+      }
+      shippingLines(first: 5) {
+        nodes {
+          id
+          title
+          code
+          originalPriceSet {
+            shopMoney { amount currencyCode }
+          }
+          discountedPriceSet {
+            shopMoney { amount currencyCode }
+          }
+          currentDiscountedPriceSet {
+            shopMoney { amount currencyCode }
+          }
+          discountAllocations {
+            allocatedAmountSet {
+              shopMoney { amount currencyCode }
+            }
+            discountApplication {
+              targetType
+              targetSelection
+              allocationMethod
+              ... on DiscountCodeApplication {
+                code
+              }
+              ... on ManualDiscountApplication {
+                title
+                description
+              }
+              ... on ScriptDiscountApplication {
+                title
+              }
+              ... on AutomaticDiscountApplication {
+                title
+              }
+            }
+          }
+        }
       }
       currentTotalTaxSet {
         shopMoney { amount currencyCode }
@@ -6700,7 +6779,7 @@ function formatAddress(address) {
 }
 function generateInvoicePdf(order) {
   return new Promise((resolve, reject) => {
-    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
+    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C;
     try {
       const doc = new PDFDocument({ size: "A4", margin: 50 });
       const chunks = [];
@@ -6863,20 +6942,47 @@ function generateInvoicePdf(order) {
         totalsY += 16;
       };
       totalsRow("Subtotal", (_i = order.currentSubtotalPriceSet) == null ? void 0 : _i.shopMoney);
-      totalsRow("Shipping", (_j = order.totalShippingPriceSet) == null ? void 0 : _j.shopMoney);
-      totalsRow("Tax", (_k = order.currentTotalTaxSet) == null ? void 0 : _k.shopMoney);
-      if (((_l = order.currentTotalDiscountsSet) == null ? void 0 : _l.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
-        totalsRow("Total Discounts", (_m = order.currentTotalDiscountsSet) == null ? void 0 : _m.shopMoney, false, true);
+      const shippingLine = order.shippingLine || ((_k = (_j = order.shippingLines) == null ? void 0 : _j.nodes) == null ? void 0 : _k[0]);
+      const shippingAllocations = (shippingLine == null ? void 0 : shippingLine.discountAllocations) || [];
+      const totalShippingDiscount = shippingAllocations.reduce((sum, alloc) => {
+        var _a3, _b2;
+        return sum + Number(((_b2 = (_a3 = alloc.allocatedAmountSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
+      }, 0);
+      const origShippingAmt = Number(
+        ((_m = (_l = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _l.shopMoney) == null ? void 0 : _m.amount) ?? ((_o = (_n = order.totalShippingPriceSet) == null ? void 0 : _n.shopMoney) == null ? void 0 : _o.amount) ?? 0
+      );
+      let shippingMoney;
+      if ((_p = order.currentShippingPriceSet) == null ? void 0 : _p.shopMoney) {
+        shippingMoney = order.currentShippingPriceSet.shopMoney;
+      } else if ((_q = shippingLine == null ? void 0 : shippingLine.currentDiscountedPriceSet) == null ? void 0 : _q.shopMoney) {
+        shippingMoney = shippingLine.currentDiscountedPriceSet.shopMoney;
+      } else if ((_r = shippingLine == null ? void 0 : shippingLine.discountedPriceSet) == null ? void 0 : _r.shopMoney) {
+        shippingMoney = shippingLine.discountedPriceSet.shopMoney;
+      } else if (totalShippingDiscount > 0) {
+        shippingMoney = {
+          amount: Math.max(0, origShippingAmt - totalShippingDiscount).toFixed(2),
+          currencyCode: currency
+        };
+      } else {
+        shippingMoney = ((_s = order.totalShippingPriceSet) == null ? void 0 : _s.shopMoney) || {
+          amount: "0.00",
+          currencyCode: currency
+        };
       }
-      totalsRow("Total", (_n = order.currentTotalPriceSet) == null ? void 0 : _n.shopMoney, true);
-      const totalPriceAmt = Number(((_p = (_o = order.currentTotalPriceSet) == null ? void 0 : _o.shopMoney) == null ? void 0 : _p.amount) || 0);
-      const paidAmt = ((_q = order.totalReceivedSet) == null ? void 0 : _q.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
-      const outstandingAmt = ((_r = order.totalOutstandingSet) == null ? void 0 : _r.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
-      const paidMoney = ((_s = order.totalReceivedSet) == null ? void 0 : _s.shopMoney) || {
+      totalsRow("Shipping", shippingMoney);
+      totalsRow("Tax", (_t = order.currentTotalTaxSet) == null ? void 0 : _t.shopMoney);
+      if (((_u = order.currentTotalDiscountsSet) == null ? void 0 : _u.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
+        totalsRow("Total Discounts", (_v = order.currentTotalDiscountsSet) == null ? void 0 : _v.shopMoney, false, true);
+      }
+      totalsRow("Total", (_w = order.currentTotalPriceSet) == null ? void 0 : _w.shopMoney, true);
+      const totalPriceAmt = Number(((_y = (_x = order.currentTotalPriceSet) == null ? void 0 : _x.shopMoney) == null ? void 0 : _y.amount) || 0);
+      const paidAmt = ((_z = order.totalReceivedSet) == null ? void 0 : _z.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
+      const outstandingAmt = ((_A = order.totalOutstandingSet) == null ? void 0 : _A.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
+      const paidMoney = ((_B = order.totalReceivedSet) == null ? void 0 : _B.shopMoney) || {
         amount: paidAmt.toFixed(2),
         currencyCode: currency
       };
-      const remainingMoney = ((_t = order.totalOutstandingSet) == null ? void 0 : _t.shopMoney) || {
+      const remainingMoney = ((_C = order.totalOutstandingSet) == null ? void 0 : _C.shopMoney) || {
         amount: outstandingAmt.toFixed(2),
         currencyCode: currency
       };

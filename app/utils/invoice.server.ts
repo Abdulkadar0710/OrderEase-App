@@ -82,8 +82,87 @@ export const ORDER_INVOICE_QUERY = `#graphql
       currentSubtotalPriceSet {
         shopMoney { amount currencyCode }
       }
+      currentShippingPriceSet {
+        shopMoney { amount currencyCode }
+      }
       totalShippingPriceSet {
         shopMoney { amount currencyCode }
+      }
+      shippingLine {
+        id
+        title
+        code
+        originalPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        discountedPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        currentDiscountedPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        discountAllocations {
+          allocatedAmountSet {
+            shopMoney { amount currencyCode }
+          }
+          discountApplication {
+            targetType
+            targetSelection
+            allocationMethod
+            ... on DiscountCodeApplication {
+              code
+            }
+            ... on ManualDiscountApplication {
+              title
+              description
+            }
+            ... on ScriptDiscountApplication {
+              title
+            }
+            ... on AutomaticDiscountApplication {
+              title
+            }
+          }
+        }
+      }
+      shippingLines(first: 5) {
+        nodes {
+          id
+          title
+          code
+          originalPriceSet {
+            shopMoney { amount currencyCode }
+          }
+          discountedPriceSet {
+            shopMoney { amount currencyCode }
+          }
+          currentDiscountedPriceSet {
+            shopMoney { amount currencyCode }
+          }
+          discountAllocations {
+            allocatedAmountSet {
+              shopMoney { amount currencyCode }
+            }
+            discountApplication {
+              targetType
+              targetSelection
+              allocationMethod
+              ... on DiscountCodeApplication {
+                code
+              }
+              ... on ManualDiscountApplication {
+                title
+                description
+              }
+              ... on ScriptDiscountApplication {
+                title
+              }
+              ... on AutomaticDiscountApplication {
+                title
+              }
+            }
+          }
+        }
       }
       currentTotalTaxSet {
         shopMoney { amount currencyCode }
@@ -156,7 +235,48 @@ export interface InvoiceOrder {
     }>;
   };
   currentSubtotalPriceSet?: { shopMoney: Money } | null;
+  currentShippingPriceSet?: { shopMoney: Money } | null;
   totalShippingPriceSet?: { shopMoney: Money } | null;
+  shippingLine?: {
+    id?: string | null;
+    title?: string | null;
+    code?: string | null;
+    originalPriceSet?: { shopMoney: Money } | null;
+    discountedPriceSet?: { shopMoney: Money } | null;
+    currentDiscountedPriceSet?: { shopMoney: Money } | null;
+    discountAllocations?: Array<{
+      allocatedAmountSet?: { shopMoney: Money } | null;
+      discountApplication?: {
+        targetType?: string;
+        targetSelection?: string;
+        allocationMethod?: string;
+        code?: string;
+        title?: string;
+        description?: string;
+      } | null;
+    }> | null;
+  } | null;
+  shippingLines?: {
+    nodes?: Array<{
+      id?: string | null;
+      title?: string | null;
+      code?: string | null;
+      originalPriceSet?: { shopMoney: Money } | null;
+      discountedPriceSet?: { shopMoney: Money } | null;
+      currentDiscountedPriceSet?: { shopMoney: Money } | null;
+      discountAllocations?: Array<{
+        allocatedAmountSet?: { shopMoney: Money } | null;
+        discountApplication?: {
+          targetType?: string;
+          targetSelection?: string;
+          allocationMethod?: string;
+          code?: string;
+          title?: string;
+          description?: string;
+        } | null;
+      }> | null;
+    }>;
+  } | null;
   currentTotalTaxSet?: { shopMoney: Money } | null;
   currentTotalDiscountsSet?: { shopMoney: Money } | null;
   currentTotalPriceSet?: { shopMoney: Money } | null;
@@ -431,7 +551,43 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       };
 
       totalsRow("Subtotal", order.currentSubtotalPriceSet?.shopMoney);
-      totalsRow("Shipping", order.totalShippingPriceSet?.shopMoney);
+
+      // Shipping calculation:
+      // Prefer currentShippingPriceSet (reflects order edits and shipping discounts like Free Shipping).
+      // Fallback to shippingLine currentDiscountedPriceSet / discountedPriceSet,
+      // discount allocation calculations, or totalShippingPriceSet.
+      const shippingLine = order.shippingLine || order.shippingLines?.nodes?.[0];
+      const shippingAllocations = shippingLine?.discountAllocations || [];
+      const totalShippingDiscount = shippingAllocations.reduce((sum, alloc) => {
+        return sum + Number(alloc.allocatedAmountSet?.shopMoney?.amount || 0);
+      }, 0);
+
+      const origShippingAmt = Number(
+        shippingLine?.originalPriceSet?.shopMoney?.amount ??
+        order.totalShippingPriceSet?.shopMoney?.amount ??
+        0
+      );
+
+      let shippingMoney: Money;
+      if (order.currentShippingPriceSet?.shopMoney) {
+        shippingMoney = order.currentShippingPriceSet.shopMoney;
+      } else if (shippingLine?.currentDiscountedPriceSet?.shopMoney) {
+        shippingMoney = shippingLine.currentDiscountedPriceSet.shopMoney;
+      } else if (shippingLine?.discountedPriceSet?.shopMoney) {
+        shippingMoney = shippingLine.discountedPriceSet.shopMoney;
+      } else if (totalShippingDiscount > 0) {
+        shippingMoney = {
+          amount: Math.max(0, origShippingAmt - totalShippingDiscount).toFixed(2),
+          currencyCode: currency,
+        };
+      } else {
+        shippingMoney = order.totalShippingPriceSet?.shopMoney || {
+          amount: "0.00",
+          currencyCode: currency,
+        };
+      }
+
+      totalsRow("Shipping", shippingMoney);
       totalsRow("Tax", order.currentTotalTaxSet?.shopMoney);
       if (order.currentTotalDiscountsSet?.shopMoney && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
         totalsRow("Total Discounts", order.currentTotalDiscountsSet?.shopMoney, false, true);
