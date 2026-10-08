@@ -41,6 +41,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim() || "";
+  const countryCode = url.searchParams.get("countryCode")?.trim() || "";
   const shopParam = url.searchParams.get("shop")?.trim();
   if (shopParam) storeDomain = shopParam;
 
@@ -48,7 +49,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return cors(Response.json({ suggestions: [] }));
   }
 
-  const suggestions = await fetchLocationSuggestions(q, storeDomain);
+  const suggestions = await fetchLocationSuggestions(q, storeDomain, countryCode);
   return cors(Response.json({ suggestions }));
 }
 
@@ -83,20 +84,21 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const body = await request.json().catch(() => ({}));
     const q = (body.q || "").trim();
+    const countryCode = (body.countryCode || "").trim();
     if (body.shop) storeDomain = String(body.shop).trim();
 
     if (!q || q.length < 2) {
       return cors(Response.json({ suggestions: [] }));
     }
 
-    const suggestions = await fetchLocationSuggestions(q, storeDomain);
+    const suggestions = await fetchLocationSuggestions(q, storeDomain, countryCode);
     return cors(Response.json({ suggestions }));
   } catch (err) {
     return cors(Response.json({ suggestions: [] }));
   }
 }
 
-async function fetchLocationSuggestions(query: string, storeDomain?: string): Promise<SuggestionItem[]> {
+async function fetchLocationSuggestions(query: string, storeDomain?: string, countryCode?: string): Promise<SuggestionItem[]> {
   let googleApiKey = "";
   const cleanDomain = storeDomain ? storeDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim() : "";
 
@@ -121,13 +123,17 @@ async function fetchLocationSuggestions(query: string, storeDomain?: string): Pr
   // ── Strategy A: Google Places API (New) ───────────────────────────────────
   try {
     const newPlacesUrl = "https://places.googleapis.com/v1/places:autocomplete";
+    const newPlacesBody: Record<string, unknown> = { input: query };
+    if (countryCode) {
+      newPlacesBody.includedRegionCodes = [countryCode.toLowerCase()];
+    }
     const resNew = await fetch(newPlacesUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": googleApiKey,
       },
-      body: JSON.stringify({ input: query }),
+      body: JSON.stringify(newPlacesBody),
     });
 
     if (resNew.ok) {
@@ -222,7 +228,10 @@ async function fetchLocationSuggestions(query: string, storeDomain?: string): Pr
 
   // ── Strategy B: Google Places API (Legacy) ────────────────────────────────
   try {
-    const gUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=geocode&key=${googleApiKey}`;
+    let gUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=geocode&key=${googleApiKey}`;
+    if (countryCode) {
+      gUrl += `&components=country:${encodeURIComponent(countryCode.toLowerCase())}`;
+    }
     const res = await fetch(gUrl);
     const data = await res.json();
 

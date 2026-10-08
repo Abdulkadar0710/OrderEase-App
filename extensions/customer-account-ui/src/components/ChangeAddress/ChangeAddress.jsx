@@ -33,6 +33,7 @@ export function ChangeAddress() {
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [countriesList, setCountriesList] = useState(COUNTRIES);
+  const [billingCountry, setBillingCountry] = useState({ code: 'US', name: 'United States' });
   const [loadingAddress, setLoadingAddress] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -62,7 +63,7 @@ export function ChangeAddress() {
       .catch(() => setHasGoogleKey(false));
   }, [order?.id]);
 
-  // ── Pre-fill from existing shipping address on mount ──────────────────
+  // ── Pre-fill from existing shipping & billing address on mount ──────────
   useEffect(() => {
     if (!order?.id) {
       setLoadingAddress(false);
@@ -72,27 +73,38 @@ export function ChangeAddress() {
     let cancelled = false;
 
     getShippingAddress({ orderId: order.id })
-      .then((addr) => {
-        if (cancelled || !addr) return;
-        const code = (addr.countryCode || 'US').toUpperCase();
+      .then((data) => {
+        if (cancelled || !data) return;
+        const shippingAddr = data.shippingAddress || data;
+        const billingAddr = data.billingAddress;
+
+        // Default shipping country strictly to the billing country; fall back to shipping country or 'US'
+        const billingCode = (billingAddr?.countryCode || shippingAddr?.countryCode || 'US').toUpperCase();
+        const billingCountryName =
+          billingAddr?.country ||
+          COUNTRIES.find((c) => c.code === billingCode)?.name ||
+          shippingAddr?.country ||
+          billingCode;
 
         setCountriesList((prev) => {
-          if (code && !prev.some((c) => c.code === code)) {
-            return [...prev, { code, name: code }];
+          if (billingCode && !prev.some((c) => c.code === billingCode)) {
+            return [...prev, { code: billingCode, name: billingCountryName }];
           }
           return prev;
         });
 
+        setBillingCountry({ code: billingCode, name: billingCountryName });
+
         setForm({
-          firstName:   addr.firstName   || '',
-          lastName:    addr.lastName    || '',
-          address1:    addr.address1    || '',
-          address2:    addr.address2    || '',
-          city:        addr.city        || '',
-          province:    addr.province    || '',
-          zip:         addr.zip         || '',
-          countryCode: code,
-          phone:       addr.phone       || '',
+          firstName:   shippingAddr.firstName   || '',
+          lastName:    shippingAddr.lastName    || '',
+          address1:    shippingAddr.address1    || '',
+          address2:    shippingAddr.address2    || '',
+          city:        shippingAddr.city        || '',
+          province:    shippingAddr.province    || '',
+          zip:         shippingAddr.zip         || '',
+          countryCode: billingCode,
+          phone:       shippingAddr.phone       || '',
         });
       })
       .catch(() => {/* silent — form stays empty */})
@@ -120,7 +132,7 @@ export function ChangeAddress() {
     setLoadingSuggestions(true);
 
     const timer = setTimeout(() => {
-      getLocationSuggestions(q)
+      getLocationSuggestions(q, form.countryCode || billingCountry.code)
         .then((items) => {
           if (!cancelled) {
             setSuggestions(items || []);
@@ -139,10 +151,11 @@ export function ChangeAddress() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, hasGoogleKey]);
+  }, [searchQuery, hasGoogleKey, form.countryCode, billingCountry.code]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleChange(field, value) {
+    if (field === 'countryCode') return; // Country cannot be changed by the customer
     setForm((prev) => ({ ...prev, [field]: value }));
     setError(null);
     setSuccess(false);
@@ -162,28 +175,18 @@ export function ChangeAddress() {
   function selectSuggestion(item) {
     if (!item) return;
 
-    const cCode = (item.countryCode || form.countryCode || 'US').toUpperCase();
-
-    // Ensure country code exists in dropdown list
-    setCountriesList((prev) => {
-      if (!prev.some((c) => c.code === cCode)) {
-        return [...prev, { code: cCode, name: item.country || cCode }];
-      }
-      return prev;
-    });
-
     const newAddress1 = item.address1 || item.mainText || form.address1;
     const newCity = item.city || item.mainText || form.city;
     const newProvince = item.province || form.province;
     const newZip = item.zip || form.zip;
 
+    // Retain countryCode fixed to billing country
     setForm((prev) => ({
       ...prev,
       address1: newAddress1,
       city: newCity,
       province: newProvince,
       zip: newZip,
-      countryCode: cCode,
     }));
 
     setShowSuggestions(false);
@@ -195,7 +198,7 @@ export function ChangeAddress() {
       newAddress1,
       newCity,
       newProvince,
-      item.country || cCode,
+      billingCountry.name || billingCountry.code,
       newZip ? `ZIP: ${newZip}` : null
     ].filter(Boolean);
 
@@ -425,19 +428,18 @@ export function ChangeAddress() {
           <s-stack direction="inline" gap="base">
             <s-box inlineSize="100%">
               <s-select
-                label="Country *"
+                label="Country (Locked to billing country)"
                 name="countryCode"
                 value={form.countryCode}
-                disabled={submitting}
-                onChange={(e) => {
-                  const target = e.currentTarget;
-                  if (target && 'value' in target) handleChange('countryCode', String(target.value));
-                }}
+                disabled={true}
               >
                 {countriesList.map((c) => (
                   <s-option key={c.code} value={c.code}>{c.name}</s-option>
                 ))}
               </s-select>
+              <s-text size="small" color="subdued">
+                Shipping country is locked to billing country ({billingCountry.name || form.countryCode}).
+              </s-text>
             </s-box>
             <s-box inlineSize="100%">
               <s-text-field

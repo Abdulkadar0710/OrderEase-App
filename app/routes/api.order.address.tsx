@@ -20,7 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const res = await admin.graphql(
       `#graphql
-      query getShippingAddress($id: ID!) {
+      query getOrderAddresses($id: ID!) {
         order(id: $id) {
           shippingAddress {
             firstName
@@ -31,6 +31,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
             province
             zip
             countryCode
+            country
+            phone
+          }
+          billingAddress {
+            firstName
+            lastName
+            address1
+            address2
+            city
+            province
+            zip
+            countryCode
+            country
             phone
           }
         }
@@ -39,9 +52,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     );
     const json = await res.json();
     const shippingAddress = json.data?.order?.shippingAddress ?? null;
-    return cors(Response.json({ shippingAddress }));
+    const billingAddress = json.data?.order?.billingAddress ?? null;
+    return cors(Response.json({ shippingAddress, billingAddress }));
   } catch (err) {
-    return cors(Response.json({ shippingAddress: null }));
+    return cors(Response.json({ shippingAddress: null, billingAddress: null }));
   }
 }
 
@@ -107,6 +121,14 @@ export async function action({ request }: ActionFunctionArgs) {
       order(id: $id) {
         id
         customer { id }
+        billingAddress {
+          countryCode
+          country
+        }
+        shippingAddress {
+          countryCode
+          country
+        }
       }
     }`,
     { variables: { id: orderId } },
@@ -123,6 +145,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return cors(Response.json({ userErrors: [{ message: "Not authorized to update this order." }] }, { status: 403 }));
   }
 
+  // Enforce shipping country matching the billing country:
+  const allowedCountryCode =
+    order.billingAddress?.countryCode ||
+    order.shippingAddress?.countryCode ||
+    address.countryCode;
+
   // ── Build the MailingAddressInput ──────────────────────────────────────────
   const mailingAddress = {
     firstName: address.firstName || "",
@@ -132,7 +160,7 @@ export async function action({ request }: ActionFunctionArgs) {
     city: address.city,
     province: address.province || "",
     zip: address.zip || "",
-    countryCode: address.countryCode,
+    countryCode: allowedCountryCode,
     phone: address.phone || "",
   };
 

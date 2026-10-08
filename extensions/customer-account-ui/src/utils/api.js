@@ -266,7 +266,11 @@ export async function getShippingAddress({ orderId }) {
   if (!response.ok) return null;
 
   const result = await response.json();
-  return result.shippingAddress ?? null;
+  return {
+    shippingAddress: result.shippingAddress ?? null,
+    billingAddress: result.billingAddress ?? null,
+    ...(result.shippingAddress || {}),
+  };
 }
 
 /**
@@ -487,7 +491,7 @@ export async function checkVariantQuantity(variantId) {
  * @param {string} query - Location query (e.g., "Indore")
  * @returns {Promise<Array<{id: string, description: string, mainText: string, secondaryText: string, address1: string, city: string, province: string, zip: string, countryCode: string, country: string}>>}
  */
-export async function getLocationSuggestions(query) {
+export async function getLocationSuggestions(query, countryCode) {
   if (!query || query.trim().length < 2) return [];
 
   let token = "";
@@ -499,7 +503,10 @@ export async function getLocationSuggestions(query) {
     // silent
   }
 
-  const targetUrl = `${APP_URL}/api/location-suggestions?q=${encodeURIComponent(query.trim())}`;
+  let targetUrl = `${APP_URL}/api/location-suggestions?q=${encodeURIComponent(query.trim())}`;
+  if (countryCode) {
+    targetUrl += `&countryCode=${encodeURIComponent(countryCode.trim())}`;
+  }
 
   try {
     const headers = {};

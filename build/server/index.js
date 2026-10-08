@@ -1372,7 +1372,7 @@ const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
 async function loader$q({
   request
 }) {
-  var _a2, _b, _c;
+  var _a2, _b, _c, _d;
   let cors = (res) => res;
   let storeDomain = "";
   try {
@@ -1396,14 +1396,15 @@ async function loader$q({
   }
   const url = new URL(request.url);
   const q = ((_b = url.searchParams.get("q")) == null ? void 0 : _b.trim()) || "";
-  const shopParam = (_c = url.searchParams.get("shop")) == null ? void 0 : _c.trim();
+  const countryCode = ((_c = url.searchParams.get("countryCode")) == null ? void 0 : _c.trim()) || "";
+  const shopParam = (_d = url.searchParams.get("shop")) == null ? void 0 : _d.trim();
   if (shopParam) storeDomain = shopParam;
   if (!q || q.length < 2) {
     return cors(Response.json({
       suggestions: []
     }));
   }
-  const suggestions = await fetchLocationSuggestions(q, storeDomain);
+  const suggestions = await fetchLocationSuggestions(q, storeDomain, countryCode);
   return cors(Response.json({
     suggestions
   }));
@@ -1441,13 +1442,14 @@ async function action$k({
   try {
     const body = await request.json().catch(() => ({}));
     const q = (body.q || "").trim();
+    const countryCode = (body.countryCode || "").trim();
     if (body.shop) storeDomain = String(body.shop).trim();
     if (!q || q.length < 2) {
       return cors(Response.json({
         suggestions: []
       }));
     }
-    const suggestions = await fetchLocationSuggestions(q, storeDomain);
+    const suggestions = await fetchLocationSuggestions(q, storeDomain, countryCode);
     return cors(Response.json({
       suggestions
     }));
@@ -1457,7 +1459,7 @@ async function action$k({
     }));
   }
 }
-async function fetchLocationSuggestions(query, storeDomain) {
+async function fetchLocationSuggestions(query, storeDomain, countryCode) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i;
   let googleApiKey = "";
   const cleanDomain = storeDomain ? storeDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim() : "";
@@ -1480,15 +1482,19 @@ async function fetchLocationSuggestions(query, storeDomain) {
   }
   try {
     const newPlacesUrl = "https://places.googleapis.com/v1/places:autocomplete";
+    const newPlacesBody = {
+      input: query
+    };
+    if (countryCode) {
+      newPlacesBody.includedRegionCodes = [countryCode.toLowerCase()];
+    }
     const resNew = await fetch(newPlacesUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": googleApiKey
       },
-      body: JSON.stringify({
-        input: query
-      })
+      body: JSON.stringify(newPlacesBody)
     });
     if (resNew.ok) {
       const dataNew = await resNew.json();
@@ -1505,7 +1511,7 @@ async function fetchLocationSuggestions(query, storeDomain) {
           let city = mainText;
           let province = "";
           let zip = "";
-          let countryCode = "";
+          let countryCode2 = "";
           let country = "";
           if (rawPlaceId) {
             try {
@@ -1538,7 +1544,7 @@ async function fetchLocationSuggestions(query, storeDomain) {
                   if (types.includes("postal_code")) zip = c.longText || c.shortText;
                   if (types.includes("country")) {
                     country = c.longText || c.shortText;
-                    countryCode = (c.shortText || "").toUpperCase();
+                    countryCode2 = (c.shortText || "").toUpperCase();
                   }
                 }
                 if (!city) city = neighborhood || mainText;
@@ -1556,7 +1562,7 @@ async function fetchLocationSuggestions(query, storeDomain) {
             city: city || mainText,
             province,
             zip,
-            countryCode,
+            countryCode: countryCode2,
             country
           });
         }
@@ -1568,7 +1574,10 @@ async function fetchLocationSuggestions(query, storeDomain) {
   } catch (e) {
   }
   try {
-    const gUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=geocode&key=${googleApiKey}`;
+    let gUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=geocode&key=${googleApiKey}`;
+    if (countryCode) {
+      gUrl += `&components=country:${encodeURIComponent(countryCode.toLowerCase())}`;
+    }
     const res = await fetch(gUrl);
     const data = await res.json();
     if (data.status === "OK" && Array.isArray(data.predictions) && data.predictions.length > 0) {
@@ -1585,7 +1594,7 @@ async function fetchLocationSuggestions(query, storeDomain) {
           let city = "";
           let province = "";
           let zip = "";
-          let countryCode = "";
+          let countryCode2 = "";
           let country = "";
           for (const c of comps) {
             const types = c.types || [];
@@ -1604,7 +1613,7 @@ async function fetchLocationSuggestions(query, storeDomain) {
             if (types.includes("postal_code")) zip = c.long_name;
             if (types.includes("country")) {
               country = c.long_name;
-              countryCode = (c.short_name || "").toUpperCase();
+              countryCode2 = (c.short_name || "").toUpperCase();
             }
           }
           if (!city) {
@@ -1620,7 +1629,7 @@ async function fetchLocationSuggestions(query, storeDomain) {
             city,
             province,
             zip,
-            countryCode,
+            countryCode: countryCode2,
             country
           });
         }
@@ -8853,7 +8862,7 @@ const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
 async function loader$c({
   request
 }) {
-  var _a2, _b;
+  var _a2, _b, _c, _d;
   const {
     sessionToken,
     cors
@@ -8873,7 +8882,7 @@ async function loader$c({
   } = await unauthenticated.admin(storeDomain);
   try {
     const res = await admin.graphql(`#graphql
-      query getShippingAddress($id: ID!) {
+      query getOrderAddresses($id: ID!) {
         order(id: $id) {
           shippingAddress {
             firstName
@@ -8884,6 +8893,19 @@ async function loader$c({
             province
             zip
             countryCode
+            country
+            phone
+          }
+          billingAddress {
+            firstName
+            lastName
+            address1
+            address2
+            city
+            province
+            zip
+            countryCode
+            country
             phone
           }
         }
@@ -8894,19 +8916,22 @@ async function loader$c({
     });
     const json = await res.json();
     const shippingAddress = ((_b = (_a2 = json.data) == null ? void 0 : _a2.order) == null ? void 0 : _b.shippingAddress) ?? null;
+    const billingAddress = ((_d = (_c = json.data) == null ? void 0 : _c.order) == null ? void 0 : _d.billingAddress) ?? null;
     return cors(Response.json({
-      shippingAddress
+      shippingAddress,
+      billingAddress
     }));
   } catch (err) {
     return cors(Response.json({
-      shippingAddress: null
+      shippingAddress: null,
+      billingAddress: null
     }));
   }
 }
 async function action$6({
   request
 }) {
-  var _a2, _b, _c, _d;
+  var _a2, _b, _c, _d, _e, _f;
   const {
     sessionToken,
     cors
@@ -8975,6 +9000,14 @@ async function action$6({
       order(id: $id) {
         id
         customer { id }
+        billingAddress {
+          countryCode
+          country
+        }
+        shippingAddress {
+          countryCode
+          country
+        }
       }
     }`, {
     variables: {
@@ -9005,6 +9038,7 @@ async function action$6({
       status: 403
     }));
   }
+  const allowedCountryCode = ((_c = order.billingAddress) == null ? void 0 : _c.countryCode) || ((_d = order.shippingAddress) == null ? void 0 : _d.countryCode) || address.countryCode;
   const mailingAddress = {
     firstName: address.firstName || "",
     lastName: address.lastName || "",
@@ -9013,7 +9047,7 @@ async function action$6({
     city: address.city,
     province: address.province || "",
     zip: address.zip || "",
-    countryCode: address.countryCode,
+    countryCode: allowedCountryCode,
     phone: address.phone || ""
   };
   const input2 = {
@@ -9058,7 +9092,7 @@ async function action$6({
       }
     });
     const updateJson = await updateRes.json();
-    const errors = ((_d = (_c = updateJson.data) == null ? void 0 : _c.orderUpdate) == null ? void 0 : _d.userErrors) ?? [];
+    const errors = ((_f = (_e = updateJson.data) == null ? void 0 : _e.orderUpdate) == null ? void 0 : _f.userErrors) ?? [];
     if (errors.length) {
       return cors(Response.json({
         userErrors: errors
