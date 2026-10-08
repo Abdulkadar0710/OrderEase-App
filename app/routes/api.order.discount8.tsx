@@ -109,7 +109,10 @@ function readLineItemDiscountState(item: LineItemNode): {
   tag: DecodedTag;
 } {
   const allocations = item.calculatedDiscountAllocations ?? [];
-  const currencyCode = item.originalUnitPriceSet?.shopMoney?.currencyCode ?? "";
+  const currencyCode =
+    item.originalUnitPriceSet?.presentmentMoney?.currencyCode ||
+    item.originalUnitPriceSet?.shopMoney?.currencyCode ||
+    "";
 
   if (allocations.length === 0) {
     return {
@@ -132,8 +135,14 @@ function readLineItemDiscountState(item: LineItemNode): {
     if (!app) continue;
     existingApplicationId = app.id;
 
-    const allocatedAmount = parseFloat(allocation.allocatedAmountSet?.shopMoney?.amount ?? "0");
-    if (allocation.allocatedAmountSet?.shopMoney?.currencyCode) {
+    const allocatedAmount = parseFloat(
+      allocation.allocatedAmountSet?.presentmentMoney?.amount ??
+      allocation.allocatedAmountSet?.shopMoney?.amount ??
+      "0"
+    );
+    if (allocation.allocatedAmountSet?.presentmentMoney?.currencyCode) {
+      resolvedCurrency = allocation.allocatedAmountSet.presentmentMoney.currencyCode;
+    } else if (allocation.allocatedAmountSet?.shopMoney?.currencyCode) {
       resolvedCurrency = allocation.allocatedAmountSet.shopMoney.currencyCode;
     }
 
@@ -244,8 +253,15 @@ function collectExistingDiscounts(allLineItems: LineItemNode[]): Map<string, Exi
       const app = alloc.discountApplication;
       if (!app || !app.id) continue;
 
-      const amount = parseFloat(alloc.allocatedAmountSet?.shopMoney?.amount ?? "0");
-      const currency = alloc.allocatedAmountSet?.shopMoney?.currencyCode ?? "USD";
+      const amount = parseFloat(
+        alloc.allocatedAmountSet?.presentmentMoney?.amount ??
+        alloc.allocatedAmountSet?.shopMoney?.amount ??
+        "0"
+      );
+      const currency =
+        alloc.allocatedAmountSet?.presentmentMoney?.currencyCode ||
+        alloc.allocatedAmountSet?.shopMoney?.currencyCode ||
+        "USD";
 
       let codeOrLabel = "";
       if (app.code) {
@@ -884,8 +900,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
       for (const item of allLineItems) {
         const qty = item.editableQuantity ?? item.quantity;
-        const unitPrice = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount ?? "0");
-        if (item.originalUnitPriceSet?.shopMoney?.currencyCode) {
+        const unitPrice = parseFloat(
+          item.originalUnitPriceSet?.presentmentMoney?.amount ??
+          item.originalUnitPriceSet?.shopMoney?.amount ??
+          "0"
+        );
+        if (item.originalUnitPriceSet?.presentmentMoney?.currencyCode) {
+          currencyCode = item.originalUnitPriceSet.presentmentMoney.currencyCode;
+        } else if (item.originalUnitPriceSet?.shopMoney?.currencyCode) {
           currencyCode = item.originalUnitPriceSet.shopMoney.currencyCode;
         }
         totalActiveQty += qty;
@@ -931,8 +953,14 @@ export async function action({ request }: ActionFunctionArgs) {
         const firstLine = shippingLines[0];
         existingShippingLineId = firstLine.id;
         if (firstLine.title) existingShippingTitle = firstLine.title;
-        existingShippingAmount = parseFloat(firstLine.price?.shopMoney?.amount ?? "0");
-        if (firstLine.price?.shopMoney?.currencyCode) {
+        existingShippingAmount = parseFloat(
+          firstLine.price?.presentmentMoney?.amount ??
+          firstLine.price?.shopMoney?.amount ??
+          "0"
+        );
+        if (firstLine.price?.presentmentMoney?.currencyCode) {
+          currencyCode = firstLine.price.presentmentMoney.currencyCode;
+        } else if (firstLine.price?.shopMoney?.currencyCode) {
           currencyCode = firstLine.price.shopMoney.currencyCode;
         }
       }
@@ -1194,7 +1222,11 @@ export async function action({ request }: ActionFunctionArgs) {
       for (const item of allLineItems) {
         if (lineItemMatchesRule(item, resolved.buyRule)) {
           const qty = item.editableQuantity ?? item.quantity;
-          const unitPrice = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount ?? "0");
+          const unitPrice = parseFloat(
+            item.originalUnitPriceSet?.presentmentMoney?.amount ??
+            item.originalUnitPriceSet?.shopMoney?.amount ??
+            "0"
+          );
           totalBuyQty += qty;
           totalBuyAmt += qty * unitPrice;
         }
@@ -1263,7 +1295,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const targetItem = eligibleYItems[0];
       const targetDisplayName = lineItemDisplayName(targetItem);
       const targetActiveQty = targetItem.editableQuantity ?? targetItem.quantity;
-      const targetUnit = parseFloat(targetItem.originalUnitPriceSet?.shopMoney?.amount ?? "0");
+      const targetUnit = parseFloat(
+        targetItem.originalUnitPriceSet?.presentmentMoney?.amount ??
+        targetItem.originalUnitPriceSet?.shopMoney?.amount ??
+        "0"
+      );
       const targetCurrency =
         calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||
         targetItem.originalUnitPriceSet?.presentmentMoney?.currencyCode ||
@@ -1611,7 +1647,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const totalIncompatibleAmount = round2(
         incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0),
       );
-      const orderCurrency = targetLineItems[0]?.originalUnitPriceSet?.shopMoney?.currencyCode || "USD";
+      const orderCurrency =
+        calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||
+        targetLineItems[0]?.originalUnitPriceSet?.presentmentMoney?.currencyCode ||
+        targetLineItems[0]?.originalUnitPriceSet?.shopMoney?.currencyCode ||
+        "USD";
 
       if (totalIncompatibleAmount >= totalNewDiscount) {
         const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
@@ -1666,7 +1706,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const displayName = lineItemDisplayName(item);
       const state = readLineItemDiscountState(item);
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount ?? "0");
+      const originalUnit = parseFloat(
+        item.originalUnitPriceSet?.presentmentMoney?.amount ??
+        item.originalUnitPriceSet?.shopMoney?.amount ??
+        "0"
+      );
       const originalLineTotal = originalUnit * activeQty;
       const currencyCode =
         calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||

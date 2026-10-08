@@ -8,6 +8,7 @@ export const ORDER_INVOICE_QUERY = `#graphql
       createdAt
       email
       currencyCode
+      presentmentCurrencyCode
       tags
       discountCodes
       metafield(namespace: "orderease", key: "free_shipping_code") {
@@ -66,22 +67,28 @@ export const ORDER_INVOICE_QUERY = `#graphql
             quantity
             currentQuantity
             originalUnitPriceSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             originalTotalSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountedUnitPriceSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountedTotalSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             totalDiscountSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountAllocations {
               allocatedAmountSet {
+                presentmentMoney { amount currencyCode }
                 shopMoney { amount currencyCode }
               }
               discountApplication {
@@ -107,12 +114,15 @@ export const ORDER_INVOICE_QUERY = `#graphql
         }
       }
       currentSubtotalPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       currentShippingPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       totalShippingPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       shippingLine {
@@ -120,16 +130,20 @@ export const ORDER_INVOICE_QUERY = `#graphql
         title
         code
         originalPriceSet {
+          presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
         discountedPriceSet {
+          presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
         currentDiscountedPriceSet {
+          presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
         discountAllocations {
           allocatedAmountSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           discountApplication {
@@ -158,16 +172,20 @@ export const ORDER_INVOICE_QUERY = `#graphql
           title
           code
           originalPriceSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           discountedPriceSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           currentDiscountedPriceSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           discountAllocations {
             allocatedAmountSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountApplication {
@@ -192,27 +210,37 @@ export const ORDER_INVOICE_QUERY = `#graphql
         }
       }
       currentTotalTaxSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       currentTotalDiscountsSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       currentTotalPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       totalReceivedSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       totalOutstandingSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
     }
   }
 `;
 
-interface Money {
+export interface Money {
   amount: string;
   currencyCode: string;
+}
+
+export interface MoneySet {
+  presentmentMoney?: Money | null;
+  shopMoney?: Money | null;
 }
 
 export interface InvoiceOrder {
@@ -221,6 +249,7 @@ export interface InvoiceOrder {
   createdAt: string;
   email?: string | null;
   currencyCode: string;
+  presentmentCurrencyCode?: string | null;
   tags?: string[] | null;
   discountCodes?: string[] | null;
   metafield?: { value?: string | null } | null;
@@ -266,13 +295,13 @@ export interface InvoiceOrder {
         name: string;
         quantity: number;
         currentQuantity: number;
-        originalUnitPriceSet?: { shopMoney: Money } | null;
-        originalTotalSet?: { shopMoney: Money } | null;
-        discountedUnitPriceSet?: { shopMoney: Money } | null;
-        discountedTotalSet?: { shopMoney: Money } | null;
-        totalDiscountSet?: { shopMoney: Money } | null;
+        originalUnitPriceSet?: MoneySet | null;
+        originalTotalSet?: MoneySet | null;
+        discountedUnitPriceSet?: MoneySet | null;
+        discountedTotalSet?: MoneySet | null;
+        totalDiscountSet?: MoneySet | null;
         discountAllocations?: Array<{
-          allocatedAmountSet?: { shopMoney: Money } | null;
+          allocatedAmountSet?: MoneySet | null;
           discountApplication?: {
             targetType?: string;
             targetSelection?: string;
@@ -285,18 +314,18 @@ export interface InvoiceOrder {
       };
     }>;
   };
-  currentSubtotalPriceSet?: { shopMoney: Money } | null;
-  currentShippingPriceSet?: { shopMoney: Money } | null;
-  totalShippingPriceSet?: { shopMoney: Money } | null;
+  currentSubtotalPriceSet?: MoneySet | null;
+  currentShippingPriceSet?: MoneySet | null;
+  totalShippingPriceSet?: MoneySet | null;
   shippingLine?: {
     id?: string | null;
     title?: string | null;
     code?: string | null;
-    originalPriceSet?: { shopMoney: Money } | null;
-    discountedPriceSet?: { shopMoney: Money } | null;
-    currentDiscountedPriceSet?: { shopMoney: Money } | null;
+    originalPriceSet?: MoneySet | null;
+    discountedPriceSet?: MoneySet | null;
+    currentDiscountedPriceSet?: MoneySet | null;
     discountAllocations?: Array<{
-      allocatedAmountSet?: { shopMoney: Money } | null;
+      allocatedAmountSet?: MoneySet | null;
       discountApplication?: {
         targetType?: string;
         targetSelection?: string;
@@ -312,11 +341,11 @@ export interface InvoiceOrder {
       id?: string | null;
       title?: string | null;
       code?: string | null;
-      originalPriceSet?: { shopMoney: Money } | null;
-      discountedPriceSet?: { shopMoney: Money } | null;
-      currentDiscountedPriceSet?: { shopMoney: Money } | null;
+      originalPriceSet?: MoneySet | null;
+      discountedPriceSet?: MoneySet | null;
+      currentDiscountedPriceSet?: MoneySet | null;
       discountAllocations?: Array<{
-        allocatedAmountSet?: { shopMoney: Money } | null;
+        allocatedAmountSet?: MoneySet | null;
         discountApplication?: {
           targetType?: string;
           targetSelection?: string;
@@ -328,11 +357,22 @@ export interface InvoiceOrder {
       }> | null;
     }>;
   } | null;
-  currentTotalTaxSet?: { shopMoney: Money } | null;
-  currentTotalDiscountsSet?: { shopMoney: Money } | null;
-  currentTotalPriceSet?: { shopMoney: Money } | null;
-  totalReceivedSet?: { shopMoney: Money } | null;
-  totalOutstandingSet?: { shopMoney: Money } | null;
+  currentTotalTaxSet?: MoneySet | null;
+  currentTotalDiscountsSet?: MoneySet | null;
+  currentTotalPriceSet?: MoneySet | null;
+  totalReceivedSet?: MoneySet | null;
+  totalOutstandingSet?: MoneySet | null;
+}
+
+function getMoney(set?: MoneySet | null, fallbackCurrency = "USD"): Money {
+  if (!set) return { amount: "0.00", currencyCode: fallbackCurrency };
+  // Prefer presentmentMoney (the currency on the checkout page)
+  const m = set.presentmentMoney || set.shopMoney;
+  if (!m) return { amount: "0.00", currencyCode: fallbackCurrency };
+  return {
+    amount: m.amount || "0.00",
+    currencyCode: m.currencyCode || fallbackCurrency,
+  };
 }
 
 function formatMoney(money?: Money | null, fallbackCurrency?: string): string {
@@ -457,7 +497,11 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
 
-      const currency = order.currencyCode;
+      const currency =
+        order.presentmentCurrencyCode ||
+        order.currentTotalPriceSet?.presentmentMoney?.currencyCode ||
+        order.currencyCode ||
+        "USD";
       const orderDate = order.createdAt
         ? new Date(order.createdAt).toLocaleDateString(undefined, {
             year: "numeric",
@@ -591,12 +635,12 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
 
       for (const { node } of items) {
         const qty = node.currentQuantity;
-        const origUnitMoney = node.originalUnitPriceSet?.shopMoney;
-        const origUnitAmt = Number(origUnitMoney?.amount || 0);
+        const origUnitMoney = getMoney(node.originalUnitPriceSet, currency);
+        const origUnitAmt = Number(origUnitMoney.amount || 0);
 
         // Extract clean discount code / title / description names for active allocations only
         const activeAllocations = (node.discountAllocations || []).filter(
-          (alloc) => Number(alloc.allocatedAmountSet?.shopMoney?.amount || 0) > 0.001
+          (alloc) => Number(getMoney(alloc.allocatedAmountSet, currency).amount || 0) > 0.001
         );
         const targetAllocations =
           activeAllocations.length > 0
@@ -622,18 +666,18 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
 
         // Determine total item discount amount for all units combined
         let totalDiscountAmt = 0;
-        if (node.totalDiscountSet?.shopMoney) {
-          totalDiscountAmt = Number(node.totalDiscountSet.shopMoney.amount || 0);
+        if (node.totalDiscountSet?.presentmentMoney || node.totalDiscountSet?.shopMoney) {
+          totalDiscountAmt = Number(getMoney(node.totalDiscountSet, currency).amount || 0);
         } else if (node.discountAllocations && node.discountAllocations.length > 0) {
           totalDiscountAmt = node.discountAllocations.reduce((sum, alloc) => {
-            return sum + Number(alloc.allocatedAmountSet?.shopMoney?.amount || 0);
+            return sum + Number(getMoney(alloc.allocatedAmountSet, currency).amount || 0);
           }, 0);
         }
 
         // Determine unit discount and discounted unit price
         let discUnitAmt = origUnitAmt;
-        if (node.discountedUnitPriceSet?.shopMoney) {
-          discUnitAmt = Number(node.discountedUnitPriceSet.shopMoney.amount);
+        if (node.discountedUnitPriceSet?.presentmentMoney || node.discountedUnitPriceSet?.shopMoney) {
+          discUnitAmt = Number(getMoney(node.discountedUnitPriceSet, currency).amount || 0);
         } else if (totalDiscountAmt > 0 && qty > 0) {
           discUnitAmt = Math.max(0, origUnitAmt - totalDiscountAmt / qty);
         }
@@ -648,12 +692,12 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
 
         // Line total after discount
         let lineTotalAmt = discUnitAmt * qty;
-        if (node.discountedTotalSet?.shopMoney) {
-          lineTotalAmt = Number(node.discountedTotalSet.shopMoney.amount);
+        if (node.discountedTotalSet?.presentmentMoney || node.discountedTotalSet?.shopMoney) {
+          lineTotalAmt = Number(getMoney(node.discountedTotalSet, currency).amount || 0);
         }
 
         // Format money strings
-        const origPriceStr = formatMoney(origUnitMoney || { amount: String(origUnitAmt), currencyCode: currency }, currency);
+        const origPriceStr = formatMoney(origUnitMoney, currency);
         const netPriceStr = formatMoney({ amount: discUnitAmt.toFixed(2), currencyCode: currency }, currency);
         const lineTotalStr = formatMoney({ amount: lineTotalAmt.toFixed(2), currencyCode: currency }, currency);
 
@@ -726,7 +770,7 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
         totalsY += 16;
       };
 
-      totalsRow("Subtotal", order.currentSubtotalPriceSet?.shopMoney);
+      totalsRow("Subtotal", getMoney(order.currentSubtotalPriceSet, currency));
 
       // Shipping calculation:
       // Prefer currentShippingPriceSet (reflects order edits and shipping discounts like Free Shipping).
@@ -734,32 +778,29 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       // discount allocation calculations, or totalShippingPriceSet.
       const shippingAllocations = shippingLine?.discountAllocations || [];
       const totalShippingDiscount = shippingAllocations.reduce((sum, alloc) => {
-        return sum + Number(alloc.allocatedAmountSet?.shopMoney?.amount || 0);
+        return sum + Number(getMoney(alloc.allocatedAmountSet, currency).amount || 0);
       }, 0);
 
       const origShippingAmt = Number(
-        shippingLine?.originalPriceSet?.shopMoney?.amount ??
-        order.totalShippingPriceSet?.shopMoney?.amount ??
+        getMoney(shippingLine?.originalPriceSet, currency).amount ||
+        getMoney(order.totalShippingPriceSet, currency).amount ||
         0
       );
 
       let shippingMoney: Money;
-      if (order.currentShippingPriceSet?.shopMoney) {
-        shippingMoney = order.currentShippingPriceSet.shopMoney;
-      } else if (shippingLine?.currentDiscountedPriceSet?.shopMoney) {
-        shippingMoney = shippingLine.currentDiscountedPriceSet.shopMoney;
-      } else if (shippingLine?.discountedPriceSet?.shopMoney) {
-        shippingMoney = shippingLine.discountedPriceSet.shopMoney;
+      if (order.currentShippingPriceSet?.presentmentMoney || order.currentShippingPriceSet?.shopMoney) {
+        shippingMoney = getMoney(order.currentShippingPriceSet, currency);
+      } else if (shippingLine?.currentDiscountedPriceSet?.presentmentMoney || shippingLine?.currentDiscountedPriceSet?.shopMoney) {
+        shippingMoney = getMoney(shippingLine.currentDiscountedPriceSet, currency);
+      } else if (shippingLine?.discountedPriceSet?.presentmentMoney || shippingLine?.discountedPriceSet?.shopMoney) {
+        shippingMoney = getMoney(shippingLine.discountedPriceSet, currency);
       } else if (totalShippingDiscount > 0) {
         shippingMoney = {
           amount: Math.max(0, origShippingAmt - totalShippingDiscount).toFixed(2),
           currencyCode: currency,
         };
       } else {
-        shippingMoney = order.totalShippingPriceSet?.shopMoney || {
-          amount: "0.00",
-          currencyCode: currency,
-        };
+        shippingMoney = getMoney(order.totalShippingPriceSet, currency);
       }
 
       if (freeShippingCode && (shippingLine?.title?.includes("Free") || origShippingAmt > 0)) {
@@ -770,11 +811,14 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       const shippingLabel = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
 
       totalsRow(shippingLabel, shippingMoney);
-      totalsRow("Tax", order.currentTotalTaxSet?.shopMoney);
-      if (order.currentTotalDiscountsSet?.shopMoney && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
-        totalsRow("Total Discounts", order.currentTotalDiscountsSet?.shopMoney, false, true);
+      if (order.currentTotalTaxSet?.presentmentMoney || order.currentTotalTaxSet?.shopMoney) {
+        totalsRow("Tax", getMoney(order.currentTotalTaxSet, currency));
       }
-      totalsRow("Total", order.currentTotalPriceSet?.shopMoney, true);
+      const discSet = getMoney(order.currentTotalDiscountsSet, currency);
+      if (Number(discSet.amount) > 0) {
+        totalsRow("Total Discounts", discSet, false, true);
+      }
+      totalsRow("Total", getMoney(order.currentTotalPriceSet, currency), true);
 
       if (freeShippingCode) {
         totalsY += 4;
@@ -789,24 +833,12 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       }
 
       // Paid and Remaining Balance calculation
-      const totalPriceAmt = Number(order.currentTotalPriceSet?.shopMoney?.amount || 0);
-      const paidAmt = order.totalReceivedSet?.shopMoney
-        ? Number(order.totalReceivedSet.shopMoney.amount)
-        : totalPriceAmt;
+      const totalPriceAmt = Number(getMoney(order.currentTotalPriceSet, currency).amount || 0);
+      const paidMoney = getMoney(order.totalReceivedSet, currency);
+      const paidAmt = Number(paidMoney.amount || 0);
 
-      const outstandingAmt = order.totalOutstandingSet?.shopMoney
-        ? Number(order.totalOutstandingSet.shopMoney.amount)
-        : Math.max(0, totalPriceAmt - paidAmt);
-
-      const paidMoney: Money = order.totalReceivedSet?.shopMoney || {
-        amount: paidAmt.toFixed(2),
-        currencyCode: currency,
-      };
-
-      const remainingMoney: Money = order.totalOutstandingSet?.shopMoney || {
-        amount: outstandingAmt.toFixed(2),
-        currencyCode: currency,
-      };
+      const remainingMoney = getMoney(order.totalOutstandingSet, currency);
+      const outstandingAmt = Number(remainingMoney.amount || 0);
 
       totalsY += 4;
       totalsRow("Amount Paid", paidMoney);

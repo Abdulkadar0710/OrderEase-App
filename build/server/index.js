@@ -5277,9 +5277,9 @@ function lineItemDisplayName(item) {
 }
 const APP_ORIGIN_TYPENAME = "ManualDiscountApplication";
 function readLineItemDiscountState(item) {
-  var _a2, _b, _c, _d, _e, _f;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
   const allocations = item.calculatedDiscountAllocations ?? [];
-  const currencyCode = ((_b = (_a2 = item.originalUnitPriceSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.currencyCode) ?? "";
+  const currencyCode = ((_b = (_a2 = item.originalUnitPriceSet) == null ? void 0 : _a2.presentmentMoney) == null ? void 0 : _b.currencyCode) || ((_d = (_c = item.originalUnitPriceSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.currencyCode) || "";
   if (allocations.length === 0) {
     return {
       currencyCode,
@@ -5308,8 +5308,10 @@ function readLineItemDiscountState(item) {
     const app2 = allocation.discountApplication;
     if (!app2) continue;
     existingApplicationId = app2.id;
-    const allocatedAmount = parseFloat(((_d = (_c = allocation.allocatedAmountSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.amount) ?? "0");
-    if ((_f = (_e = allocation.allocatedAmountSet) == null ? void 0 : _e.shopMoney) == null ? void 0 : _f.currencyCode) {
+    const allocatedAmount = parseFloat(((_f = (_e = allocation.allocatedAmountSet) == null ? void 0 : _e.presentmentMoney) == null ? void 0 : _f.amount) ?? ((_h = (_g = allocation.allocatedAmountSet) == null ? void 0 : _g.shopMoney) == null ? void 0 : _h.amount) ?? "0");
+    if ((_j = (_i = allocation.allocatedAmountSet) == null ? void 0 : _i.presentmentMoney) == null ? void 0 : _j.currencyCode) {
+      resolvedCurrency = allocation.allocatedAmountSet.presentmentMoney.currencyCode;
+    } else if ((_l = (_k = allocation.allocatedAmountSet) == null ? void 0 : _k.shopMoney) == null ? void 0 : _l.currencyCode) {
       resolvedCurrency = allocation.allocatedAmountSet.shopMoney.currencyCode;
     }
     if (app2.__typename === APP_ORIGIN_TYPENAME) {
@@ -5354,21 +5356,21 @@ function readLineItemDiscountState(item) {
   };
 }
 function collectExistingDiscounts(allLineItems) {
-  var _a2, _b, _c, _d, _e;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i;
   const map = /* @__PURE__ */ new Map();
   for (const item of allLineItems) {
     const allocations = item.calculatedDiscountAllocations ?? [];
     for (const alloc of allocations) {
       const app2 = alloc.discountApplication;
       if (!app2 || !app2.id) continue;
-      const amount = parseFloat(((_b = (_a2 = alloc.allocatedAmountSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.amount) ?? "0");
-      const currency = ((_d = (_c = alloc.allocatedAmountSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.currencyCode) ?? "USD";
+      const amount = parseFloat(((_b = (_a2 = alloc.allocatedAmountSet) == null ? void 0 : _a2.presentmentMoney) == null ? void 0 : _b.amount) ?? ((_d = (_c = alloc.allocatedAmountSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.amount) ?? "0");
+      const currency = ((_f = (_e = alloc.allocatedAmountSet) == null ? void 0 : _e.presentmentMoney) == null ? void 0 : _f.currencyCode) || ((_h = (_g = alloc.allocatedAmountSet) == null ? void 0 : _g.shopMoney) == null ? void 0 : _h.currencyCode) || "USD";
       let codeOrLabel = "";
       if (app2.code) {
         codeOrLabel = app2.code;
       } else if (app2.description) {
         const decoded = decodeTag$3(app2.description);
-        codeOrLabel = (((_e = decoded == null ? void 0 : decoded.bxgy) == null ? void 0 : _e.code) || (decoded == null ? void 0 : decoded.label) || app2.description).trim();
+        codeOrLabel = (((_i = decoded == null ? void 0 : decoded.bxgy) == null ? void 0 : _i.code) || (decoded == null ? void 0 : decoded.label) || app2.description).trim();
       }
       const appliedTo = app2.appliedTo === "ORDER" || app2.targetSelection === "ALL" ? "ORDER" : "LINE";
       const isOurs = app2.__typename === APP_ORIGIN_TYPENAME || app2.__typename === "CalculatedManualDiscountApplication";
@@ -5820,7 +5822,7 @@ async function loader$g({
 async function action$9({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia, _ja, _ka, _la, _ma, _na, _oa, _pa, _qa, _ra, _sa, _ta, _ua, _va, _wa, _xa, _ya, _za, _Aa, _Ba, _Ca, _Da, _Ea, _Fa, _Ga, _Ha, _Ia, _Ja, _Ka, _La, _Ma, _Na, _Oa, _Pa, _Qa, _Ra, _Sa, _Ta;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia, _ja, _ka, _la, _ma, _na, _oa, _pa, _qa, _ra, _sa, _ta, _ua, _va, _wa, _xa, _ya, _za, _Aa, _Ba, _Ca, _Da, _Ea, _Fa, _Ga, _Ha, _Ia, _Ja, _Ka, _La, _Ma, _Na, _Oa, _Pa, _Qa, _Ra, _Sa, _Ta, _Ua, _Va, _Wa, _Xa, _Ya, _Za, __a, _$a, _ab, _bb, _cb, _db, _eb, _fb, _gb, _hb, _ib, _jb, _kb;
   const {
     sessionToken,
     cors
@@ -5974,8 +5976,10 @@ async function action$9({
       let currencyCode = "USD";
       for (const item of allLineItems) {
         const qty = item.editableQuantity ?? item.quantity;
-        const unitPrice = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.shopMoney) == null ? void 0 : _e.amount) ?? "0");
-        if ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.currencyCode) {
+        const unitPrice = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.presentmentMoney) == null ? void 0 : _e.amount) ?? ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.amount) ?? "0");
+        if ((_i = (_h = item.originalUnitPriceSet) == null ? void 0 : _h.presentmentMoney) == null ? void 0 : _i.currencyCode) {
+          currencyCode = item.originalUnitPriceSet.presentmentMoney.currencyCode;
+        } else if ((_k = (_j = item.originalUnitPriceSet) == null ? void 0 : _j.shopMoney) == null ? void 0 : _k.currencyCode) {
           currencyCode = item.originalUnitPriceSet.shopMoney.currencyCode;
         }
         totalActiveQty += qty;
@@ -6007,8 +6011,10 @@ async function action$9({
         const firstLine = shippingLines[0];
         existingShippingLineId = firstLine.id;
         if (firstLine.title) existingShippingTitle = firstLine.title;
-        existingShippingAmount = parseFloat(((_i = (_h = firstLine.price) == null ? void 0 : _h.shopMoney) == null ? void 0 : _i.amount) ?? "0");
-        if ((_k = (_j = firstLine.price) == null ? void 0 : _j.shopMoney) == null ? void 0 : _k.currencyCode) {
+        existingShippingAmount = parseFloat(((_m = (_l = firstLine.price) == null ? void 0 : _l.presentmentMoney) == null ? void 0 : _m.amount) ?? ((_o = (_n = firstLine.price) == null ? void 0 : _n.shopMoney) == null ? void 0 : _o.amount) ?? "0");
+        if ((_q = (_p = firstLine.price) == null ? void 0 : _p.presentmentMoney) == null ? void 0 : _q.currencyCode) {
+          currencyCode = firstLine.price.presentmentMoney.currencyCode;
+        } else if ((_s = (_r = firstLine.price) == null ? void 0 : _r.shopMoney) == null ? void 0 : _s.currencyCode) {
           currencyCode = firstLine.price.shopMoney.currencyCode;
         }
       }
@@ -6076,9 +6082,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_m = (_l = removeJson.data) == null ? void 0 : _l.orderEditRemoveDiscount) == null ? void 0 : _m.userErrors) ?? [];
-          if (((_n = removeJson.errors) == null ? void 0 : _n.length) || removeErrors.length) {
-            const rawMsg = ((_o = removeErrors[0]) == null ? void 0 : _o.message) ?? ((_q = (_p = removeJson.errors) == null ? void 0 : _p[0]) == null ? void 0 : _q.message) ?? "unknown error";
+          const removeErrors = ((_u = (_t = removeJson.data) == null ? void 0 : _t.orderEditRemoveDiscount) == null ? void 0 : _u.userErrors) ?? [];
+          if (((_v = removeJson.errors) == null ? void 0 : _v.length) || removeErrors.length) {
+            const rawMsg = ((_w = removeErrors[0]) == null ? void 0 : _w.message) ?? ((_y = (_x = removeJson.errors) == null ? void 0 : _x[0]) == null ? void 0 : _y.message) ?? "unknown error";
             return cors(Response.json({
               userErrors: [{
                 message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`
@@ -6103,7 +6109,7 @@ async function action$9({
           }
         });
         const removeShipJson = await removeShipRes.json();
-        const removeShipErrors = ((_s = (_r = removeShipJson.data) == null ? void 0 : _r.orderEditRemoveShippingLine) == null ? void 0 : _s.userErrors) ?? [];
+        const removeShipErrors = ((_A = (_z = removeShipJson.data) == null ? void 0 : _z.orderEditRemoveShippingLine) == null ? void 0 : _A.userErrors) ?? [];
         if (removeShipErrors.length) {
           return cors(Response.json({
             userErrors: removeShipErrors
@@ -6114,7 +6120,7 @@ async function action$9({
       }
       const cleanExistingTitle = (existingShippingTitle || "Standard").replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "").replace(/\s*\(Already Applied\)/gi, "").replace(/\s*\(Free\)/gi, "").trim();
       const freeShippingTitle = `${cleanExistingTitle} (Free - ${discountCode})`;
-      const targetShippingCurrency = ((_u = (_t = calculatedOrder.totalPriceSet) == null ? void 0 : _t.presentmentMoney) == null ? void 0 : _u.currencyCode) || ((_y = (_x = (_w = (_v = calculatedOrder.shippingLines) == null ? void 0 : _v[0]) == null ? void 0 : _w.price) == null ? void 0 : _x.presentmentMoney) == null ? void 0 : _y.currencyCode) || currencyCode || "USD";
+      const targetShippingCurrency = ((_C = (_B = calculatedOrder.totalPriceSet) == null ? void 0 : _B.presentmentMoney) == null ? void 0 : _C.currencyCode) || ((_G = (_F = (_E = (_D = calculatedOrder.shippingLines) == null ? void 0 : _D[0]) == null ? void 0 : _E.price) == null ? void 0 : _F.presentmentMoney) == null ? void 0 : _G.currencyCode) || currencyCode || "USD";
       let addShipRes = await admin.graphql(`#graphql
         mutation AddFreeShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
           orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
@@ -6135,9 +6141,9 @@ async function action$9({
         }
       });
       let addShipJson = await addShipRes.json();
-      let addShipErrors = ((_A = (_z = addShipJson.data) == null ? void 0 : _z.orderEditAddShippingLine) == null ? void 0 : _A.userErrors) ?? [];
+      let addShipErrors = ((_I = (_H = addShipJson.data) == null ? void 0 : _H.orderEditAddShippingLine) == null ? void 0 : _I.userErrors) ?? [];
       if (addShipErrors.length) {
-        const currencyMatch = (_C = (_B = addShipErrors[0]) == null ? void 0 : _B.message) == null ? void 0 : _C.match(/must be in ([A-Z]{3})/i);
+        const currencyMatch = (_K = (_J = addShipErrors[0]) == null ? void 0 : _J.message) == null ? void 0 : _K.match(/must be in ([A-Z]{3})/i);
         if (currencyMatch) {
           const retryCurrency = currencyMatch[1].toUpperCase();
           addShipRes = await admin.graphql(`#graphql
@@ -6160,7 +6166,7 @@ async function action$9({
             }
           });
           addShipJson = await addShipRes.json();
-          addShipErrors = ((_E = (_D = addShipJson.data) == null ? void 0 : _D.orderEditAddShippingLine) == null ? void 0 : _E.userErrors) ?? [];
+          addShipErrors = ((_M = (_L = addShipJson.data) == null ? void 0 : _L.orderEditAddShippingLine) == null ? void 0 : _M.userErrors) ?? [];
         }
       }
       if (addShipErrors.length) {
@@ -6188,7 +6194,7 @@ async function action$9({
         }
       });
       const commitJson2 = await commitRes2.json();
-      const commitErrors2 = ((_G = (_F = commitJson2.data) == null ? void 0 : _F.orderEditCommit) == null ? void 0 : _G.userErrors) ?? [];
+      const commitErrors2 = ((_O = (_N = commitJson2.data) == null ? void 0 : _N.orderEditCommit) == null ? void 0 : _O.userErrors) ?? [];
       if (commitErrors2.length) {
         return cors(Response.json({
           userErrors: commitErrors2
@@ -6222,7 +6228,7 @@ async function action$9({
       for (const item of allLineItems) {
         if (lineItemMatchesRule(item, resolved.buyRule)) {
           const qty = item.editableQuantity ?? item.quantity;
-          const unitPrice = parseFloat(((_I = (_H = item.originalUnitPriceSet) == null ? void 0 : _H.shopMoney) == null ? void 0 : _I.amount) ?? "0");
+          const unitPrice = parseFloat(((_Q = (_P = item.originalUnitPriceSet) == null ? void 0 : _P.presentmentMoney) == null ? void 0 : _Q.amount) ?? ((_S = (_R = item.originalUnitPriceSet) == null ? void 0 : _R.shopMoney) == null ? void 0 : _S.amount) ?? "0");
           totalBuyQty += qty;
           totalBuyAmt += qty * unitPrice;
         }
@@ -6266,8 +6272,8 @@ async function action$9({
       const targetItem = eligibleYItems[0];
       const targetDisplayName = lineItemDisplayName(targetItem);
       const targetActiveQty = targetItem.editableQuantity ?? targetItem.quantity;
-      const targetUnit = parseFloat(((_K = (_J = targetItem.originalUnitPriceSet) == null ? void 0 : _J.shopMoney) == null ? void 0 : _K.amount) ?? "0");
-      const targetCurrency = ((_M = (_L = calculatedOrder.totalPriceSet) == null ? void 0 : _L.presentmentMoney) == null ? void 0 : _M.currencyCode) || ((_O = (_N = targetItem.originalUnitPriceSet) == null ? void 0 : _N.presentmentMoney) == null ? void 0 : _O.currencyCode) || ((_Q = (_P = targetItem.originalUnitPriceSet) == null ? void 0 : _P.shopMoney) == null ? void 0 : _Q.currencyCode) || "USD";
+      const targetUnit = parseFloat(((_U = (_T = targetItem.originalUnitPriceSet) == null ? void 0 : _T.presentmentMoney) == null ? void 0 : _U.amount) ?? ((_W = (_V = targetItem.originalUnitPriceSet) == null ? void 0 : _V.shopMoney) == null ? void 0 : _W.amount) ?? "0");
+      const targetCurrency = ((_Y = (_X = calculatedOrder.totalPriceSet) == null ? void 0 : _X.presentmentMoney) == null ? void 0 : _Y.currencyCode) || ((__ = (_Z = targetItem.originalUnitPriceSet) == null ? void 0 : _Z.presentmentMoney) == null ? void 0 : __.currencyCode) || ((_aa = (_$ = targetItem.originalUnitPriceSet) == null ? void 0 : _$.shopMoney) == null ? void 0 : _aa.currencyCode) || "USD";
       const discountQty = Math.min(resolved.getRule.quantity, targetActiveQty);
       let calculatedDiscount = 0;
       if (resolved.getRule.kind === "percentage") {
@@ -6324,9 +6330,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_S = (_R = removeJson.data) == null ? void 0 : _R.orderEditRemoveDiscount) == null ? void 0 : _S.userErrors) ?? [];
-          if (((_T = removeJson.errors) == null ? void 0 : _T.length) || removeErrors.length) {
-            const rawMsg = ((_U = removeErrors[0]) == null ? void 0 : _U.message) ?? ((_W = (_V = removeJson.errors) == null ? void 0 : _V[0]) == null ? void 0 : _W.message) ?? "unknown error";
+          const removeErrors = ((_ca = (_ba = removeJson.data) == null ? void 0 : _ba.orderEditRemoveDiscount) == null ? void 0 : _ca.userErrors) ?? [];
+          if (((_da = removeJson.errors) == null ? void 0 : _da.length) || removeErrors.length) {
+            const rawMsg = ((_ea = removeErrors[0]) == null ? void 0 : _ea.message) ?? ((_ga = (_fa = removeJson.errors) == null ? void 0 : _fa[0]) == null ? void 0 : _ga.message) ?? "unknown error";
             return cors(Response.json({
               userErrors: [{
                 message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`
@@ -6363,7 +6369,7 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          if ((_Z = (_Y = (_X = removeJson.data) == null ? void 0 : _X.orderEditRemoveDiscount) == null ? void 0 : _Y.userErrors) == null ? void 0 : _Z.length) {
+          if ((_ja = (_ia = (_ha = removeJson.data) == null ? void 0 : _ha.orderEditRemoveDiscount) == null ? void 0 : _ia.userErrors) == null ? void 0 : _ja.length) {
             return cors(Response.json({
               userErrors: [{
                 message: `"${targetDisplayName}" already has a discount that cannot be removed.`
@@ -6432,9 +6438,9 @@ async function action$9({
         }
       });
       let applyJson = await applyRes.json();
-      let applyErrors = ((_$ = (__ = applyJson.data) == null ? void 0 : __.orderEditAddLineItemDiscount) == null ? void 0 : _$.userErrors) ?? [];
+      let applyErrors = ((_la = (_ka = applyJson.data) == null ? void 0 : _ka.orderEditAddLineItemDiscount) == null ? void 0 : _la.userErrors) ?? [];
       if (applyErrors.length) {
-        const currencyMatch = (_ba = (_aa = applyErrors[0]) == null ? void 0 : _aa.message) == null ? void 0 : _ba.match(/must be in ([A-Z]{3})/i);
+        const currencyMatch = (_na = (_ma = applyErrors[0]) == null ? void 0 : _ma.message) == null ? void 0 : _na.match(/must be in ([A-Z]{3})/i);
         if (currencyMatch) {
           const retryCurrency = currencyMatch[1].toUpperCase();
           applyRes = await admin.graphql(`#graphql
@@ -6457,7 +6463,7 @@ async function action$9({
             }
           });
           applyJson = await applyRes.json();
-          applyErrors = ((_da = (_ca = applyJson.data) == null ? void 0 : _ca.orderEditAddLineItemDiscount) == null ? void 0 : _da.userErrors) ?? [];
+          applyErrors = ((_pa = (_oa = applyJson.data) == null ? void 0 : _oa.orderEditAddLineItemDiscount) == null ? void 0 : _pa.userErrors) ?? [];
         }
       }
       if (applyErrors.length) {
@@ -6485,7 +6491,7 @@ async function action$9({
         }
       });
       const commitJson2 = await commitRes2.json();
-      const commitErrors2 = ((_fa = (_ea = commitJson2.data) == null ? void 0 : _ea.orderEditCommit) == null ? void 0 : _fa.userErrors) ?? [];
+      const commitErrors2 = ((_ra = (_qa = commitJson2.data) == null ? void 0 : _qa.orderEditCommit) == null ? void 0 : _ra.userErrors) ?? [];
       if (commitErrors2.length) {
         return cors(Response.json({
           userErrors: commitErrors2
@@ -6530,7 +6536,7 @@ async function action$9({
     let totalNewDiscount = 0;
     for (const item of targetLineItems) {
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_ha = (_ga = item.originalUnitPriceSet) == null ? void 0 : _ga.shopMoney) == null ? void 0 : _ha.amount) ?? "0");
+      const originalUnit = parseFloat(((_ta = (_sa = item.originalUnitPriceSet) == null ? void 0 : _sa.shopMoney) == null ? void 0 : _ta.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
       const amount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
@@ -6563,7 +6569,7 @@ async function action$9({
     }
     if (incompatibleDiscounts.length > 0) {
       const totalIncompatibleAmount = round2$3(incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0));
-      const orderCurrency = ((_ka = (_ja = (_ia = targetLineItems[0]) == null ? void 0 : _ia.originalUnitPriceSet) == null ? void 0 : _ja.shopMoney) == null ? void 0 : _ka.currencyCode) || "USD";
+      const orderCurrency = ((_va = (_ua = calculatedOrder.totalPriceSet) == null ? void 0 : _ua.presentmentMoney) == null ? void 0 : _va.currencyCode) || ((_ya = (_xa = (_wa = targetLineItems[0]) == null ? void 0 : _wa.originalUnitPriceSet) == null ? void 0 : _xa.presentmentMoney) == null ? void 0 : _ya.currencyCode) || ((_Ba = (_Aa = (_za = targetLineItems[0]) == null ? void 0 : _za.originalUnitPriceSet) == null ? void 0 : _Aa.shopMoney) == null ? void 0 : _Ba.currencyCode) || "USD";
       if (totalIncompatibleAmount >= totalNewDiscount) {
         const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
         return cors(Response.json({
@@ -6590,9 +6596,9 @@ async function action$9({
           }
         });
         const removeJson = await removeRes.json();
-        const removeErrors = ((_ma = (_la = removeJson.data) == null ? void 0 : _la.orderEditRemoveDiscount) == null ? void 0 : _ma.userErrors) ?? [];
-        if (((_na = removeJson.errors) == null ? void 0 : _na.length) || removeErrors.length) {
-          const rawMsg = ((_oa = removeErrors[0]) == null ? void 0 : _oa.message) ?? ((_qa = (_pa = removeJson.errors) == null ? void 0 : _pa[0]) == null ? void 0 : _qa.message) ?? "unknown error";
+        const removeErrors = ((_Da = (_Ca = removeJson.data) == null ? void 0 : _Ca.orderEditRemoveDiscount) == null ? void 0 : _Da.userErrors) ?? [];
+        if (((_Ea = removeJson.errors) == null ? void 0 : _Ea.length) || removeErrors.length) {
+          const rawMsg = ((_Fa = removeErrors[0]) == null ? void 0 : _Fa.message) ?? ((_Ha = (_Ga = removeJson.errors) == null ? void 0 : _Ga[0]) == null ? void 0 : _Ha.message) ?? "unknown error";
           return cors(Response.json({
             userErrors: [{
               message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`
@@ -6607,9 +6613,9 @@ async function action$9({
       const displayName = lineItemDisplayName(item);
       const state = readLineItemDiscountState(item);
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_sa = (_ra = item.originalUnitPriceSet) == null ? void 0 : _ra.shopMoney) == null ? void 0 : _sa.amount) ?? "0");
+      const originalUnit = parseFloat(((_Ja = (_Ia = item.originalUnitPriceSet) == null ? void 0 : _Ia.presentmentMoney) == null ? void 0 : _Ja.amount) ?? ((_La = (_Ka = item.originalUnitPriceSet) == null ? void 0 : _Ka.shopMoney) == null ? void 0 : _La.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
-      const currencyCode = ((_ua = (_ta = calculatedOrder.totalPriceSet) == null ? void 0 : _ta.presentmentMoney) == null ? void 0 : _ua.currencyCode) || ((_wa = (_va = item.originalUnitPriceSet) == null ? void 0 : _va.presentmentMoney) == null ? void 0 : _wa.currencyCode) || state.currencyCode || ((_ya = (_xa = item.originalUnitPriceSet) == null ? void 0 : _xa.shopMoney) == null ? void 0 : _ya.currencyCode) || "USD";
+      const currencyCode = ((_Na = (_Ma = calculatedOrder.totalPriceSet) == null ? void 0 : _Ma.presentmentMoney) == null ? void 0 : _Na.currencyCode) || ((_Pa = (_Oa = item.originalUnitPriceSet) == null ? void 0 : _Oa.presentmentMoney) == null ? void 0 : _Pa.currencyCode) || state.currencyCode || ((_Ra = (_Qa = item.originalUnitPriceSet) == null ? void 0 : _Qa.shopMoney) == null ? void 0 : _Ra.currencyCode) || "USD";
       const newProductAmount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
         percentage: resolved.percentage
@@ -6637,8 +6643,8 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_Aa = (_za = removeJson.data) == null ? void 0 : _za.orderEditRemoveDiscount) == null ? void 0 : _Aa.userErrors) ?? [];
-          if (((_Ba = removeJson.errors) == null ? void 0 : _Ba.length) || removeErrors.length) {
+          const removeErrors = ((_Ta = (_Sa = removeJson.data) == null ? void 0 : _Sa.orderEditRemoveDiscount) == null ? void 0 : _Ta.userErrors) ?? [];
+          if (((_Ua = removeJson.errors) == null ? void 0 : _Ua.length) || removeErrors.length) {
             warnings.push(`"${displayName}" already has a discount that was applied during checkout and cannot be replaced or removed.`);
             skippedProducts.push(displayName);
             continue;
@@ -6664,9 +6670,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_Da = (_Ca = removeJson.data) == null ? void 0 : _Ca.orderEditRemoveDiscount) == null ? void 0 : _Da.userErrors) ?? [];
-          if (((_Ea = removeJson.errors) == null ? void 0 : _Ea.length) || removeErrors.length) {
-            const rawMessage = ((_Fa = removeErrors[0]) == null ? void 0 : _Fa.message) ?? ((_Ha = (_Ga = removeJson.errors) == null ? void 0 : _Ga[0]) == null ? void 0 : _Ha.message) ?? "unknown error";
+          const removeErrors = ((_Wa = (_Va = removeJson.data) == null ? void 0 : _Va.orderEditRemoveDiscount) == null ? void 0 : _Wa.userErrors) ?? [];
+          if (((_Xa = removeJson.errors) == null ? void 0 : _Xa.length) || removeErrors.length) {
+            const rawMessage = ((_Ya = removeErrors[0]) == null ? void 0 : _Ya.message) ?? ((__a = (_Za = removeJson.errors) == null ? void 0 : _Za[0]) == null ? void 0 : __a.message) ?? "unknown error";
             warnings.push(`Could not update the discount on "${displayName}": ${rawMessage}.`);
             skippedProducts.push(displayName);
             continue;
@@ -6707,9 +6713,9 @@ async function action$9({
         }
       });
       let applyJson = await applyRes.json();
-      let applyErrors = ((_Ja = (_Ia = applyJson.data) == null ? void 0 : _Ia.orderEditAddLineItemDiscount) == null ? void 0 : _Ja.userErrors) ?? [];
+      let applyErrors = ((_ab = (_$a = applyJson.data) == null ? void 0 : _$a.orderEditAddLineItemDiscount) == null ? void 0 : _ab.userErrors) ?? [];
       if (applyErrors.length) {
-        const currencyMatch = (_La = (_Ka = applyErrors[0]) == null ? void 0 : _Ka.message) == null ? void 0 : _La.match(/must be in ([A-Z]{3})/i);
+        const currencyMatch = (_cb = (_bb = applyErrors[0]) == null ? void 0 : _bb.message) == null ? void 0 : _cb.match(/must be in ([A-Z]{3})/i);
         if (currencyMatch) {
           const retryCurrency = currencyMatch[1].toUpperCase();
           applyRes = await admin.graphql(`#graphql
@@ -6732,11 +6738,11 @@ async function action$9({
             }
           });
           applyJson = await applyRes.json();
-          applyErrors = ((_Na = (_Ma = applyJson.data) == null ? void 0 : _Ma.orderEditAddLineItemDiscount) == null ? void 0 : _Na.userErrors) ?? [];
+          applyErrors = ((_eb = (_db = applyJson.data) == null ? void 0 : _db.orderEditAddLineItemDiscount) == null ? void 0 : _eb.userErrors) ?? [];
         }
       }
-      if (((_Oa = applyJson.errors) == null ? void 0 : _Oa.length) || applyErrors.length) {
-        const rawMessage = ((_Qa = (_Pa = applyJson.errors) == null ? void 0 : _Pa[0]) == null ? void 0 : _Qa.message) ?? ((_Ra = applyErrors[0]) == null ? void 0 : _Ra.message) ?? "unknown error";
+      if (((_fb = applyJson.errors) == null ? void 0 : _fb.length) || applyErrors.length) {
+        const rawMessage = ((_hb = (_gb = applyJson.errors) == null ? void 0 : _gb[0]) == null ? void 0 : _hb.message) ?? ((_ib = applyErrors[0]) == null ? void 0 : _ib.message) ?? "unknown error";
         warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);
         skippedProducts.push(displayName);
         continue;
@@ -6778,7 +6784,7 @@ async function action$9({
       }
     });
     const commitJson = await commitRes.json();
-    const commitErrors = ((_Ta = (_Sa = commitJson.data) == null ? void 0 : _Sa.orderEditCommit) == null ? void 0 : _Ta.userErrors) ?? [];
+    const commitErrors = ((_kb = (_jb = commitJson.data) == null ? void 0 : _jb.orderEditCommit) == null ? void 0 : _kb.userErrors) ?? [];
     if (commitErrors.length) {
       return cors(Response.json({
         userErrors: commitErrors
@@ -6874,6 +6880,7 @@ const ORDER_INVOICE_QUERY = `#graphql
       createdAt
       email
       currencyCode
+      presentmentCurrencyCode
       tags
       discountCodes
       metafield(namespace: "orderease", key: "free_shipping_code") {
@@ -6932,22 +6939,28 @@ const ORDER_INVOICE_QUERY = `#graphql
             quantity
             currentQuantity
             originalUnitPriceSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             originalTotalSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountedUnitPriceSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountedTotalSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             totalDiscountSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountAllocations {
               allocatedAmountSet {
+                presentmentMoney { amount currencyCode }
                 shopMoney { amount currencyCode }
               }
               discountApplication {
@@ -6973,12 +6986,15 @@ const ORDER_INVOICE_QUERY = `#graphql
         }
       }
       currentSubtotalPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       currentShippingPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       totalShippingPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       shippingLine {
@@ -6986,16 +7002,20 @@ const ORDER_INVOICE_QUERY = `#graphql
         title
         code
         originalPriceSet {
+          presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
         discountedPriceSet {
+          presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
         currentDiscountedPriceSet {
+          presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
         discountAllocations {
           allocatedAmountSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           discountApplication {
@@ -7024,16 +7044,20 @@ const ORDER_INVOICE_QUERY = `#graphql
           title
           code
           originalPriceSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           discountedPriceSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           currentDiscountedPriceSet {
+            presentmentMoney { amount currencyCode }
             shopMoney { amount currencyCode }
           }
           discountAllocations {
             allocatedAmountSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
             discountApplication {
@@ -7058,27 +7082,41 @@ const ORDER_INVOICE_QUERY = `#graphql
         }
       }
       currentTotalTaxSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       currentTotalDiscountsSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       currentTotalPriceSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       totalReceivedSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
       totalOutstandingSet {
+        presentmentMoney { amount currencyCode }
         shopMoney { amount currencyCode }
       }
     }
   }
 `;
+function getMoney(set, fallbackCurrency = "USD") {
+  if (!set) return { amount: "0.00", currencyCode: fallbackCurrency };
+  const m = set.presentmentMoney || set.shopMoney;
+  if (!m) return { amount: "0.00", currencyCode: fallbackCurrency };
+  return {
+    amount: m.amount || "0.00",
+    currencyCode: m.currencyCode || fallbackCurrency
+  };
+}
 function formatMoney(money2, fallbackCurrency) {
   if (!money2) return "";
   const amount = Number(money2.amount || 0).toFixed(2);
-  return `${amount} ${money2.currencyCode || fallbackCurrency || ""}`.trim();
+  return `${amount} ${money2.currencyCode || fallbackCurrency}`.trim();
 }
 function cleanDiscountTitle(raw) {
   if (!raw) return "";
@@ -7154,21 +7192,21 @@ function extractFreeShippingCode(order) {
 }
 function generateInvoicePdf(order) {
   return new Promise((resolve, reject) => {
-    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E;
+    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
     try {
       const doc = new PDFDocument({ size: "A4", margin: 50 });
       const chunks = [];
       doc.on("data", (chunk) => chunks.push(chunk));
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
-      const currency = order.currencyCode;
+      const currency = order.presentmentCurrencyCode || ((_b = (_a2 = order.currentTotalPriceSet) == null ? void 0 : _a2.presentmentMoney) == null ? void 0 : _b.currencyCode) || order.currencyCode || "USD";
       const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString(void 0, {
         year: "numeric",
         month: "long",
         day: "numeric"
       }) : "";
       const freeShippingCode = extractFreeShippingCode(order);
-      const shippingLine = order.shippingLine || ((_b = (_a2 = order.shippingLines) == null ? void 0 : _a2.nodes) == null ? void 0 : _b[0]);
+      const shippingLine = order.shippingLine || ((_d = (_c = order.shippingLines) == null ? void 0 : _c.nodes) == null ? void 0 : _d[0]);
       const shippingTitle = (shippingLine == null ? void 0 : shippingLine.title) || "";
       doc.fontSize(22).font("Helvetica-Bold").text("Invoice", { align: "left" });
       doc.moveDown(0.5);
@@ -7186,10 +7224,10 @@ function generateInvoicePdf(order) {
         doc.text(`Shipping Method: ${shippingTitle}`);
       }
       doc.moveDown(0.8);
-      const customerName = [(_c = order.customer) == null ? void 0 : _c.firstName, (_d = order.customer) == null ? void 0 : _d.lastName].filter(Boolean).join(" ");
-      const customerEmail = ((_e = order.customer) == null ? void 0 : _e.email) || order.email || "";
+      const customerName = [(_e = order.customer) == null ? void 0 : _e.firstName, (_f = order.customer) == null ? void 0 : _f.lastName].filter(Boolean).join(" ");
+      const customerEmail = ((_g = order.customer) == null ? void 0 : _g.email) || order.email || "";
       const billingLines = formatAddress(order.billingAddress, customerName);
-      const recipientName = ((_f = order.shippingAddress) == null ? void 0 : _f.name) || customerName;
+      const recipientName = ((_h = order.shippingAddress) == null ? void 0 : _h.name) || customerName;
       const shippingLines = formatAddress(order.shippingAddress, recipientName);
       const infoTop = doc.y;
       doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000").text("Billed To", 50, infoTop);
@@ -7256,18 +7294,15 @@ function generateInvoicePdf(order) {
       const tableTop = doc.y;
       drawTableHeader(tableTop);
       let rowY = tableTop + 22;
-      const items = (((_g = order.lineItems) == null ? void 0 : _g.edges) ?? []).filter(
+      const items = (((_i = order.lineItems) == null ? void 0 : _i.edges) ?? []).filter(
         ({ node }) => node.currentQuantity > 0
       );
       for (const { node } of items) {
         const qty = node.currentQuantity;
-        const origUnitMoney = (_h = node.originalUnitPriceSet) == null ? void 0 : _h.shopMoney;
-        const origUnitAmt = Number((origUnitMoney == null ? void 0 : origUnitMoney.amount) || 0);
+        const origUnitMoney = getMoney(node.originalUnitPriceSet, currency);
+        const origUnitAmt = Number(origUnitMoney.amount || 0);
         const activeAllocations = (node.discountAllocations || []).filter(
-          (alloc) => {
-            var _a3, _b2;
-            return Number(((_b2 = (_a3 = alloc.allocatedAmountSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0) > 1e-3;
-          }
+          (alloc) => Number(getMoney(alloc.allocatedAmountSet, currency).amount || 0) > 1e-3
         );
         const targetAllocations = activeAllocations.length > 0 ? activeAllocations : node.discountAllocations || [];
         const discountCodes = Array.from(
@@ -7282,17 +7317,16 @@ function generateInvoicePdf(order) {
         );
         const discountNameStr = discountCodes.length > 0 ? discountCodes.join(", ") : "";
         let totalDiscountAmt = 0;
-        if ((_i = node.totalDiscountSet) == null ? void 0 : _i.shopMoney) {
-          totalDiscountAmt = Number(node.totalDiscountSet.shopMoney.amount || 0);
+        if (((_j = node.totalDiscountSet) == null ? void 0 : _j.presentmentMoney) || ((_k = node.totalDiscountSet) == null ? void 0 : _k.shopMoney)) {
+          totalDiscountAmt = Number(getMoney(node.totalDiscountSet, currency).amount || 0);
         } else if (node.discountAllocations && node.discountAllocations.length > 0) {
           totalDiscountAmt = node.discountAllocations.reduce((sum, alloc) => {
-            var _a3, _b2;
-            return sum + Number(((_b2 = (_a3 = alloc.allocatedAmountSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
+            return sum + Number(getMoney(alloc.allocatedAmountSet, currency).amount || 0);
           }, 0);
         }
         let discUnitAmt = origUnitAmt;
-        if ((_j = node.discountedUnitPriceSet) == null ? void 0 : _j.shopMoney) {
-          discUnitAmt = Number(node.discountedUnitPriceSet.shopMoney.amount);
+        if (((_l = node.discountedUnitPriceSet) == null ? void 0 : _l.presentmentMoney) || ((_m = node.discountedUnitPriceSet) == null ? void 0 : _m.shopMoney)) {
+          discUnitAmt = Number(getMoney(node.discountedUnitPriceSet, currency).amount || 0);
         } else if (totalDiscountAmt > 0 && qty > 0) {
           discUnitAmt = Math.max(0, origUnitAmt - totalDiscountAmt / qty);
         }
@@ -7302,10 +7336,10 @@ function generateInvoicePdf(order) {
         const unitDiscountAmt = Math.max(0, origUnitAmt - discUnitAmt);
         const hasDiscount = unitDiscountAmt > 1e-3 || totalDiscountAmt > 1e-3;
         let lineTotalAmt = discUnitAmt * qty;
-        if ((_k = node.discountedTotalSet) == null ? void 0 : _k.shopMoney) {
-          lineTotalAmt = Number(node.discountedTotalSet.shopMoney.amount);
+        if (((_n = node.discountedTotalSet) == null ? void 0 : _n.presentmentMoney) || ((_o = node.discountedTotalSet) == null ? void 0 : _o.shopMoney)) {
+          lineTotalAmt = Number(getMoney(node.discountedTotalSet, currency).amount || 0);
         }
-        const origPriceStr = formatMoney(origUnitMoney || { amount: String(origUnitAmt), currencyCode: currency }, currency);
+        const origPriceStr = formatMoney(origUnitMoney, currency);
         const netPriceStr = formatMoney({ amount: discUnitAmt.toFixed(2), currencyCode: currency }, currency);
         const lineTotalStr = formatMoney({ amount: lineTotalAmt.toFixed(2), currencyCode: currency }, currency);
         const nameHeight = doc.heightOfString(node.name, { width: 145 });
@@ -7353,44 +7387,43 @@ function generateInvoicePdf(order) {
         doc.text(formattedVal, col.total, totalsY, { width: 65, align: "right" });
         totalsY += 16;
       };
-      totalsRow("Subtotal", (_l = order.currentSubtotalPriceSet) == null ? void 0 : _l.shopMoney);
+      totalsRow("Subtotal", getMoney(order.currentSubtotalPriceSet, currency));
       const shippingAllocations = (shippingLine == null ? void 0 : shippingLine.discountAllocations) || [];
       const totalShippingDiscount = shippingAllocations.reduce((sum, alloc) => {
-        var _a3, _b2;
-        return sum + Number(((_b2 = (_a3 = alloc.allocatedAmountSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
+        return sum + Number(getMoney(alloc.allocatedAmountSet, currency).amount || 0);
       }, 0);
       const origShippingAmt = Number(
-        ((_n = (_m = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _m.shopMoney) == null ? void 0 : _n.amount) ?? ((_p = (_o = order.totalShippingPriceSet) == null ? void 0 : _o.shopMoney) == null ? void 0 : _p.amount) ?? 0
+        getMoney(shippingLine == null ? void 0 : shippingLine.originalPriceSet, currency).amount || getMoney(order.totalShippingPriceSet, currency).amount || 0
       );
       let shippingMoney;
-      if ((_q = order.currentShippingPriceSet) == null ? void 0 : _q.shopMoney) {
-        shippingMoney = order.currentShippingPriceSet.shopMoney;
-      } else if ((_r = shippingLine == null ? void 0 : shippingLine.currentDiscountedPriceSet) == null ? void 0 : _r.shopMoney) {
-        shippingMoney = shippingLine.currentDiscountedPriceSet.shopMoney;
-      } else if ((_s = shippingLine == null ? void 0 : shippingLine.discountedPriceSet) == null ? void 0 : _s.shopMoney) {
-        shippingMoney = shippingLine.discountedPriceSet.shopMoney;
+      if (((_p = order.currentShippingPriceSet) == null ? void 0 : _p.presentmentMoney) || ((_q = order.currentShippingPriceSet) == null ? void 0 : _q.shopMoney)) {
+        shippingMoney = getMoney(order.currentShippingPriceSet, currency);
+      } else if (((_r = shippingLine == null ? void 0 : shippingLine.currentDiscountedPriceSet) == null ? void 0 : _r.presentmentMoney) || ((_s = shippingLine == null ? void 0 : shippingLine.currentDiscountedPriceSet) == null ? void 0 : _s.shopMoney)) {
+        shippingMoney = getMoney(shippingLine.currentDiscountedPriceSet, currency);
+      } else if (((_t = shippingLine == null ? void 0 : shippingLine.discountedPriceSet) == null ? void 0 : _t.presentmentMoney) || ((_u = shippingLine == null ? void 0 : shippingLine.discountedPriceSet) == null ? void 0 : _u.shopMoney)) {
+        shippingMoney = getMoney(shippingLine.discountedPriceSet, currency);
       } else if (totalShippingDiscount > 0) {
         shippingMoney = {
           amount: Math.max(0, origShippingAmt - totalShippingDiscount).toFixed(2),
           currencyCode: currency
         };
       } else {
-        shippingMoney = ((_t = order.totalShippingPriceSet) == null ? void 0 : _t.shopMoney) || {
-          amount: "0.00",
-          currencyCode: currency
-        };
+        shippingMoney = getMoney(order.totalShippingPriceSet, currency);
       }
-      if (freeShippingCode && (((_u = shippingLine == null ? void 0 : shippingLine.title) == null ? void 0 : _u.includes("Free")) || origShippingAmt > 0)) {
+      if (freeShippingCode && (((_v = shippingLine == null ? void 0 : shippingLine.title) == null ? void 0 : _v.includes("Free")) || origShippingAmt > 0)) {
         shippingMoney = { amount: "0.00", currencyCode: currency };
       }
       const isZeroShipping = Number(shippingMoney.amount) === 0;
       const shippingLabel = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
       totalsRow(shippingLabel, shippingMoney);
-      totalsRow("Tax", (_v = order.currentTotalTaxSet) == null ? void 0 : _v.shopMoney);
-      if (((_w = order.currentTotalDiscountsSet) == null ? void 0 : _w.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
-        totalsRow("Total Discounts", (_x = order.currentTotalDiscountsSet) == null ? void 0 : _x.shopMoney, false, true);
+      if (((_w = order.currentTotalTaxSet) == null ? void 0 : _w.presentmentMoney) || ((_x = order.currentTotalTaxSet) == null ? void 0 : _x.shopMoney)) {
+        totalsRow("Tax", getMoney(order.currentTotalTaxSet, currency));
       }
-      totalsRow("Total", (_y = order.currentTotalPriceSet) == null ? void 0 : _y.shopMoney, true);
+      const discSet = getMoney(order.currentTotalDiscountsSet, currency);
+      if (Number(discSet.amount) > 0) {
+        totalsRow("Total Discounts", discSet, false, true);
+      }
+      totalsRow("Total", getMoney(order.currentTotalPriceSet, currency), true);
       if (freeShippingCode) {
         totalsY += 4;
         doc.font("Helvetica-Oblique").fontSize(8.5).fillColor("#2e7d32");
@@ -7402,17 +7435,11 @@ function generateInvoicePdf(order) {
         );
         totalsY += 12;
       }
-      const totalPriceAmt = Number(((_A = (_z = order.currentTotalPriceSet) == null ? void 0 : _z.shopMoney) == null ? void 0 : _A.amount) || 0);
-      const paidAmt = ((_B = order.totalReceivedSet) == null ? void 0 : _B.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
-      const outstandingAmt = ((_C = order.totalOutstandingSet) == null ? void 0 : _C.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
-      const paidMoney = ((_D = order.totalReceivedSet) == null ? void 0 : _D.shopMoney) || {
-        amount: paidAmt.toFixed(2),
-        currencyCode: currency
-      };
-      const remainingMoney = ((_E = order.totalOutstandingSet) == null ? void 0 : _E.shopMoney) || {
-        amount: outstandingAmt.toFixed(2),
-        currencyCode: currency
-      };
+      const totalPriceAmt = Number(getMoney(order.currentTotalPriceSet, currency).amount || 0);
+      const paidMoney = getMoney(order.totalReceivedSet, currency);
+      const paidAmt = Number(paidMoney.amount || 0);
+      const remainingMoney = getMoney(order.totalOutstandingSet, currency);
+      const outstandingAmt = Number(remainingMoney.amount || 0);
       totalsY += 4;
       totalsRow("Amount Paid", paidMoney);
       totalsRow("Remaining Amount", remainingMoney, outstandingAmt > 0);
