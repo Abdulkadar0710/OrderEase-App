@@ -6817,6 +6817,7 @@ const ORDER_INVOICE_QUERY = `#graphql
         province
         zip
         country
+        phone
       }
       shippingAddress {
         name
@@ -6826,6 +6827,7 @@ const ORDER_INVOICE_QUERY = `#graphql
         province
         zip
         country
+        phone
       }
       lineItems(first: 100) {
         edges {
@@ -6987,16 +6989,30 @@ function cleanDiscountTitle(raw) {
   let cleaned = raw.replace(/\{@d\d+:[^}]*\}/gi, "").replace(/@d\d+:\s*/gi, "").replace(/\{[^}]*\}/g, "").replace(/^Discount\s+/gi, "").trim();
   return cleaned || raw.trim();
 }
-function formatAddress(address) {
+function formatAddress(address, excludeName) {
   if (!address) return [];
   const lines = [];
-  if (address.name) lines.push(address.name);
+  if (address.name && address.name.trim().toLowerCase() !== (excludeName == null ? void 0 : excludeName.trim().toLowerCase())) {
+    lines.push(address.name);
+  }
   if (address.address1) lines.push(address.address1);
   if (address.address2) lines.push(address.address2);
   const cityLine = [address.city, address.province, address.zip].filter(Boolean).join(", ");
   if (cityLine) lines.push(cityLine);
   if (address.country) lines.push(address.country);
+  if (address.phone) lines.push(`Phone: ${address.phone}`);
   return lines;
+}
+function formatShippingLabel(shippingTitle, freeShippingCode, isZero) {
+  let baseTitle = (shippingTitle || "").replace(/\s*\(Already Applied\)/gi, "").replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "").replace(/\s*\(Free\)/gi, "").trim();
+  if (!baseTitle) baseTitle = "Delivery";
+  if (freeShippingCode) {
+    return `Shipping (${baseTitle} - Free - ${freeShippingCode})`;
+  }
+  if (isZero || /\bfree\b/i.test(shippingTitle || "")) {
+    return `Shipping (${baseTitle} - Free)`;
+  }
+  return `Shipping (${baseTitle})`;
 }
 function extractFreeShippingCode(order) {
   var _a2, _b, _c, _d, _e, _f;
@@ -7042,7 +7058,7 @@ function extractFreeShippingCode(order) {
 }
 function generateInvoicePdf(order) {
   return new Promise((resolve, reject) => {
-    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D;
+    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E;
     try {
       const doc = new PDFDocument({ size: "A4", margin: 50 });
       const chunks = [];
@@ -7056,9 +7072,11 @@ function generateInvoicePdf(order) {
         day: "numeric"
       }) : "";
       const freeShippingCode = extractFreeShippingCode(order);
+      const shippingLine = order.shippingLine || ((_b = (_a2 = order.shippingLines) == null ? void 0 : _a2.nodes) == null ? void 0 : _b[0]);
+      const shippingTitle = (shippingLine == null ? void 0 : shippingLine.title) || "";
       doc.fontSize(22).font("Helvetica-Bold").text("Invoice", { align: "left" });
       doc.moveDown(0.5);
-      doc.fontSize(11).font("Helvetica").text(`Order: ${order.name}`).text(orderDate ? `Date: ${orderDate}` : "");
+      doc.fontSize(10.5).font("Helvetica").text(`Order: ${order.name}`).text(orderDate ? `Date: ${orderDate}` : "");
       const allDiscounts = Array.from(
         /* @__PURE__ */ new Set([
           ...order.discountCodes || [],
@@ -7068,28 +7086,53 @@ function generateInvoicePdf(order) {
       if (allDiscounts.length > 0) {
         doc.text(`Discount: ${allDiscounts.join(", ")}`);
       }
-      doc.moveDown();
-      const customerName = [(_a2 = order.customer) == null ? void 0 : _a2.firstName, (_b = order.customer) == null ? void 0 : _b.lastName].filter(Boolean).join(" ");
-      const customerEmail = ((_c = order.customer) == null ? void 0 : _c.email) || order.email || "";
-      const billingLines = formatAddress(order.billingAddress);
+      if (shippingTitle) {
+        doc.text(`Shipping Method: ${shippingTitle}`);
+      }
+      doc.moveDown(0.8);
+      const customerName = [(_c = order.customer) == null ? void 0 : _c.firstName, (_d = order.customer) == null ? void 0 : _d.lastName].filter(Boolean).join(" ");
+      const customerEmail = ((_e = order.customer) == null ? void 0 : _e.email) || order.email || "";
+      const billingLines = formatAddress(order.billingAddress, customerName);
+      const recipientName = ((_f = order.shippingAddress) == null ? void 0 : _f.name) || customerName;
+      const shippingLines = formatAddress(order.shippingAddress, recipientName);
       const infoTop = doc.y;
-      doc.font("Helvetica-Bold").text("Billed To", 50, infoTop);
-      doc.font("Helvetica");
-      let infoY = infoTop + 16;
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000").text("Billed To", 50, infoTop);
+      doc.font("Helvetica").fontSize(9);
+      let billedY = infoTop + 15;
       if (customerName) {
-        doc.text(customerName, 50, infoY);
-        infoY += 14;
+        doc.text(customerName, 50, billedY, { width: 230 });
+        billedY += 13;
       }
       if (customerEmail) {
-        doc.text(customerEmail, 50, infoY);
-        infoY += 14;
+        doc.text(customerEmail, 50, billedY, { width: 230 });
+        billedY += 13;
       }
       for (const line of billingLines) {
-        doc.text(line, 50, infoY);
-        infoY += 14;
+        doc.text(line, 50, billedY, { width: 230 });
+        billedY += 13;
       }
-      doc.y = Math.max(doc.y, infoY) + 10;
-      doc.moveDown();
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000").text("Shipped To", 295, infoTop);
+      doc.font("Helvetica").fontSize(9);
+      let shippedY = infoTop + 15;
+      if (recipientName) {
+        doc.text(recipientName, 295, shippedY, { width: 250 });
+        shippedY += 13;
+      }
+      if (order.shippingAddress) {
+        for (const line of shippingLines) {
+          doc.text(line, 295, shippedY, { width: 250 });
+          shippedY += 13;
+        }
+      } else if (billingLines.length > 0) {
+        doc.text("Same as billing address", 295, shippedY, { width: 250 });
+        shippedY += 13;
+      }
+      if (shippingTitle) {
+        doc.font("Helvetica-Bold").text("Method: ", 295, shippedY, { continued: true, width: 250 }).font("Helvetica").text(shippingTitle);
+        shippedY += 13;
+      }
+      doc.y = Math.max(billedY, shippedY) + 12;
+      doc.moveDown(0.5);
       const col = {
         name: 50,
         // width: 145
@@ -7117,12 +7160,12 @@ function generateInvoicePdf(order) {
       const tableTop = doc.y;
       drawTableHeader(tableTop);
       let rowY = tableTop + 22;
-      const items = (((_d = order.lineItems) == null ? void 0 : _d.edges) ?? []).filter(
+      const items = (((_g = order.lineItems) == null ? void 0 : _g.edges) ?? []).filter(
         ({ node }) => node.currentQuantity > 0
       );
       for (const { node } of items) {
         const qty = node.currentQuantity;
-        const origUnitMoney = (_e = node.originalUnitPriceSet) == null ? void 0 : _e.shopMoney;
+        const origUnitMoney = (_h = node.originalUnitPriceSet) == null ? void 0 : _h.shopMoney;
         const origUnitAmt = Number((origUnitMoney == null ? void 0 : origUnitMoney.amount) || 0);
         const activeAllocations = (node.discountAllocations || []).filter(
           (alloc) => {
@@ -7143,7 +7186,7 @@ function generateInvoicePdf(order) {
         );
         const discountNameStr = discountCodes.length > 0 ? discountCodes.join(", ") : "";
         let totalDiscountAmt = 0;
-        if ((_f = node.totalDiscountSet) == null ? void 0 : _f.shopMoney) {
+        if ((_i = node.totalDiscountSet) == null ? void 0 : _i.shopMoney) {
           totalDiscountAmt = Number(node.totalDiscountSet.shopMoney.amount || 0);
         } else if (node.discountAllocations && node.discountAllocations.length > 0) {
           totalDiscountAmt = node.discountAllocations.reduce((sum, alloc) => {
@@ -7152,7 +7195,7 @@ function generateInvoicePdf(order) {
           }, 0);
         }
         let discUnitAmt = origUnitAmt;
-        if ((_g = node.discountedUnitPriceSet) == null ? void 0 : _g.shopMoney) {
+        if ((_j = node.discountedUnitPriceSet) == null ? void 0 : _j.shopMoney) {
           discUnitAmt = Number(node.discountedUnitPriceSet.shopMoney.amount);
         } else if (totalDiscountAmt > 0 && qty > 0) {
           discUnitAmt = Math.max(0, origUnitAmt - totalDiscountAmt / qty);
@@ -7163,7 +7206,7 @@ function generateInvoicePdf(order) {
         const unitDiscountAmt = Math.max(0, origUnitAmt - discUnitAmt);
         const hasDiscount = unitDiscountAmt > 1e-3 || totalDiscountAmt > 1e-3;
         let lineTotalAmt = discUnitAmt * qty;
-        if ((_h = node.discountedTotalSet) == null ? void 0 : _h.shopMoney) {
+        if ((_k = node.discountedTotalSet) == null ? void 0 : _k.shopMoney) {
           lineTotalAmt = Number(node.discountedTotalSet.shopMoney.amount);
         }
         const origPriceStr = formatMoney(origUnitMoney || { amount: String(origUnitAmt), currencyCode: currency }, currency);
@@ -7214,22 +7257,21 @@ function generateInvoicePdf(order) {
         doc.text(formattedVal, col.total, totalsY, { width: 65, align: "right" });
         totalsY += 16;
       };
-      totalsRow("Subtotal", (_i = order.currentSubtotalPriceSet) == null ? void 0 : _i.shopMoney);
-      const shippingLine = order.shippingLine || ((_k = (_j = order.shippingLines) == null ? void 0 : _j.nodes) == null ? void 0 : _k[0]);
+      totalsRow("Subtotal", (_l = order.currentSubtotalPriceSet) == null ? void 0 : _l.shopMoney);
       const shippingAllocations = (shippingLine == null ? void 0 : shippingLine.discountAllocations) || [];
       const totalShippingDiscount = shippingAllocations.reduce((sum, alloc) => {
         var _a3, _b2;
         return sum + Number(((_b2 = (_a3 = alloc.allocatedAmountSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
       }, 0);
       const origShippingAmt = Number(
-        ((_m = (_l = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _l.shopMoney) == null ? void 0 : _m.amount) ?? ((_o = (_n = order.totalShippingPriceSet) == null ? void 0 : _n.shopMoney) == null ? void 0 : _o.amount) ?? 0
+        ((_n = (_m = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _m.shopMoney) == null ? void 0 : _n.amount) ?? ((_p = (_o = order.totalShippingPriceSet) == null ? void 0 : _o.shopMoney) == null ? void 0 : _p.amount) ?? 0
       );
       let shippingMoney;
-      if ((_p = order.currentShippingPriceSet) == null ? void 0 : _p.shopMoney) {
+      if ((_q = order.currentShippingPriceSet) == null ? void 0 : _q.shopMoney) {
         shippingMoney = order.currentShippingPriceSet.shopMoney;
-      } else if ((_q = shippingLine == null ? void 0 : shippingLine.currentDiscountedPriceSet) == null ? void 0 : _q.shopMoney) {
+      } else if ((_r = shippingLine == null ? void 0 : shippingLine.currentDiscountedPriceSet) == null ? void 0 : _r.shopMoney) {
         shippingMoney = shippingLine.currentDiscountedPriceSet.shopMoney;
-      } else if ((_r = shippingLine == null ? void 0 : shippingLine.discountedPriceSet) == null ? void 0 : _r.shopMoney) {
+      } else if ((_s = shippingLine == null ? void 0 : shippingLine.discountedPriceSet) == null ? void 0 : _s.shopMoney) {
         shippingMoney = shippingLine.discountedPriceSet.shopMoney;
       } else if (totalShippingDiscount > 0) {
         shippingMoney = {
@@ -7237,26 +7279,22 @@ function generateInvoicePdf(order) {
           currencyCode: currency
         };
       } else {
-        shippingMoney = ((_s = order.totalShippingPriceSet) == null ? void 0 : _s.shopMoney) || {
+        shippingMoney = ((_t = order.totalShippingPriceSet) == null ? void 0 : _t.shopMoney) || {
           amount: "0.00",
           currencyCode: currency
         };
       }
-      if (freeShippingCode && (((_t = shippingLine == null ? void 0 : shippingLine.title) == null ? void 0 : _t.includes("Free")) || origShippingAmt > 0)) {
+      if (freeShippingCode && (((_u = shippingLine == null ? void 0 : shippingLine.title) == null ? void 0 : _u.includes("Free")) || origShippingAmt > 0)) {
         shippingMoney = { amount: "0.00", currencyCode: currency };
       }
-      let shippingLabel = "Shipping";
-      if (freeShippingCode) {
-        shippingLabel = `Shipping (Free - ${freeShippingCode})`;
-      } else if (Number(shippingMoney.amount) === 0) {
-        shippingLabel = "Shipping (Free)";
-      }
+      const isZeroShipping = Number(shippingMoney.amount) === 0;
+      const shippingLabel = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
       totalsRow(shippingLabel, shippingMoney);
-      totalsRow("Tax", (_u = order.currentTotalTaxSet) == null ? void 0 : _u.shopMoney);
-      if (((_v = order.currentTotalDiscountsSet) == null ? void 0 : _v.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
-        totalsRow("Total Discounts", (_w = order.currentTotalDiscountsSet) == null ? void 0 : _w.shopMoney, false, true);
+      totalsRow("Tax", (_v = order.currentTotalTaxSet) == null ? void 0 : _v.shopMoney);
+      if (((_w = order.currentTotalDiscountsSet) == null ? void 0 : _w.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
+        totalsRow("Total Discounts", (_x = order.currentTotalDiscountsSet) == null ? void 0 : _x.shopMoney, false, true);
       }
-      totalsRow("Total", (_x = order.currentTotalPriceSet) == null ? void 0 : _x.shopMoney, true);
+      totalsRow("Total", (_y = order.currentTotalPriceSet) == null ? void 0 : _y.shopMoney, true);
       if (freeShippingCode) {
         totalsY += 4;
         doc.font("Helvetica-Oblique").fontSize(8.5).fillColor("#2e7d32");
@@ -7268,14 +7306,14 @@ function generateInvoicePdf(order) {
         );
         totalsY += 12;
       }
-      const totalPriceAmt = Number(((_z = (_y = order.currentTotalPriceSet) == null ? void 0 : _y.shopMoney) == null ? void 0 : _z.amount) || 0);
-      const paidAmt = ((_A = order.totalReceivedSet) == null ? void 0 : _A.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
-      const outstandingAmt = ((_B = order.totalOutstandingSet) == null ? void 0 : _B.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
-      const paidMoney = ((_C = order.totalReceivedSet) == null ? void 0 : _C.shopMoney) || {
+      const totalPriceAmt = Number(((_A = (_z = order.currentTotalPriceSet) == null ? void 0 : _z.shopMoney) == null ? void 0 : _A.amount) || 0);
+      const paidAmt = ((_B = order.totalReceivedSet) == null ? void 0 : _B.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
+      const outstandingAmt = ((_C = order.totalOutstandingSet) == null ? void 0 : _C.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
+      const paidMoney = ((_D = order.totalReceivedSet) == null ? void 0 : _D.shopMoney) || {
         amount: paidAmt.toFixed(2),
         currencyCode: currency
       };
-      const remainingMoney = ((_D = order.totalOutstandingSet) == null ? void 0 : _D.shopMoney) || {
+      const remainingMoney = ((_E = order.totalOutstandingSet) == null ? void 0 : _E.shopMoney) || {
         amount: outstandingAmt.toFixed(2),
         currencyCode: currency
       };

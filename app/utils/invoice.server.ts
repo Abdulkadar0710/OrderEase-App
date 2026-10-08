@@ -47,6 +47,7 @@ export const ORDER_INVOICE_QUERY = `#graphql
         province
         zip
         country
+        phone
       }
       shippingAddress {
         name
@@ -56,6 +57,7 @@ export const ORDER_INVOICE_QUERY = `#graphql
         province
         zip
         country
+        phone
       }
       lineItems(first: 100) {
         edges {
@@ -246,6 +248,17 @@ export interface InvoiceOrder {
     province?: string | null;
     zip?: string | null;
     country?: string | null;
+    phone?: string | null;
+  } | null;
+  shippingAddress?: {
+    name?: string | null;
+    address1?: string | null;
+    address2?: string | null;
+    city?: string | null;
+    province?: string | null;
+    zip?: string | null;
+    country?: string | null;
+    phone?: string | null;
   } | null;
   lineItems: {
     edges: Array<{
@@ -339,10 +352,15 @@ function cleanDiscountTitle(raw?: string | null): string {
   return cleaned || raw.trim();
 }
 
-function formatAddress(address?: InvoiceOrder["billingAddress"]): string[] {
+function formatAddress(
+  address?: InvoiceOrder["billingAddress"] | InvoiceOrder["shippingAddress"],
+  excludeName?: string | null,
+): string[] {
   if (!address) return [];
   const lines: string[] = [];
-  if (address.name) lines.push(address.name);
+  if (address.name && address.name.trim().toLowerCase() !== excludeName?.trim().toLowerCase()) {
+    lines.push(address.name);
+  }
   if (address.address1) lines.push(address.address1);
   if (address.address2) lines.push(address.address2);
   const cityLine = [address.city, address.province, address.zip]
@@ -350,7 +368,30 @@ function formatAddress(address?: InvoiceOrder["billingAddress"]): string[] {
     .join(", ");
   if (cityLine) lines.push(cityLine);
   if (address.country) lines.push(address.country);
+  if (address.phone) lines.push(`Phone: ${address.phone}`);
   return lines;
+}
+
+function formatShippingLabel(
+  shippingTitle?: string | null,
+  freeShippingCode?: string | null,
+  isZero?: boolean,
+): string {
+  let baseTitle = (shippingTitle || "")
+    .replace(/\s*\(Already Applied\)/gi, "")
+    .replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "")
+    .replace(/\s*\(Free\)/gi, "")
+    .trim();
+
+  if (!baseTitle) baseTitle = "Delivery";
+
+  if (freeShippingCode) {
+    return `Shipping (${baseTitle} - Free - ${freeShippingCode})`;
+  }
+  if (isZero || /\bfree\b/i.test(shippingTitle || "")) {
+    return `Shipping (${baseTitle} - Free)`;
+  }
+  return `Shipping (${baseTitle})`;
 }
 
 export function extractFreeShippingCode(order: InvoiceOrder): string | null {
@@ -427,11 +468,13 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
 
       // Header
       const freeShippingCode = extractFreeShippingCode(order);
+      const shippingLine = order.shippingLine || order.shippingLines?.nodes?.[0];
+      const shippingTitle = shippingLine?.title || "";
 
       doc.fontSize(22).font("Helvetica-Bold").text("Invoice", { align: "left" });
       doc.moveDown(0.5);
       doc
-        .fontSize(11)
+        .fontSize(10.5)
         .font("Helvetica")
         .text(`Order: ${order.name}`)
         .text(orderDate ? `Date: ${orderDate}` : "");
@@ -447,35 +490,67 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
         doc.text(`Discount: ${allDiscounts.join(", ")}`);
       }
 
-      doc.moveDown();
+      if (shippingTitle) {
+        doc.text(`Shipping Method: ${shippingTitle}`);
+      }
 
-      // Billing / customer info
+      doc.moveDown(0.8);
+
+      // Customer & Shipping Info (2-column layout: Billed To & Shipped To)
       const customerName = [order.customer?.firstName, order.customer?.lastName]
         .filter(Boolean)
         .join(" ");
       const customerEmail = order.customer?.email || order.email || "";
 
-      const billingLines = formatAddress(order.billingAddress);
+      const billingLines = formatAddress(order.billingAddress, customerName);
+      const recipientName = order.shippingAddress?.name || customerName;
+      const shippingLines = formatAddress(order.shippingAddress, recipientName);
 
       const infoTop = doc.y;
-      doc.font("Helvetica-Bold").text("Billed To", 50, infoTop);
-      doc.font("Helvetica");
-      let infoY = infoTop + 16;
+
+      // Column 1: Billed To (x = 50, width = 230)
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000").text("Billed To", 50, infoTop);
+      doc.font("Helvetica").fontSize(9);
+      let billedY = infoTop + 15;
       if (customerName) {
-        doc.text(customerName, 50, infoY);
-        infoY += 14;
+        doc.text(customerName, 50, billedY, { width: 230 });
+        billedY += 13;
       }
       if (customerEmail) {
-        doc.text(customerEmail, 50, infoY);
-        infoY += 14;
+        doc.text(customerEmail, 50, billedY, { width: 230 });
+        billedY += 13;
       }
       for (const line of billingLines) {
-        doc.text(line, 50, infoY);
-        infoY += 14;
+        doc.text(line, 50, billedY, { width: 230 });
+        billedY += 13;
       }
 
-      doc.y = Math.max(doc.y, infoY) + 10;
-      doc.moveDown();
+      // Column 2: Shipped To / Shipping Details (x = 295, width = 250)
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000").text("Shipped To", 295, infoTop);
+      doc.font("Helvetica").fontSize(9);
+      let shippedY = infoTop + 15;
+      if (recipientName) {
+        doc.text(recipientName, 295, shippedY, { width: 250 });
+        shippedY += 13;
+      }
+      if (order.shippingAddress) {
+        for (const line of shippingLines) {
+          doc.text(line, 295, shippedY, { width: 250 });
+          shippedY += 13;
+        }
+      } else if (billingLines.length > 0) {
+        doc.text("Same as billing address", 295, shippedY, { width: 250 });
+        shippedY += 13;
+      }
+
+      if (shippingTitle) {
+        doc.font("Helvetica-Bold").text("Method: ", 295, shippedY, { continued: true, width: 250 })
+           .font("Helvetica").text(shippingTitle);
+        shippedY += 13;
+      }
+
+      doc.y = Math.max(billedY, shippedY) + 12;
+      doc.moveDown(0.5);
 
       // Table Column Definitions
       // Usable width: 50 to 545 = 495pt
@@ -657,7 +732,6 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       // Prefer currentShippingPriceSet (reflects order edits and shipping discounts like Free Shipping).
       // Fallback to shippingLine currentDiscountedPriceSet / discountedPriceSet,
       // discount allocation calculations, or totalShippingPriceSet.
-      const shippingLine = order.shippingLine || order.shippingLines?.nodes?.[0];
       const shippingAllocations = shippingLine?.discountAllocations || [];
       const totalShippingDiscount = shippingAllocations.reduce((sum, alloc) => {
         return sum + Number(alloc.allocatedAmountSet?.shopMoney?.amount || 0);
@@ -692,12 +766,8 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
         shippingMoney = { amount: "0.00", currencyCode: currency };
       }
 
-      let shippingLabel = "Shipping";
-      if (freeShippingCode) {
-        shippingLabel = `Shipping (Free - ${freeShippingCode})`;
-      } else if (Number(shippingMoney.amount) === 0) {
-        shippingLabel = "Shipping (Free)";
-      }
+      const isZeroShipping = Number(shippingMoney.amount) === 0;
+      const shippingLabel = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
 
       totalsRow(shippingLabel, shippingMoney);
       totalsRow("Tax", order.currentTotalTaxSet?.shopMoney);
