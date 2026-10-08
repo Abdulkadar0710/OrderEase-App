@@ -8,6 +8,31 @@ export const ORDER_INVOICE_QUERY = `#graphql
       createdAt
       email
       currencyCode
+      tags
+      discountCodes
+      metafield(namespace: "orderease", key: "free_shipping_code") {
+        value
+      }
+      discountApplications(first: 20) {
+        nodes {
+          targetType
+          targetSelection
+          allocationMethod
+          ... on DiscountCodeApplication {
+            code
+          }
+          ... on ManualDiscountApplication {
+            title
+            description
+          }
+          ... on ScriptDiscountApplication {
+            title
+          }
+          ... on AutomaticDiscountApplication {
+            title
+          }
+        }
+      }
       customer {
         id
         firstName
@@ -194,6 +219,19 @@ export interface InvoiceOrder {
   createdAt: string;
   email?: string | null;
   currencyCode: string;
+  tags?: string[] | null;
+  discountCodes?: string[] | null;
+  metafield?: { value?: string | null } | null;
+  discountApplications?: {
+    nodes?: Array<{
+      targetType?: string;
+      targetSelection?: string;
+      allocationMethod?: string;
+      code?: string;
+      title?: string;
+      description?: string;
+    }>;
+  } | null;
   customer?: {
     id?: string | null;
     firstName?: string | null;
@@ -315,6 +353,56 @@ function formatAddress(address?: InvoiceOrder["billingAddress"]): string[] {
   return lines;
 }
 
+export function extractFreeShippingCode(order: InvoiceOrder): string | null {
+  if (order.metafield?.value?.trim()) {
+    return order.metafield.value.trim();
+  }
+
+  if (Array.isArray(order.tags)) {
+    for (const tag of order.tags) {
+      const match = tag.match(/^free-shipping:(.+)$/i);
+      if (match) return match[1].trim();
+    }
+  }
+
+  const shippingLine = order.shippingLine || order.shippingLines?.nodes?.[0];
+  const title = shippingLine?.title || "";
+  const titleMatch =
+    title.match(/\(Free\s*-\s*([^)]+)\)/i) ||
+    title.match(/Free Shipping\s*\(([^)]+)\)/i);
+  if (titleMatch) {
+    return titleMatch[1].trim();
+  }
+
+  const allocs = shippingLine?.discountAllocations || [];
+  for (const alloc of allocs) {
+    if (alloc.discountApplication?.code) {
+      return alloc.discountApplication.code;
+    }
+  }
+
+  const orderApps = order.discountApplications?.nodes || [];
+  for (const app of orderApps) {
+    if (app.targetType === "SHIPPING" && app.code) {
+      return app.code;
+    }
+  }
+
+  const dCodes = order.discountCodes || [];
+  if (dCodes.length > 0) {
+    for (const code of dCodes) {
+      if (/ship/i.test(code) || /free/i.test(code)) {
+        return code;
+      }
+    }
+    if (/\bfree\b/i.test(title)) {
+      return dCodes[0];
+    }
+  }
+
+  return null;
+}
+
 /**
  * Renders an order into a real PDF invoice and resolves with the PDF bytes.
  */
@@ -338,6 +426,8 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
         : "";
 
       // Header
+      const freeShippingCode = extractFreeShippingCode(order);
+
       doc.fontSize(22).font("Helvetica-Bold").text("Invoice", { align: "left" });
       doc.moveDown(0.5);
       doc
@@ -345,6 +435,17 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
         .font("Helvetica")
         .text(`Order: ${order.name}`)
         .text(orderDate ? `Date: ${orderDate}` : "");
+
+      const allDiscounts = Array.from(
+        new Set([
+          ...(order.discountCodes || []),
+          ...(freeShippingCode ? [freeShippingCode] : []),
+        ]),
+      ).filter(Boolean);
+
+      if (allDiscounts.length > 0) {
+        doc.text(`Discount: ${allDiscounts.join(", ")}`);
+      }
 
       doc.moveDown();
 
@@ -587,12 +688,35 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
         };
       }
 
-      totalsRow("Shipping", shippingMoney);
+      if (freeShippingCode && (shippingLine?.title?.includes("Free") || origShippingAmt > 0)) {
+        shippingMoney = { amount: "0.00", currencyCode: currency };
+      }
+
+      let shippingLabel = "Shipping";
+      if (freeShippingCode) {
+        shippingLabel = `Shipping (Free - ${freeShippingCode})`;
+      } else if (Number(shippingMoney.amount) === 0) {
+        shippingLabel = "Shipping (Free)";
+      }
+
+      totalsRow(shippingLabel, shippingMoney);
       totalsRow("Tax", order.currentTotalTaxSet?.shopMoney);
       if (order.currentTotalDiscountsSet?.shopMoney && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
         totalsRow("Total Discounts", order.currentTotalDiscountsSet?.shopMoney, false, true);
       }
       totalsRow("Total", order.currentTotalPriceSet?.shopMoney, true);
+
+      if (freeShippingCode) {
+        totalsY += 4;
+        doc.font("Helvetica-Oblique").fontSize(8.5).fillColor("#2e7d32");
+        doc.text(
+          `* Free shipping discount code "${freeShippingCode}" applied`,
+          col.netPrice - 60,
+          totalsY,
+          { width: 185, align: "right" },
+        );
+        totalsY += 12;
+      }
 
       // Paid and Remaining Balance calculation
       const totalPriceAmt = Number(order.currentTotalPriceSet?.shopMoney?.amount || 0);

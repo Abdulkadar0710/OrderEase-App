@@ -125,7 +125,7 @@ async function getOrderTags(admin, orderId) {
   const json = await res.json();
   return ((_b = (_a2 = json.data) == null ? void 0 : _a2.order) == null ? void 0 : _b.tags) ?? [];
 }
-async function addOrderTags(admin, orderId, owesRefund = false) {
+async function addOrderTags(admin, orderId, owesRefund = false, extraTags = []) {
   var _a2, _b;
   try {
     const existingTags = await getOrderTags(admin, orderId);
@@ -136,6 +136,11 @@ async function addOrderTags(admin, orderId, owesRefund = false) {
     }
     if (owesRefund && !existingSet.has(TAG_REFUND.toLowerCase())) {
       tagsToAdd.push(TAG_REFUND);
+    }
+    for (const tag of extraTags) {
+      if (tag && !existingSet.has(tag.toLowerCase())) {
+        tagsToAdd.push(tag);
+      }
     }
     if (tagsToAdd.length === 0) {
       return;
@@ -5072,6 +5077,195 @@ const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   action: action$a,
   loader: loader$h
 }, Symbol.toStringTag, { value: "Module" }));
+async function persistFreeShippingCode(admin, orderId, code) {
+  if (!orderId || !code) return;
+  try {
+    await admin.graphql(
+      `#graphql
+      mutation SetFreeShippingMetafield($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          userErrors { field message }
+        }
+      }`,
+      {
+        variables: {
+          metafields: [
+            {
+              ownerId: orderId,
+              namespace: "orderease",
+              key: "free_shipping_code",
+              type: "single_line_text_field",
+              value: code.trim()
+            }
+          ]
+        }
+      }
+    );
+  } catch (err) {
+    console.warn("[persistFreeShippingCode] Metafield save error:", err);
+  }
+  try {
+    await addOrderTags(admin, orderId, false, [`free-shipping:${code.trim().toLowerCase()}`]);
+  } catch (err) {
+    console.warn("[persistFreeShippingCode] Tag save error:", err);
+  }
+}
+async function detectActiveFreeShipping(admin, order) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E;
+  const result = {
+    hasFreeShipping: false,
+    code: null,
+    maxPrice: null
+  };
+  if (!order) return result;
+  const mfCode = (_b = (_a2 = order.metafield) == null ? void 0 : _a2.value) == null ? void 0 : _b.trim();
+  if (mfCode) {
+    result.code = mfCode;
+    result.hasFreeShipping = true;
+  }
+  const tags = Array.isArray(order.tags) ? order.tags : [];
+  for (const t of tags) {
+    const match = t.match(/^free-shipping:(.+)$/i);
+    if (match) {
+      result.code = result.code || match[1].trim();
+      result.hasFreeShipping = true;
+    }
+  }
+  const sTitle = ((_c = order.shippingLine) == null ? void 0 : _c.title) || ((_f = (_e = (_d = order.shippingLines) == null ? void 0 : _d.nodes) == null ? void 0 : _e[0]) == null ? void 0 : _f.title) || "";
+  const codeInTitleMatch = sTitle.match(/\(Free\s*-\s*([^)]+)\)/i) || sTitle.match(/Free Shipping\s*\(([^)]+)\)/i);
+  if (codeInTitleMatch) {
+    result.code = result.code || codeInTitleMatch[1].trim();
+    result.hasFreeShipping = true;
+  } else if (/\(Free\)/i.test(sTitle) || /^Free Shipping/i.test(sTitle)) {
+    result.hasFreeShipping = true;
+  }
+  const sLine = order.shippingLine || ((_h = (_g = order.shippingLines) == null ? void 0 : _g.nodes) == null ? void 0 : _h[0]);
+  const currentAmt = parseFloat(
+    ((_j = (_i = sLine == null ? void 0 : sLine.discountedPriceSet) == null ? void 0 : _i.presentmentMoney) == null ? void 0 : _j.amount) ?? ((_l = (_k = sLine == null ? void 0 : sLine.discountedPriceSet) == null ? void 0 : _k.shopMoney) == null ? void 0 : _l.amount) ?? ((_n = (_m = sLine == null ? void 0 : sLine.originalPriceSet) == null ? void 0 : _m.presentmentMoney) == null ? void 0 : _n.amount) ?? ((_p = (_o = sLine == null ? void 0 : sLine.originalPriceSet) == null ? void 0 : _o.shopMoney) == null ? void 0 : _p.amount) ?? ((_r = (_q = order.currentShippingPriceSet) == null ? void 0 : _q.shopMoney) == null ? void 0 : _r.amount) ?? "1"
+  );
+  if (currentAmt === 0 && /\bfree\b/i.test(sTitle)) {
+    result.hasFreeShipping = true;
+  }
+  const allocs = (sLine == null ? void 0 : sLine.discountAllocations) || [];
+  for (const alloc of allocs) {
+    const app2 = alloc.discountApplication;
+    if (app2 == null ? void 0 : app2.code) {
+      result.code = result.code || app2.code;
+      result.hasFreeShipping = true;
+    }
+  }
+  const discountApps = ((_s = order.discountApplications) == null ? void 0 : _s.nodes) || [];
+  for (const app2 of discountApps) {
+    if (app2.targetType === "SHIPPING" && app2.code) {
+      result.code = result.code || app2.code;
+      result.hasFreeShipping = true;
+    }
+  }
+  const discountCodes = Array.isArray(order.discountCodes) ? order.discountCodes : [];
+  if (!result.code && discountCodes.length > 0) {
+    for (const dCode of discountCodes) {
+      try {
+        const checkRes = await admin.graphql(
+          `#graphql
+          query CheckFreeShippingDiscount($code: String!) {
+            codeDiscountNodeByCode(code: $code) {
+              codeDiscount {
+                __typename
+                ... on DiscountCodeFreeShipping {
+                  status
+                  maximumShippingPrice { amount }
+                }
+              }
+            }
+          }`,
+          { variables: { code: dCode } }
+        );
+        const checkJson = await checkRes.json();
+        const disc = (_u = (_t = checkJson.data) == null ? void 0 : _t.codeDiscountNodeByCode) == null ? void 0 : _u.codeDiscount;
+        if ((disc == null ? void 0 : disc.__typename) === "DiscountCodeFreeShipping" && disc.status === "ACTIVE") {
+          result.code = dCode;
+          result.hasFreeShipping = true;
+          if ((_v = disc.maximumShippingPrice) == null ? void 0 : _v.amount) {
+            result.maxPrice = parseFloat(disc.maximumShippingPrice.amount);
+          }
+          break;
+        }
+      } catch (e) {
+        console.warn("[detectActiveFreeShipping] discount check error:", e);
+      }
+    }
+  }
+  if (result.code && result.maxPrice == null) {
+    try {
+      const lookupRes = await admin.graphql(
+        `#graphql
+        query LookupFreeShippingDetails($code: String!) {
+          codeDiscountNodeByCode(code: $code) {
+            codeDiscount {
+              __typename
+              ... on DiscountCodeFreeShipping {
+                status
+                maximumShippingPrice { amount }
+              }
+            }
+          }
+        }`,
+        { variables: { code: result.code } }
+      );
+      const lookupJson = await lookupRes.json();
+      const disc = (_x = (_w = lookupJson.data) == null ? void 0 : _w.codeDiscountNodeByCode) == null ? void 0 : _x.codeDiscount;
+      if ((disc == null ? void 0 : disc.__typename) === "DiscountCodeFreeShipping") {
+        if ((_y = disc.maximumShippingPrice) == null ? void 0 : _y.amount) {
+          result.maxPrice = parseFloat(disc.maximumShippingPrice.amount);
+        }
+      }
+    } catch (e) {
+      console.warn("[detectActiveFreeShipping] lookup error:", e);
+    }
+  }
+  if (result.hasFreeShipping && !result.code) {
+    try {
+      const nodesRes = await admin.graphql(
+        `#graphql
+        query FindActiveFreeShippingCodes {
+          codeDiscountNodes(first: 10, query: "type:free_shipping status:active") {
+            nodes {
+              codeDiscount {
+                __typename
+                ... on DiscountCodeFreeShipping {
+                  codes(first: 5) {
+                    nodes { code }
+                  }
+                  maximumShippingPrice { amount }
+                }
+              }
+            }
+          }
+        }`
+      );
+      const nodesJson = await nodesRes.json();
+      const discNodes = ((_A = (_z = nodesJson.data) == null ? void 0 : _z.codeDiscountNodes) == null ? void 0 : _A.nodes) || [];
+      for (const node of discNodes) {
+        const disc = node.codeDiscount;
+        const foundCode = (_D = (_C = (_B = disc == null ? void 0 : disc.codes) == null ? void 0 : _B.nodes) == null ? void 0 : _C[0]) == null ? void 0 : _D.code;
+        if (foundCode) {
+          result.code = foundCode;
+          if ((_E = disc.maximumShippingPrice) == null ? void 0 : _E.amount) {
+            result.maxPrice = parseFloat(disc.maximumShippingPrice.amount);
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn("[detectActiveFreeShipping] fallback code query error:", e);
+    }
+  }
+  if (order.id && result.code && !mfCode) {
+    persistFreeShippingCode(admin, order.id, result.code).catch(() => {
+    });
+  }
+  return result;
+}
 function lineItemDisplayName(item) {
   var _a2, _b, _c;
   const productTitle = ((_b = (_a2 = item.variant) == null ? void 0 : _a2.product) == null ? void 0 : _b.title) || item.title || "this product";
@@ -5904,7 +6098,8 @@ async function action$9({
           }));
         }
       }
-      const freeShippingTitle = existingShippingTitle ? `${existingShippingTitle} (Free)` : `Free Shipping (${discountCode})`;
+      const cleanExistingTitle = (existingShippingTitle || "Standard").replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "").replace(/\s*\(Already Applied\)/gi, "").replace(/\s*\(Free\)/gi, "").trim();
+      const freeShippingTitle = `${cleanExistingTitle} (Free - ${discountCode})`;
       const addShipRes = await admin.graphql(`#graphql
         mutation AddFreeShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
           orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
@@ -5959,6 +6154,7 @@ async function action$9({
           status: 422
         }));
       }
+      await persistFreeShippingCode(admin, orderId, discountCode);
       await trackOrderEdit({
         shop: storeDomain,
         orderId,
@@ -6582,6 +6778,31 @@ const ORDER_INVOICE_QUERY = `#graphql
       createdAt
       email
       currencyCode
+      tags
+      discountCodes
+      metafield(namespace: "orderease", key: "free_shipping_code") {
+        value
+      }
+      discountApplications(first: 20) {
+        nodes {
+          targetType
+          targetSelection
+          allocationMethod
+          ... on DiscountCodeApplication {
+            code
+          }
+          ... on ManualDiscountApplication {
+            title
+            description
+          }
+          ... on ScriptDiscountApplication {
+            title
+          }
+          ... on AutomaticDiscountApplication {
+            title
+          }
+        }
+      }
       customer {
         id
         firstName
@@ -6777,9 +6998,51 @@ function formatAddress(address) {
   if (address.country) lines.push(address.country);
   return lines;
 }
+function extractFreeShippingCode(order) {
+  var _a2, _b, _c, _d, _e, _f;
+  if ((_b = (_a2 = order.metafield) == null ? void 0 : _a2.value) == null ? void 0 : _b.trim()) {
+    return order.metafield.value.trim();
+  }
+  if (Array.isArray(order.tags)) {
+    for (const tag of order.tags) {
+      const match = tag.match(/^free-shipping:(.+)$/i);
+      if (match) return match[1].trim();
+    }
+  }
+  const shippingLine = order.shippingLine || ((_d = (_c = order.shippingLines) == null ? void 0 : _c.nodes) == null ? void 0 : _d[0]);
+  const title = (shippingLine == null ? void 0 : shippingLine.title) || "";
+  const titleMatch = title.match(/\(Free\s*-\s*([^)]+)\)/i) || title.match(/Free Shipping\s*\(([^)]+)\)/i);
+  if (titleMatch) {
+    return titleMatch[1].trim();
+  }
+  const allocs = (shippingLine == null ? void 0 : shippingLine.discountAllocations) || [];
+  for (const alloc of allocs) {
+    if ((_e = alloc.discountApplication) == null ? void 0 : _e.code) {
+      return alloc.discountApplication.code;
+    }
+  }
+  const orderApps = ((_f = order.discountApplications) == null ? void 0 : _f.nodes) || [];
+  for (const app2 of orderApps) {
+    if (app2.targetType === "SHIPPING" && app2.code) {
+      return app2.code;
+    }
+  }
+  const dCodes = order.discountCodes || [];
+  if (dCodes.length > 0) {
+    for (const code of dCodes) {
+      if (/ship/i.test(code) || /free/i.test(code)) {
+        return code;
+      }
+    }
+    if (/\bfree\b/i.test(title)) {
+      return dCodes[0];
+    }
+  }
+  return null;
+}
 function generateInvoicePdf(order) {
   return new Promise((resolve, reject) => {
-    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C;
+    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D;
     try {
       const doc = new PDFDocument({ size: "A4", margin: 50 });
       const chunks = [];
@@ -6792,9 +7055,19 @@ function generateInvoicePdf(order) {
         month: "long",
         day: "numeric"
       }) : "";
+      const freeShippingCode = extractFreeShippingCode(order);
       doc.fontSize(22).font("Helvetica-Bold").text("Invoice", { align: "left" });
       doc.moveDown(0.5);
       doc.fontSize(11).font("Helvetica").text(`Order: ${order.name}`).text(orderDate ? `Date: ${orderDate}` : "");
+      const allDiscounts = Array.from(
+        /* @__PURE__ */ new Set([
+          ...order.discountCodes || [],
+          ...freeShippingCode ? [freeShippingCode] : []
+        ])
+      ).filter(Boolean);
+      if (allDiscounts.length > 0) {
+        doc.text(`Discount: ${allDiscounts.join(", ")}`);
+      }
       doc.moveDown();
       const customerName = [(_a2 = order.customer) == null ? void 0 : _a2.firstName, (_b = order.customer) == null ? void 0 : _b.lastName].filter(Boolean).join(" ");
       const customerEmail = ((_c = order.customer) == null ? void 0 : _c.email) || order.email || "";
@@ -6969,20 +7242,40 @@ function generateInvoicePdf(order) {
           currencyCode: currency
         };
       }
-      totalsRow("Shipping", shippingMoney);
-      totalsRow("Tax", (_t = order.currentTotalTaxSet) == null ? void 0 : _t.shopMoney);
-      if (((_u = order.currentTotalDiscountsSet) == null ? void 0 : _u.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
-        totalsRow("Total Discounts", (_v = order.currentTotalDiscountsSet) == null ? void 0 : _v.shopMoney, false, true);
+      if (freeShippingCode && (((_t = shippingLine == null ? void 0 : shippingLine.title) == null ? void 0 : _t.includes("Free")) || origShippingAmt > 0)) {
+        shippingMoney = { amount: "0.00", currencyCode: currency };
       }
-      totalsRow("Total", (_w = order.currentTotalPriceSet) == null ? void 0 : _w.shopMoney, true);
-      const totalPriceAmt = Number(((_y = (_x = order.currentTotalPriceSet) == null ? void 0 : _x.shopMoney) == null ? void 0 : _y.amount) || 0);
-      const paidAmt = ((_z = order.totalReceivedSet) == null ? void 0 : _z.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
-      const outstandingAmt = ((_A = order.totalOutstandingSet) == null ? void 0 : _A.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
-      const paidMoney = ((_B = order.totalReceivedSet) == null ? void 0 : _B.shopMoney) || {
+      let shippingLabel = "Shipping";
+      if (freeShippingCode) {
+        shippingLabel = `Shipping (Free - ${freeShippingCode})`;
+      } else if (Number(shippingMoney.amount) === 0) {
+        shippingLabel = "Shipping (Free)";
+      }
+      totalsRow(shippingLabel, shippingMoney);
+      totalsRow("Tax", (_u = order.currentTotalTaxSet) == null ? void 0 : _u.shopMoney);
+      if (((_v = order.currentTotalDiscountsSet) == null ? void 0 : _v.shopMoney) && Number(order.currentTotalDiscountsSet.shopMoney.amount) > 0) {
+        totalsRow("Total Discounts", (_w = order.currentTotalDiscountsSet) == null ? void 0 : _w.shopMoney, false, true);
+      }
+      totalsRow("Total", (_x = order.currentTotalPriceSet) == null ? void 0 : _x.shopMoney, true);
+      if (freeShippingCode) {
+        totalsY += 4;
+        doc.font("Helvetica-Oblique").fontSize(8.5).fillColor("#2e7d32");
+        doc.text(
+          `* Free shipping discount code "${freeShippingCode}" applied`,
+          col.netPrice - 60,
+          totalsY,
+          { width: 185, align: "right" }
+        );
+        totalsY += 12;
+      }
+      const totalPriceAmt = Number(((_z = (_y = order.currentTotalPriceSet) == null ? void 0 : _y.shopMoney) == null ? void 0 : _z.amount) || 0);
+      const paidAmt = ((_A = order.totalReceivedSet) == null ? void 0 : _A.shopMoney) ? Number(order.totalReceivedSet.shopMoney.amount) : totalPriceAmt;
+      const outstandingAmt = ((_B = order.totalOutstandingSet) == null ? void 0 : _B.shopMoney) ? Number(order.totalOutstandingSet.shopMoney.amount) : Math.max(0, totalPriceAmt - paidAmt);
+      const paidMoney = ((_C = order.totalReceivedSet) == null ? void 0 : _C.shopMoney) || {
         amount: paidAmt.toFixed(2),
         currencyCode: currency
       };
-      const remainingMoney = ((_C = order.totalOutstandingSet) == null ? void 0 : _C.shopMoney) || {
+      const remainingMoney = ((_D = order.totalOutstandingSet) == null ? void 0 : _D.shopMoney) || {
         amount: outstandingAmt.toFixed(2),
         currencyCode: currency
       };
@@ -7810,7 +8103,7 @@ const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
 async function loader$d({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
   const {
     sessionToken,
     cors
@@ -7835,11 +8128,29 @@ async function loader$d({
         order(id: $id) {
           id
           currencyCode
+          tags
+          discountCodes
+          metafield(namespace: "orderease", key: "free_shipping_code") {
+            value
+          }
+          discountApplications(first: 10) {
+            nodes {
+              targetType
+              targetSelection
+              ... on DiscountCodeApplication { code }
+            }
+          }
           shippingLine {
             id
             title
             code
             originalPriceSet {
+              presentmentMoney {
+                amount
+                currencyCode
+              }
+            }
+            discountedPriceSet {
               presentmentMoney {
                 amount
                 currencyCode
@@ -7856,11 +8167,12 @@ async function loader$d({
     const order = (_a2 = json.data) == null ? void 0 : _a2.order;
     const shippingLine = (order == null ? void 0 : order.shippingLine) ?? null;
     const currencyCode = (order == null ? void 0 : order.currencyCode) || "USD";
+    const freeShippingInfo = await detectActiveFreeShipping(admin, order);
     const currentShipping = shippingLine ? {
       title: shippingLine.title,
       code: shippingLine.code,
-      amount: ((_c = (_b = shippingLine.originalPriceSet) == null ? void 0 : _b.presentmentMoney) == null ? void 0 : _c.amount) || "0.00",
-      currencyCode: ((_e = (_d = shippingLine.originalPriceSet) == null ? void 0 : _d.presentmentMoney) == null ? void 0 : _e.currencyCode) || currencyCode
+      amount: freeShippingInfo.hasFreeShipping ? "0.00" : ((_c = (_b = shippingLine.discountedPriceSet) == null ? void 0 : _b.presentmentMoney) == null ? void 0 : _c.amount) || ((_e = (_d = shippingLine.originalPriceSet) == null ? void 0 : _d.presentmentMoney) == null ? void 0 : _e.amount) || "0.00",
+      currencyCode: ((_g = (_f = shippingLine.originalPriceSet) == null ? void 0 : _f.presentmentMoney) == null ? void 0 : _g.currencyCode) || currencyCode
     } : null;
     let availableMethods = [];
     const methodsMap = /* @__PURE__ */ new Map();
@@ -7900,19 +8212,19 @@ async function loader$d({
           }
         }`);
       const profilesJson = await profilesRes.json();
-      const profiles = ((_g = (_f = profilesJson.data) == null ? void 0 : _f.deliveryProfiles) == null ? void 0 : _g.nodes) || [];
+      const profiles = ((_i = (_h = profilesJson.data) == null ? void 0 : _h.deliveryProfiles) == null ? void 0 : _i.nodes) || [];
       for (const profile of profiles) {
         const groups = profile.profileLocationGroups || [];
         for (const group of groups) {
-          const zones = ((_h = group.locationGroupZones) == null ? void 0 : _h.nodes) || [];
+          const zones = ((_j = group.locationGroupZones) == null ? void 0 : _j.nodes) || [];
           for (const zone of zones) {
-            const defs = ((_i = zone.methodDefinitions) == null ? void 0 : _i.nodes) || [];
+            const defs = ((_k = zone.methodDefinitions) == null ? void 0 : _k.nodes) || [];
             for (const def of defs) {
               const name = def.name;
               let price = 0;
-              if (((_j = def.rateProvider) == null ? void 0 : _j.__typename) === "DeliveryRateDefinition" && ((_k = def.rateProvider.price) == null ? void 0 : _k.amount)) {
+              if (((_l = def.rateProvider) == null ? void 0 : _l.__typename) === "DeliveryRateDefinition" && ((_m = def.rateProvider.price) == null ? void 0 : _m.amount)) {
                 price = parseFloat(def.rateProvider.price.amount);
-              } else if (((_l = def.rateProvider) == null ? void 0 : _l.__typename) === "DeliveryParticipant" && ((_m = def.rateProvider.fixedFee) == null ? void 0 : _m.amount)) {
+              } else if (((_n = def.rateProvider) == null ? void 0 : _n.__typename) === "DeliveryParticipant" && ((_o = def.rateProvider.fixedFee) == null ? void 0 : _o.amount)) {
                 price = parseFloat(def.rateProvider.fixedFee.amount);
               }
               if (name && !methodsMap.has(name.toLowerCase())) {
@@ -7973,10 +8285,26 @@ async function loader$d({
       }
     }
     availableMethods = Array.from(methodsMap.values());
+    if (freeShippingInfo.hasFreeShipping) {
+      availableMethods = availableMethods.map((m) => {
+        const qualifies = freeShippingInfo.maxPrice == null || m.price <= freeShippingInfo.maxPrice;
+        if (qualifies) {
+          return {
+            ...m,
+            originalPrice: m.price,
+            price: 0,
+            freeShippingApplied: true
+          };
+        }
+        return m;
+      });
+    }
     return cors(Response.json({
       currentShipping,
       currencyCode,
-      availableMethods
+      availableMethods,
+      hasFreeShipping: freeShippingInfo.hasFreeShipping,
+      activeFreeShippingCode: freeShippingInfo.code
     }));
   } catch (err) {
     console.error("[order-shipping-loader] Error:", err);
@@ -8042,6 +8370,31 @@ async function action$7({
       order(id: $id) {
         id
         customer { id }
+        tags
+        discountCodes
+        metafield(namespace: "orderease", key: "free_shipping_code") {
+          value
+        }
+        discountApplications(first: 10) {
+          nodes {
+            targetType
+            targetSelection
+            ... on DiscountCodeApplication { code }
+          }
+        }
+        shippingLine {
+          id
+          title
+          code
+          originalPriceSet {
+            presentmentMoney { amount currencyCode }
+            shopMoney { amount currencyCode }
+          }
+          discountedPriceSet {
+            presentmentMoney { amount currencyCode }
+            shopMoney { amount currencyCode }
+          }
+        }
       }
     }`, {
     variables: {
@@ -8073,6 +8426,16 @@ async function action$7({
     }));
   }
   try {
+    const freeShippingInfo = await detectActiveFreeShipping(admin, order);
+    const numericPrice = typeof price === "number" ? price : parseFloat(String(price));
+    const cleanTitle = (title || "").replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "").replace(/\s*\(Already Applied\)/gi, "").trim();
+    let finalPrice = numericPrice;
+    let finalTitle = cleanTitle;
+    const qualifiesForFreeShipping = freeShippingInfo.hasFreeShipping && (freeShippingInfo.maxPrice == null || numericPrice <= freeShippingInfo.maxPrice);
+    if (qualifiesForFreeShipping) {
+      finalPrice = 0;
+      finalTitle = freeShippingInfo.code ? `${cleanTitle} (Free - ${freeShippingInfo.code})` : `${cleanTitle} (Free)`;
+    }
     const beginRes = await admin.graphql(`#graphql
       mutation OrderEditBeginForShipping($id: ID!) {
         orderEditBegin(id: $id) {
@@ -8121,7 +8484,6 @@ async function action$7({
         console.warn("[order-shipping] Warning removing line:", removeErrors);
       }
     }
-    const numericPrice = typeof price === "number" ? price : parseFloat(String(price));
     const addRes = await admin.graphql(`#graphql
       mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
         orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
@@ -8142,9 +8504,9 @@ async function action$7({
       variables: {
         id: calculatedOrderId,
         shippingLine: {
-          title,
+          title: finalTitle,
           price: {
-            amount: numericPrice,
+            amount: finalPrice,
             currencyCode
           }
         }
@@ -8159,6 +8521,7 @@ async function action$7({
         status: 422
       }));
     }
+    const staffNote = qualifiesForFreeShipping && freeShippingInfo.code ? `Shipping method updated to ${cleanTitle} with free shipping discount (${freeShippingInfo.code})` : "Shipping method updated by customer via Customer Account UI";
     const commitRes = await admin.graphql(`#graphql
       mutation OrderEditCommitShipping($id: ID!, $staffNote: String) {
         orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
@@ -8175,7 +8538,7 @@ async function action$7({
       }`, {
       variables: {
         id: calculatedOrderId,
-        staffNote: "Shipping method updated by customer via Customer Account UI"
+        staffNote
       }
     });
     const commitJson = await commitRes.json();
@@ -8190,7 +8553,11 @@ async function action$7({
     const updatedOrder = commitJson.data.orderEditCommit.order;
     const balanceDue = ((_k = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _k.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund);
+    if (qualifiesForFreeShipping && freeShippingInfo.code) {
+      await persistFreeShippingCode(admin, orderId, freeShippingInfo.code);
+    }
+    const extraTags = qualifiesForFreeShipping && freeShippingInfo.code ? [`free-shipping:${freeShippingInfo.code.toLowerCase()}`] : [];
+    await addOrderTags(admin, orderId, owesRefund, extraTags);
     const {
       source
     } = body || {};

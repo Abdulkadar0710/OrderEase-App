@@ -4,6 +4,22 @@ import { getShippingMethod, updateShippingMethod } from '../../utils/api.js';
 import { getExtensionOrderId, formatOrderId, safeNavigate } from '../../utils/shopifyHelpers.js';
 import { BalanceDueRedirect } from '../BalanceDueRedirect/BalanceDueRedirect.jsx';
 
+const cleanShippingTitle = (str) =>
+  (str || '')
+    .toLowerCase()
+    .replace(/\(free(?:\s*-\s*[^)]+)?\)/gi, '')
+    .replace(/\(already applied\)/gi, '')
+    .replace(/\(free\)/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+
+const displayOptionTitle = (str) =>
+  (str || '')
+    .replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, '')
+    .replace(/\s*\(Already Applied\)/gi, '')
+    .replace(/\s*\(Free\)/gi, '')
+    .trim();
+
 export function ChangeShippingMethod({ orderId: propOrderId }) {
   const orderId = formatOrderId(propOrderId) || getExtensionOrderId();
 
@@ -36,8 +52,8 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
           if (data.availableMethods) {
             let methods = [...data.availableMethods];
             if (data.currentShipping) {
-              const currentTitle = data.currentShipping.title?.toLowerCase();
-              const hasCurrent = methods.some((opt) => opt.title.toLowerCase() === currentTitle);
+              const currentClean = cleanShippingTitle(data.currentShipping.title);
+              const hasCurrent = methods.some((opt) => cleanShippingTitle(opt.title) === currentClean);
               if (!hasCurrent) {
                 methods.unshift({
                   id: 'current-order-shipping',
@@ -47,9 +63,9 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
               }
             }
             setShippingOptions(methods);
-            const currentTitle = data.currentShipping?.title?.toLowerCase();
+            const currentClean = cleanShippingTitle(data.currentShipping?.title);
             const matched = methods.find(
-              (opt) => opt.title.toLowerCase() === currentTitle
+              (opt) => cleanShippingTitle(opt.title) === currentClean
             );
             if (matched) {
               setSelectedOptionId(matched.id);
@@ -71,15 +87,10 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
 
   const selectedOption = shippingOptions.find((opt) => opt.id === selectedOptionId) || null;
 
-  const normalizeTitle = (str) => (str || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-
   const isSameAsCurrent = Boolean(
     currentShipping &&
     selectedOption &&
-    (
-      normalizeTitle(currentShipping.title) === normalizeTitle(selectedOption.title) ||
-      normalizeTitle(currentShipping.title).replace(/alreadyapplied/g, '') === normalizeTitle(selectedOption.title).replace(/alreadyapplied/g, '')
-    )
+    cleanShippingTitle(currentShipping.title) === cleanShippingTitle(selectedOption.title)
   );
 
   const handleSelectOption = (optId) => {
@@ -98,14 +109,17 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
     try {
       const result = await updateShippingMethod({
         orderId,
-        title: selectedOption.title,
+        title: displayOptionTitle(selectedOption.title),
         price: selectedOption.price,
         currencyCode,
       });
 
       setLastResult(result);
+      const isFree = selectedOption.price === 0;
       setCurrentShipping({
-        title: selectedOption.title,
+        title: isFree
+          ? `${displayOptionTitle(selectedOption.title)} (Free)`
+          : displayOptionTitle(selectedOption.title),
         amount: String(selectedOption.price),
       });
 
@@ -178,10 +192,9 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
                       <s-stack direction="block" gap="small-200">
                         {shippingOptions.map((option) => {
                           const isSelected = option.id === selectedOptionId;
-                          const isCurrentMethod = currentShipping && (
-                            normalizeTitle(currentShipping.title) === normalizeTitle(option.title) ||
-                            normalizeTitle(currentShipping.title).includes(normalizeTitle(option.title)) ||
-                            normalizeTitle(option.title).includes(normalizeTitle(currentShipping.title))
+                          const isCurrentMethod = Boolean(
+                            currentShipping &&
+                            cleanShippingTitle(currentShipping.title) === cleanShippingTitle(option.title)
                           );
                           const formattedPrice =
                             option.price === 0
@@ -208,7 +221,7 @@ export function ChangeShippingMethod({ orderId: propOrderId }) {
                                       tone={isSelected ? 'success' : 'neutral'}
                                     />
                                     <s-text type="strong">
-                                      {option.title}
+                                      {displayOptionTitle(option.title)}
                                       {isCurrentMethod ? ' (Already Applied)' : ''}
                                     </s-text>
                                   </s-stack>

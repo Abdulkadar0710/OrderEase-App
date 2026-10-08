@@ -3,6 +3,7 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
 import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
+import { detectActiveFreeShipping, persistFreeShippingCode } from "../utils/freeShippingHelper.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
@@ -24,11 +25,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
         order(id: $id) {
           id
           currencyCode
+          tags
+          discountCodes
+          metafield(namespace: "orderease", key: "free_shipping_code") {
+            value
+          }
+          discountApplications(first: 10) {
+            nodes {
+              targetType
+              targetSelection
+              ... on DiscountCodeApplication { code }
+            }
+          }
           shippingLine {
             id
             title
             code
             originalPriceSet {
+              presentmentMoney {
+                amount
+                currencyCode
+              }
+            }
+            discountedPriceSet {
               presentmentMoney {
                 amount
                 currencyCode
@@ -43,12 +62,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const order = json.data?.order;
     const shippingLine = order?.shippingLine ?? null;
     const currencyCode = order?.currencyCode || "USD";
+    const freeShippingInfo = await detectActiveFreeShipping(admin, order);
 
     const currentShipping = shippingLine
       ? {
           title: shippingLine.title,
           code: shippingLine.code,
-          amount: shippingLine.originalPriceSet?.presentmentMoney?.amount || "0.00",
+          amount: freeShippingInfo.hasFreeShipping
+            ? "0.00"
+            : shippingLine.discountedPriceSet?.presentmentMoney?.amount ||
+              shippingLine.originalPriceSet?.presentmentMoney?.amount ||
+              "0.00",
           currencyCode: shippingLine.originalPriceSet?.presentmentMoney?.currencyCode || currencyCode,
         }
       : null;
@@ -174,7 +198,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     availableMethods = Array.from(methodsMap.values());
 
-    return cors(Response.json({ currentShipping, currencyCode, availableMethods }));
+    if (freeShippingInfo.hasFreeShipping) {
+      availableMethods = availableMethods.map((m) => {
+        const qualifies = freeShippingInfo.maxPrice == null || m.price <= freeShippingInfo.maxPrice;
+        if (qualifies) {
+          return {
+            ...m,
+            originalPrice: m.price,
+            price: 0,
+            freeShippingApplied: true,
+          };
+        }
+        return m;
+      });
+    }
+
+    return cors(
+      Response.json({
+        currentShipping,
+        currencyCode,
+        availableMethods,
+        hasFreeShipping: freeShippingInfo.hasFreeShipping,
+        activeFreeShippingCode: freeShippingInfo.code,
+      }),
+    );
   } catch (err) {
     console.error("[order-shipping-loader] Error:", err);
     return cors(Response.json({ currentShipping: null, currencyCode: "INR", availableMethods: [] }));
@@ -225,6 +272,31 @@ export async function action({ request }: ActionFunctionArgs) {
       order(id: $id) {
         id
         customer { id }
+        tags
+        discountCodes
+        metafield(namespace: "orderease", key: "free_shipping_code") {
+          value
+        }
+        discountApplications(first: 10) {
+          nodes {
+            targetType
+            targetSelection
+            ... on DiscountCodeApplication { code }
+          }
+        }
+        shippingLine {
+          id
+          title
+          code
+          originalPriceSet {
+            presentmentMoney { amount currencyCode }
+            shopMoney { amount currencyCode }
+          }
+          discountedPriceSet {
+            presentmentMoney { amount currencyCode }
+            shopMoney { amount currencyCode }
+          }
+        }
       }
     }`,
     { variables: { id: orderId } },
@@ -242,6 +314,28 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
+    // Check if active free shipping discount exists on this order
+    const freeShippingInfo = await detectActiveFreeShipping(admin, order);
+    const numericPrice = typeof price === "number" ? price : parseFloat(String(price));
+    const cleanTitle = (title || "")
+      .replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "")
+      .replace(/\s*\(Already Applied\)/gi, "")
+      .trim();
+
+    let finalPrice = numericPrice;
+    let finalTitle = cleanTitle;
+
+    const qualifiesForFreeShipping =
+      freeShippingInfo.hasFreeShipping &&
+      (freeShippingInfo.maxPrice == null || numericPrice <= freeShippingInfo.maxPrice);
+
+    if (qualifiesForFreeShipping) {
+      finalPrice = 0;
+      finalTitle = freeShippingInfo.code
+        ? `${cleanTitle} (Free - ${freeShippingInfo.code})`
+        : `${cleanTitle} (Free)`;
+    }
+
     // Step 1: Begin order edit session
     const beginRes = await admin.graphql(
       `#graphql
@@ -289,7 +383,6 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Step 3: Add new shipping line
-    const numericPrice = typeof price === "number" ? price : parseFloat(String(price));
     const addRes = await admin.graphql(
       `#graphql
       mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
@@ -312,9 +405,9 @@ export async function action({ request }: ActionFunctionArgs) {
         variables: {
           id: calculatedOrderId,
           shippingLine: {
-            title,
+            title: finalTitle,
             price: {
-              amount: numericPrice,
+              amount: finalPrice,
               currencyCode,
             },
           },
@@ -328,6 +421,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Step 4: Commit order edit
+    const staffNote = qualifiesForFreeShipping && freeShippingInfo.code
+      ? `Shipping method updated to ${cleanTitle} with free shipping discount (${freeShippingInfo.code})`
+      : "Shipping method updated by customer via Customer Account UI";
+
     const commitRes = await admin.graphql(
       `#graphql
       mutation OrderEditCommitShipping($id: ID!, $staffNote: String) {
@@ -346,7 +443,7 @@ export async function action({ request }: ActionFunctionArgs) {
       {
         variables: {
           id: calculatedOrderId,
-          staffNote: "Shipping method updated by customer via Customer Account UI",
+          staffNote,
         },
       },
     );
@@ -359,7 +456,16 @@ export async function action({ request }: ActionFunctionArgs) {
     const updatedOrder = commitJson.data.orderEditCommit.order;
     const balanceDue = updatedOrder?.totalOutstandingSet?.shopMoney ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund);
+
+    // Preserve free shipping code in metafield and tags
+    if (qualifiesForFreeShipping && freeShippingInfo.code) {
+      await persistFreeShippingCode(admin, orderId, freeShippingInfo.code);
+    }
+    const extraTags =
+      qualifiesForFreeShipping && freeShippingInfo.code
+        ? [`free-shipping:${freeShippingInfo.code.toLowerCase()}`]
+        : [];
+    await addOrderTags(admin, orderId, owesRefund, extraTags);
 
     // Track order edit and feature usage
     const { source } = body || {};

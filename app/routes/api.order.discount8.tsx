@@ -10,6 +10,7 @@ import {
   type DecodedTag,
   type BxgyMetadata,
 } from "../utils/bxgyDiscountHelper.server";
+import { persistFreeShippingCode } from "../utils/freeShippingHelper.server";
 
 /**
  * api.order.discount8.tsx
@@ -1045,9 +1046,12 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       }
 
-      const freeShippingTitle = existingShippingTitle
-        ? `${existingShippingTitle} (Free)`
-        : `Free Shipping (${discountCode})`;
+      const cleanExistingTitle = (existingShippingTitle || "Standard")
+        .replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "")
+        .replace(/\s*\(Already Applied\)/gi, "")
+        .replace(/\s*\(Free\)/gi, "")
+        .trim();
+      const freeShippingTitle = `${cleanExistingTitle} (Free - ${discountCode})`;
 
       const addShipRes = await admin.graphql(
         `#graphql
@@ -1102,6 +1106,8 @@ export async function action({ request }: ActionFunctionArgs) {
       if (commitErrors.length) {
         return cors(Response.json({ userErrors: commitErrors }, { status: 422 }));
       }
+
+      await persistFreeShippingCode(admin, orderId, discountCode);
 
       await trackOrderEdit({
         shop: storeDomain,

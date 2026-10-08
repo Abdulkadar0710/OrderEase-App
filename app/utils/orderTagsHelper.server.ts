@@ -50,6 +50,7 @@ export async function addOrderTags(
   admin: AdminGraphQL,
   orderId: string,
   owesRefund = false,
+  extraTags: string[] = [],
 ): Promise<void> {
   try {
     const existingTags = await getOrderTags(admin, orderId);
@@ -63,6 +64,12 @@ export async function addOrderTags(
 
     if (owesRefund && !existingSet.has(TAG_REFUND.toLowerCase())) {
       tagsToAdd.push(TAG_REFUND);
+    }
+
+    for (const tag of extraTags) {
+      if (tag && !existingSet.has(tag.toLowerCase())) {
+        tagsToAdd.push(tag);
+      }
     }
 
     if (tagsToAdd.length === 0) {
