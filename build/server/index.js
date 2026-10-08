@@ -563,7 +563,7 @@ async function loader$u({
 async function action$p({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
   const {
     sessionToken,
     cors
@@ -722,6 +722,7 @@ async function action$p({
             name
             statusPageUrl
             totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
           }
@@ -742,7 +743,7 @@ async function action$p({
       }));
     }
     const order = commitJson.data.orderEditCommit.order;
-    const balanceDue = ((_l = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _l.shopMoney) ?? null;
+    const balanceDue = ((_l = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _l.presentmentMoney) ?? ((_m = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _m.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
     await addOrderTags(admin, orderId, owesRefund);
     await trackOrderEdit({
@@ -792,7 +793,7 @@ async function loader$t({
 async function action$o({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
   const {
     sessionToken,
     cors
@@ -951,6 +952,7 @@ async function action$o({
             name
             statusPageUrl
             totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
           }
@@ -970,7 +972,7 @@ async function action$o({
       }));
     }
     const order = commitJson.data.orderEditCommit.order;
-    const balanceDue = ((_o = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _o.shopMoney) ?? null;
+    const balanceDue = ((_o = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _o.presentmentMoney) ?? ((_p = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _p.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
     await addOrderTags(admin, orderId, owesRefund);
     await trackOrderEdit({
@@ -1145,7 +1147,7 @@ async function loader$r({
 async function action$m({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   const {
     sessionToken,
     cors
@@ -1290,6 +1292,7 @@ async function action$m({
             name
             statusPageUrl
             totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
           }
@@ -1310,7 +1313,7 @@ async function action$m({
       }));
     }
     const order = commitJson.data.orderEditCommit.order;
-    const balanceDue = ((_i = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _i.shopMoney) ?? null;
+    const balanceDue = ((_i = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _i.presentmentMoney) ?? ((_j = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _j.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
     await addOrderTags(admin, orderId, owesRefund);
     await trackOrderEdit({
@@ -6308,7 +6311,10 @@ async function action$9({
               id
               name
               statusPageUrl
-              totalOutstandingSet { shopMoney { amount currencyCode } }
+              totalOutstandingSet {
+                presentmentMoney { amount currencyCode }
+                shopMoney { amount currencyCode }
+              }
             }
             userErrors { field message }
           }
@@ -6605,7 +6611,10 @@ async function action$9({
               id
               name
               statusPageUrl
-              totalOutstandingSet { shopMoney { amount currencyCode } }
+              totalOutstandingSet {
+                presentmentMoney { amount currencyCode }
+                shopMoney { amount currencyCode }
+              }
             }
             userErrors { field message }
           }
@@ -6898,7 +6907,10 @@ async function action$9({
             id
             name
             statusPageUrl
-            totalOutstandingSet { shopMoney { amount currencyCode } }
+            totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
           }
           userErrors { field message }
         }
@@ -8675,7 +8687,7 @@ async function loader$d({
 async function action$7({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
   const {
     sessionToken,
     cors
@@ -8921,6 +8933,7 @@ async function action$7({
             name
             statusPageUrl
             totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
           }
@@ -8942,7 +8955,7 @@ async function action$7({
       }));
     }
     const updatedOrder = commitJson.data.orderEditCommit.order;
-    const balanceDue = ((_t = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _t.shopMoney) ?? null;
+    const balanceDue = ((_t = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _t.presentmentMoney) ?? ((_u = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _u.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
     if (qualifiesForFreeShipping && freeShippingInfo.code) {
       await persistFreeShippingCode(admin, orderId, freeShippingInfo.code);

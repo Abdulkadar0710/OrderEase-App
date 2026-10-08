@@ -1254,7 +1254,10 @@ export async function action({ request }: ActionFunctionArgs) {
               id
               name
               statusPageUrl
-              totalOutstandingSet { shopMoney { amount currencyCode } }
+              totalOutstandingSet {
+                presentmentMoney { amount currencyCode }
+                shopMoney { amount currencyCode }
+              }
             }
             userErrors { field message }
           }
@@ -1628,7 +1631,10 @@ export async function action({ request }: ActionFunctionArgs) {
               id
               name
               statusPageUrl
-              totalOutstandingSet { shopMoney { amount currencyCode } }
+              totalOutstandingSet {
+                presentmentMoney { amount currencyCode }
+                shopMoney { amount currencyCode }
+              }
             }
             userErrors { field message }
           }
@@ -1981,7 +1987,10 @@ export async function action({ request }: ActionFunctionArgs) {
             id
             name
             statusPageUrl
-            totalOutstandingSet { shopMoney { amount currencyCode } }
+            totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
           }
           userErrors { field message }
         }

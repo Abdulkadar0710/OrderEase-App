@@ -572,6 +572,7 @@ export async function action({ request }: ActionFunctionArgs) {
             name
             statusPageUrl
             totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
           }
@@ -592,7 +593,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const updatedOrder = commitJson.data.orderEditCommit.order;
-    const balanceDue = updatedOrder?.totalOutstandingSet?.shopMoney ?? null;
+    const balanceDue =
+      updatedOrder?.totalOutstandingSet?.presentmentMoney ??
+      updatedOrder?.totalOutstandingSet?.shopMoney ??
+      null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
 
     // Preserve free shipping code in metafield and tags

@@ -211,6 +211,7 @@ export async function action({ request }: ActionFunctionArgs) {
             name
             statusPageUrl
             totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
               shopMoney { amount currencyCode }
             }
           }
@@ -226,7 +227,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const order = commitJson.data.orderEditCommit.order;
-    const balanceDue = order?.totalOutstandingSet?.shopMoney ?? null;
+    const balanceDue =
+      order?.totalOutstandingSet?.presentmentMoney ??
+      order?.totalOutstandingSet?.shopMoney ??
+      null;
 
     // Determine if the merchant owes the customer a refund
     // (negative outstanding balance after edit).
