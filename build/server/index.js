@@ -8141,7 +8141,7 @@ const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
 async function loader$d({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
   const {
     sessionToken,
     cors
@@ -8166,6 +8166,7 @@ async function loader$d({
         order(id: $id) {
           id
           currencyCode
+          presentmentCurrencyCode
           tags
           discountCodes
           metafield(namespace: "orderease", key: "free_shipping_code") {
@@ -8178,6 +8179,10 @@ async function loader$d({
               ... on DiscountCodeApplication { code }
             }
           }
+          shippingAddress {
+            countryCode
+            provinceCode
+          }
           shippingLine {
             id
             title
@@ -8187,9 +8192,17 @@ async function loader$d({
                 amount
                 currencyCode
               }
+              shopMoney {
+                amount
+                currencyCode
+              }
             }
             discountedPriceSet {
               presentmentMoney {
+                amount
+                currencyCode
+              }
+              shopMoney {
                 amount
                 currencyCode
               }
@@ -8204,24 +8217,38 @@ async function loader$d({
     const json = await res.json();
     const order = (_a2 = json.data) == null ? void 0 : _a2.order;
     const shippingLine = (order == null ? void 0 : order.shippingLine) ?? null;
-    const currencyCode = (order == null ? void 0 : order.currencyCode) || "USD";
     const freeShippingInfo = await detectActiveFreeShipping(admin, order);
+    const activeCurrency = ((_c = (_b = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _b.presentmentMoney) == null ? void 0 : _c.currencyCode) || (order == null ? void 0 : order.presentmentCurrencyCode) || (order == null ? void 0 : order.currencyCode) || "USD";
     const currentShipping = shippingLine ? {
       title: shippingLine.title,
       code: shippingLine.code,
-      amount: freeShippingInfo.hasFreeShipping ? "0.00" : ((_c = (_b = shippingLine.discountedPriceSet) == null ? void 0 : _b.presentmentMoney) == null ? void 0 : _c.amount) || ((_e = (_d = shippingLine.originalPriceSet) == null ? void 0 : _d.presentmentMoney) == null ? void 0 : _e.amount) || "0.00",
-      currencyCode: ((_g = (_f = shippingLine.originalPriceSet) == null ? void 0 : _f.presentmentMoney) == null ? void 0 : _g.currencyCode) || currencyCode
+      amount: freeShippingInfo.hasFreeShipping ? "0.00" : ((_e = (_d = shippingLine.discountedPriceSet) == null ? void 0 : _d.presentmentMoney) == null ? void 0 : _e.amount) || ((_g = (_f = shippingLine.originalPriceSet) == null ? void 0 : _f.presentmentMoney) == null ? void 0 : _g.amount) || "0.00",
+      currencyCode: activeCurrency
     } : null;
     let availableMethods = [];
-    const methodsMap = /* @__PURE__ */ new Map();
+    const orderCountry = ((_h = order == null ? void 0 : order.shippingAddress) == null ? void 0 : _h.countryCode) || null;
+    const scoredMap = /* @__PURE__ */ new Map();
     try {
       const profilesRes = await admin.graphql(`#graphql
         query getStoreDeliveryProfiles {
           deliveryProfiles(first: 20) {
             nodes {
+              id
+              name
+              default
               profileLocationGroups {
                 locationGroupZones(first: 20) {
                   nodes {
+                    zone {
+                      id
+                      name
+                      countries {
+                        code {
+                          countryCode
+                          restOfWorld
+                        }
+                      }
+                    }
                     methodDefinitions(first: 20) {
                       nodes {
                         id
@@ -8232,6 +8259,7 @@ async function loader$d({
                           ... on DeliveryRateDefinition {
                             price {
                               amount
+                              currencyCode
                             }
                           }
                           ... on DeliveryParticipant {
@@ -8250,26 +8278,55 @@ async function loader$d({
           }
         }`);
       const profilesJson = await profilesRes.json();
-      const profiles = ((_i = (_h = profilesJson.data) == null ? void 0 : _h.deliveryProfiles) == null ? void 0 : _i.nodes) || [];
+      const profiles = ((_j = (_i = profilesJson.data) == null ? void 0 : _i.deliveryProfiles) == null ? void 0 : _j.nodes) || [];
       for (const profile of profiles) {
+        const isCustomProfile = !profile.default;
         const groups = profile.profileLocationGroups || [];
         for (const group of groups) {
-          const zones = ((_j = group.locationGroupZones) == null ? void 0 : _j.nodes) || [];
-          for (const zone of zones) {
-            const defs = ((_k = zone.methodDefinitions) == null ? void 0 : _k.nodes) || [];
+          const zones = ((_k = group.locationGroupZones) == null ? void 0 : _k.nodes) || [];
+          for (const zoneNode of zones) {
+            const zone = zoneNode.zone;
+            const countries = (zone == null ? void 0 : zone.countries) || [];
+            let isExactCountryMatch = false;
+            let isRestOfWorldMatch = false;
+            if (orderCountry) {
+              for (const c of countries) {
+                if (((_l = c.code) == null ? void 0 : _l.countryCode) === orderCountry) {
+                  isExactCountryMatch = true;
+                  break;
+                }
+                if ((_m = c.code) == null ? void 0 : _m.restOfWorld) {
+                  isRestOfWorldMatch = true;
+                }
+              }
+            }
+            if (orderCountry && !isExactCountryMatch && !isRestOfWorldMatch) {
+              continue;
+            }
+            let score = 5;
+            if (isExactCountryMatch) {
+              score = isCustomProfile ? 40 : 30;
+            } else if (isRestOfWorldMatch) {
+              score = isCustomProfile ? 20 : 10;
+            }
+            const defs = ((_n = zoneNode.methodDefinitions) == null ? void 0 : _n.nodes) || [];
             for (const def of defs) {
               const name = def.name;
+              if (!name) continue;
               let price = 0;
-              if (((_l = def.rateProvider) == null ? void 0 : _l.__typename) === "DeliveryRateDefinition" && ((_m = def.rateProvider.price) == null ? void 0 : _m.amount)) {
+              if (((_o = def.rateProvider) == null ? void 0 : _o.__typename) === "DeliveryRateDefinition" && ((_p = def.rateProvider.price) == null ? void 0 : _p.amount)) {
                 price = parseFloat(def.rateProvider.price.amount);
-              } else if (((_n = def.rateProvider) == null ? void 0 : _n.__typename) === "DeliveryParticipant" && ((_o = def.rateProvider.fixedFee) == null ? void 0 : _o.amount)) {
+              } else if (((_q = def.rateProvider) == null ? void 0 : _q.__typename) === "DeliveryParticipant" && ((_r = def.rateProvider.fixedFee) == null ? void 0 : _r.amount)) {
                 price = parseFloat(def.rateProvider.fixedFee.amount);
               }
-              if (name && !methodsMap.has(name.toLowerCase())) {
-                methodsMap.set(name.toLowerCase(), {
-                  id: def.id || name.toLowerCase(),
+              const key = name.toLowerCase().trim();
+              const existing = scoredMap.get(key);
+              if (!existing || score > existing.score) {
+                scoredMap.set(key, {
+                  id: def.id || key,
                   title: name,
-                  price
+                  price,
+                  score
                 });
               }
             }
@@ -8279,7 +8336,7 @@ async function loader$d({
     } catch (e) {
       console.warn("[order-shipping-loader] GraphQL deliveryProfiles fetch error:", e);
     }
-    if (methodsMap.size === 0 && (session == null ? void 0 : session.accessToken)) {
+    if (scoredMap.size === 0 && (session == null ? void 0 : session.accessToken)) {
       try {
         const restRes = await fetch(`https://${storeDomain}/admin/api/2026-04/shipping_zones.json`, {
           headers: {
@@ -8297,22 +8354,24 @@ async function loader$d({
             for (const rate of [...priceRates, ...weightRates]) {
               const name = rate.name;
               const price = parseFloat(rate.price || "0.00");
-              if (name && !methodsMap.has(name.toLowerCase())) {
-                methodsMap.set(name.toLowerCase(), {
+              if (name && !scoredMap.has(name.toLowerCase())) {
+                scoredMap.set(name.toLowerCase(), {
                   id: String(rate.id || name.toLowerCase()),
                   title: name,
-                  price
+                  price,
+                  score: 1
                 });
               }
             }
             for (const provider of carrierProviders) {
               const name = provider.service_discovery_name || provider.carrier_service_id || "Carrier Shipping";
               const price = parseFloat(provider.flat_modifier || "0.00");
-              if (name && !methodsMap.has(name.toLowerCase())) {
-                methodsMap.set(name.toLowerCase(), {
+              if (name && !scoredMap.has(name.toLowerCase())) {
+                scoredMap.set(name.toLowerCase(), {
                   id: String(provider.id || name.toLowerCase()),
                   title: name,
-                  price
+                  price,
+                  score: 1
                 });
               }
             }
@@ -8322,7 +8381,15 @@ async function loader$d({
         console.warn("[order-shipping-loader] REST shipping_zones fetch error:", restErr);
       }
     }
-    availableMethods = Array.from(methodsMap.values());
+    availableMethods = Array.from(scoredMap.values()).map(({
+      id,
+      title,
+      price
+    }) => ({
+      id,
+      title,
+      price
+    }));
     if (freeShippingInfo.hasFreeShipping) {
       availableMethods = availableMethods.map((m) => {
         const qualifies = freeShippingInfo.maxPrice == null || m.price <= freeShippingInfo.maxPrice;
@@ -8339,7 +8406,7 @@ async function loader$d({
     }
     return cors(Response.json({
       currentShipping,
-      currencyCode,
+      currencyCode: activeCurrency,
       availableMethods,
       hasFreeShipping: freeShippingInfo.hasFreeShipping,
       activeFreeShippingCode: freeShippingInfo.code
@@ -8356,7 +8423,7 @@ async function loader$d({
 async function action$7({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
   const {
     sessionToken,
     cors
@@ -8407,6 +8474,9 @@ async function action$7({
     query getOrderOwnerForShipping($id: ID!) {
       order(id: $id) {
         id
+        currencyCode
+        presentmentCurrencyCode
+        shippingAddress { countryCode provinceCode }
         customer { id }
         tags
         discountCodes
@@ -8479,6 +8549,10 @@ async function action$7({
         orderEditBegin(id: $id) {
           calculatedOrder {
             id
+            totalPriceSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
             shippingLines {
               id
               title
@@ -8522,7 +8596,8 @@ async function action$7({
         console.warn("[order-shipping] Warning removing line:", removeErrors);
       }
     }
-    const addRes = await admin.graphql(`#graphql
+    const targetCurrency = ((_h = (_g = calculatedOrder.totalPriceSet) == null ? void 0 : _g.presentmentMoney) == null ? void 0 : _h.currencyCode) || order.presentmentCurrencyCode || ((_k = (_j = (_i = order.shippingLine) == null ? void 0 : _i.originalPriceSet) == null ? void 0 : _j.presentmentMoney) == null ? void 0 : _k.currencyCode) || order.currencyCode || currencyCode || "USD";
+    let addRes = await admin.graphql(`#graphql
       mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
         orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
           calculatedOrder { id }
@@ -8545,13 +8620,39 @@ async function action$7({
           title: finalTitle,
           price: {
             amount: finalPrice,
-            currencyCode
+            currencyCode: targetCurrency
           }
         }
       }
     });
-    const addJson = await addRes.json();
-    const addErrors = ((_h = (_g = addJson.data) == null ? void 0 : _g.orderEditAddShippingLine) == null ? void 0 : _h.userErrors) ?? [];
+    let addJson = await addRes.json();
+    let addErrors = ((_m = (_l = addJson.data) == null ? void 0 : _l.orderEditAddShippingLine) == null ? void 0 : _m.userErrors) ?? [];
+    if (addErrors.length) {
+      const currencyMatch = (_o = (_n = addErrors[0]) == null ? void 0 : _n.message) == null ? void 0 : _o.match(/must be in ([A-Z]{3})/i);
+      if (currencyMatch) {
+        const retryCurrency = currencyMatch[1].toUpperCase();
+        addRes = await admin.graphql(`#graphql
+          mutation OrderEditAddShippingLineRetry($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
+            orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            id: calculatedOrderId,
+            shippingLine: {
+              title: finalTitle,
+              price: {
+                amount: finalPrice,
+                currencyCode: retryCurrency
+              }
+            }
+          }
+        });
+        addJson = await addRes.json();
+        addErrors = ((_q = (_p = addJson.data) == null ? void 0 : _p.orderEditAddShippingLine) == null ? void 0 : _q.userErrors) ?? [];
+      }
+    }
     if (addErrors.length) {
       return cors(Response.json({
         userErrors: addErrors
@@ -8580,7 +8681,7 @@ async function action$7({
       }
     });
     const commitJson = await commitRes.json();
-    const commitErrors = ((_j = (_i = commitJson.data) == null ? void 0 : _i.orderEditCommit) == null ? void 0 : _j.userErrors) ?? [];
+    const commitErrors = ((_s = (_r = commitJson.data) == null ? void 0 : _r.orderEditCommit) == null ? void 0 : _s.userErrors) ?? [];
     if (commitErrors.length) {
       return cors(Response.json({
         userErrors: commitErrors
@@ -8589,7 +8690,7 @@ async function action$7({
       }));
     }
     const updatedOrder = commitJson.data.orderEditCommit.order;
-    const balanceDue = ((_k = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _k.shopMoney) ?? null;
+    const balanceDue = ((_t = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _t.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
     if (qualifiesForFreeShipping && freeShippingInfo.code) {
       await persistFreeShippingCode(admin, orderId, freeShippingInfo.code);

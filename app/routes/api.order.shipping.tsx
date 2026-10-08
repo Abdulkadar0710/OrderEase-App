@@ -25,6 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         order(id: $id) {
           id
           currencyCode
+          presentmentCurrencyCode
           tags
           discountCodes
           metafield(namespace: "orderease", key: "free_shipping_code") {
@@ -37,6 +38,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
               ... on DiscountCodeApplication { code }
             }
           }
+          shippingAddress {
+            countryCode
+            provinceCode
+          }
           shippingLine {
             id
             title
@@ -46,9 +51,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 amount
                 currencyCode
               }
+              shopMoney {
+                amount
+                currencyCode
+              }
             }
             discountedPriceSet {
               presentmentMoney {
+                amount
+                currencyCode
+              }
+              shopMoney {
                 amount
                 currencyCode
               }
@@ -61,8 +74,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const json = await res.json();
     const order = json.data?.order;
     const shippingLine = order?.shippingLine ?? null;
-    const currencyCode = order?.currencyCode || "USD";
     const freeShippingInfo = await detectActiveFreeShipping(admin, order);
+
+    const activeCurrency =
+      shippingLine?.originalPriceSet?.presentmentMoney?.currencyCode ||
+      order?.presentmentCurrencyCode ||
+      order?.currencyCode ||
+      "USD";
 
     const currentShipping = shippingLine
       ? {
@@ -73,23 +91,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
             : shippingLine.discountedPriceSet?.presentmentMoney?.amount ||
               shippingLine.originalPriceSet?.presentmentMoney?.amount ||
               "0.00",
-          currencyCode: shippingLine.originalPriceSet?.presentmentMoney?.currencyCode || currencyCode,
+          currencyCode: activeCurrency,
         }
       : null;
 
     let availableMethods: Array<{ id: string; title: string; price: number }> = [];
-    const methodsMap = new Map<string, { id: string; title: string; price: number }>();
+    const orderCountry = order?.shippingAddress?.countryCode || null;
 
-    // Strategy 1: GraphQL deliveryProfiles
+    interface ScoredMethod {
+      id: string;
+      title: string;
+      price: number;
+      score: number;
+    }
+
+    const scoredMap = new Map<string, ScoredMethod>();
+
+    // Strategy 1: GraphQL deliveryProfiles with destination-zone matching
     try {
       const profilesRes = await admin.graphql(
         `#graphql
         query getStoreDeliveryProfiles {
           deliveryProfiles(first: 20) {
             nodes {
+              id
+              name
+              default
               profileLocationGroups {
                 locationGroupZones(first: 20) {
                   nodes {
+                    zone {
+                      id
+                      name
+                      countries {
+                        code {
+                          countryCode
+                          restOfWorld
+                        }
+                      }
+                    }
                     methodDefinitions(first: 20) {
                       nodes {
                         id
@@ -100,6 +140,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
                           ... on DeliveryRateDefinition {
                             price {
                               amount
+                              currencyCode
                             }
                           }
                           ... on DeliveryParticipant {
@@ -122,24 +163,67 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const profiles = profilesJson.data?.deliveryProfiles?.nodes || [];
 
       for (const profile of profiles) {
+        const isCustomProfile = !profile.default;
         const groups = profile.profileLocationGroups || [];
         for (const group of groups) {
           const zones = group.locationGroupZones?.nodes || [];
-          for (const zone of zones) {
-            const defs = zone.methodDefinitions?.nodes || [];
+          for (const zoneNode of zones) {
+            const zone = zoneNode.zone;
+            const countries = zone?.countries || [];
+
+            let isExactCountryMatch = false;
+            let isRestOfWorldMatch = false;
+
+            if (orderCountry) {
+              for (const c of countries) {
+                if (c.code?.countryCode === orderCountry) {
+                  isExactCountryMatch = true;
+                  break;
+                }
+                if (c.code?.restOfWorld) {
+                  isRestOfWorldMatch = true;
+                }
+              }
+            }
+
+            // If order has a known destination country, skip zones that don't cover it
+            if (orderCountry && !isExactCountryMatch && !isRestOfWorldMatch) {
+              continue;
+            }
+
+            // Priority scoring:
+            // 40: Custom profile with exact country match (e.g. dedicated North America profile for US)
+            // 30: Default profile with exact country match
+            // 20: Custom profile with rest of world match
+            // 10: Default profile with rest of world match
+            // 5: Generic fallback when no destination country is known
+            let score = 5;
+            if (isExactCountryMatch) {
+              score = isCustomProfile ? 40 : 30;
+            } else if (isRestOfWorldMatch) {
+              score = isCustomProfile ? 20 : 10;
+            }
+
+            const defs = zoneNode.methodDefinitions?.nodes || [];
             for (const def of defs) {
               const name = def.name;
+              if (!name) continue;
+
               let price = 0;
               if (def.rateProvider?.__typename === "DeliveryRateDefinition" && def.rateProvider.price?.amount) {
                 price = parseFloat(def.rateProvider.price.amount);
               } else if (def.rateProvider?.__typename === "DeliveryParticipant" && def.rateProvider.fixedFee?.amount) {
                 price = parseFloat(def.rateProvider.fixedFee.amount);
               }
-              if (name && !methodsMap.has(name.toLowerCase())) {
-                methodsMap.set(name.toLowerCase(), {
-                  id: def.id || name.toLowerCase(),
+
+              const key = name.toLowerCase().trim();
+              const existing = scoredMap.get(key);
+              if (!existing || score > existing.score) {
+                scoredMap.set(key, {
+                  id: def.id || key,
                   title: name,
                   price,
+                  score,
                 });
               }
             }
@@ -151,7 +235,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     // Strategy 2: REST shipping_zones.json fallback if GraphQL returned nothing
-    if (methodsMap.size === 0 && session?.accessToken) {
+    if (scoredMap.size === 0 && session?.accessToken) {
       try {
         const restRes = await fetch(`https://${storeDomain}/admin/api/2026-04/shipping_zones.json`, {
           headers: {
@@ -170,22 +254,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
             for (const rate of [...priceRates, ...weightRates]) {
               const name = rate.name;
               const price = parseFloat(rate.price || "0.00");
-              if (name && !methodsMap.has(name.toLowerCase())) {
-                methodsMap.set(name.toLowerCase(), {
+              if (name && !scoredMap.has(name.toLowerCase())) {
+                scoredMap.set(name.toLowerCase(), {
                   id: String(rate.id || name.toLowerCase()),
                   title: name,
                   price,
+                  score: 1,
                 });
               }
             }
             for (const provider of carrierProviders) {
               const name = provider.service_discovery_name || provider.carrier_service_id || "Carrier Shipping";
               const price = parseFloat(provider.flat_modifier || "0.00");
-              if (name && !methodsMap.has(name.toLowerCase())) {
-                methodsMap.set(name.toLowerCase(), {
+              if (name && !scoredMap.has(name.toLowerCase())) {
+                scoredMap.set(name.toLowerCase(), {
                   id: String(provider.id || name.toLowerCase()),
                   title: name,
                   price,
+                  score: 1,
                 });
               }
             }
@@ -196,7 +282,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     }
 
-    availableMethods = Array.from(methodsMap.values());
+    availableMethods = Array.from(scoredMap.values()).map(({ id, title, price }) => ({
+      id,
+      title,
+      price,
+    }));
 
     if (freeShippingInfo.hasFreeShipping) {
       availableMethods = availableMethods.map((m) => {
@@ -216,7 +306,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return cors(
       Response.json({
         currentShipping,
-        currencyCode,
+        currencyCode: activeCurrency,
         availableMethods,
         hasFreeShipping: freeShippingInfo.hasFreeShipping,
         activeFreeShippingCode: freeShippingInfo.code,
@@ -271,6 +361,9 @@ export async function action({ request }: ActionFunctionArgs) {
     query getOrderOwnerForShipping($id: ID!) {
       order(id: $id) {
         id
+        currencyCode
+        presentmentCurrencyCode
+        shippingAddress { countryCode provinceCode }
         customer { id }
         tags
         discountCodes
@@ -343,6 +436,10 @@ export async function action({ request }: ActionFunctionArgs) {
         orderEditBegin(id: $id) {
           calculatedOrder {
             id
+            totalPriceSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
             shippingLines {
               id
               title
@@ -382,8 +479,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Resolve target currency accurately to prevent currency mismatch in Order Editing
+    const targetCurrency =
+      calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||
+      order.presentmentCurrencyCode ||
+      order.shippingLine?.originalPriceSet?.presentmentMoney?.currencyCode ||
+      order.currencyCode ||
+      currencyCode ||
+      "USD";
+
     // Step 3: Add new shipping line
-    const addRes = await admin.graphql(
+    let addRes = await admin.graphql(
       `#graphql
       mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
         orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
@@ -408,14 +514,46 @@ export async function action({ request }: ActionFunctionArgs) {
             title: finalTitle,
             price: {
               amount: finalPrice,
-              currencyCode,
+              currencyCode: targetCurrency,
             },
           },
         },
       },
     );
-    const addJson = await addRes.json();
-    const addErrors = addJson.data?.orderEditAddShippingLine?.userErrors ?? [];
+    let addJson = await addRes.json();
+    let addErrors = addJson.data?.orderEditAddShippingLine?.userErrors ?? [];
+
+    // Fallback: If currency code was rejected by Shopify (e.g. "The price must be in USD."), retry with expected currency
+    if (addErrors.length) {
+      const currencyMatch = addErrors[0]?.message?.match(/must be in ([A-Z]{3})/i);
+      if (currencyMatch) {
+        const retryCurrency = currencyMatch[1].toUpperCase();
+        addRes = await admin.graphql(
+          `#graphql
+          mutation OrderEditAddShippingLineRetry($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
+            orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`,
+          {
+            variables: {
+              id: calculatedOrderId,
+              shippingLine: {
+                title: finalTitle,
+                price: {
+                  amount: finalPrice,
+                  currencyCode: retryCurrency,
+                },
+              },
+            },
+          },
+        );
+        addJson = await addRes.json();
+        addErrors = addJson.data?.orderEditAddShippingLine?.userErrors ?? [];
+      }
+    }
+
     if (addErrors.length) {
       return cors(Response.json({ userErrors: addErrors }, { status: 422 }));
     }
