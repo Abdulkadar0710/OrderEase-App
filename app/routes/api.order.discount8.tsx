@@ -792,10 +792,18 @@ export async function action({ request }: ActionFunctionArgs) {
         orderEditBegin(id: $id) {
           calculatedOrder {
             id
+            totalPriceSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
             shippingLines {
               id
               title
               price {
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
                 shopMoney {
                   amount
                   currencyCode
@@ -817,9 +825,15 @@ export async function action({ request }: ActionFunctionArgs) {
                     collections(first: 50) { nodes { id } }
                   }
                 }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                originalUnitPriceSet {
+                  presentmentMoney { amount currencyCode }
+                  shopMoney { amount currencyCode }
+                }
                 calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
+                  allocatedAmountSet {
+                    presentmentMoney { amount currencyCode }
+                    shopMoney { amount currencyCode }
+                  }
                   discountApplication {
                     id
                     __typename
@@ -1053,7 +1067,13 @@ export async function action({ request }: ActionFunctionArgs) {
         .trim();
       const freeShippingTitle = `${cleanExistingTitle} (Free - ${discountCode})`;
 
-      const addShipRes = await admin.graphql(
+      const targetShippingCurrency =
+        calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||
+        calculatedOrder.shippingLines?.[0]?.price?.presentmentMoney?.currencyCode ||
+        currencyCode ||
+        "USD";
+
+      let addShipRes = await admin.graphql(
         `#graphql
         mutation AddFreeShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
           orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
@@ -1069,14 +1089,46 @@ export async function action({ request }: ActionFunctionArgs) {
               title: freeShippingTitle,
               price: {
                 amount: "0.00",
-                currencyCode,
+                currencyCode: targetShippingCurrency,
               },
             },
           },
         },
       );
-      const addShipJson = await addShipRes.json();
-      const addShipErrors = addShipJson.data?.orderEditAddShippingLine?.userErrors ?? [];
+      let addShipJson = await addShipRes.json();
+      let addShipErrors = addShipJson.data?.orderEditAddShippingLine?.userErrors ?? [];
+
+      if (addShipErrors.length) {
+        const currencyMatch = addShipErrors[0]?.message?.match(/must be in ([A-Z]{3})/i);
+        if (currencyMatch) {
+          const retryCurrency = currencyMatch[1].toUpperCase();
+          addShipRes = await admin.graphql(
+            `#graphql
+            mutation AddFreeShippingLineRetry($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
+              orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
+                calculatedOrder { id }
+                calculatedShippingLine { id }
+                userErrors { field message }
+              }
+            }`,
+            {
+              variables: {
+                id: calculatedOrderId,
+                shippingLine: {
+                  title: freeShippingTitle,
+                  price: {
+                    amount: "0.00",
+                    currencyCode: retryCurrency,
+                  },
+                },
+              },
+            },
+          );
+          addShipJson = await addShipRes.json();
+          addShipErrors = addShipJson.data?.orderEditAddShippingLine?.userErrors ?? [];
+        }
+      }
+
       if (addShipErrors.length) {
         return cors(Response.json({ userErrors: addShipErrors }, { status: 422 }));
       }
@@ -1212,7 +1264,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const targetDisplayName = lineItemDisplayName(targetItem);
       const targetActiveQty = targetItem.editableQuantity ?? targetItem.quantity;
       const targetUnit = parseFloat(targetItem.originalUnitPriceSet?.shopMoney?.amount ?? "0");
-      const targetCurrency = targetItem.originalUnitPriceSet?.shopMoney?.currencyCode || "USD";
+      const targetCurrency =
+        calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||
+        targetItem.originalUnitPriceSet?.presentmentMoney?.currencyCode ||
+        targetItem.originalUnitPriceSet?.shopMoney?.currencyCode ||
+        "USD";
 
       const discountQty = Math.min(resolved.getRule.quantity, targetActiveQty);
       let calculatedDiscount = 0;
@@ -1389,7 +1445,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const combinedAmount = calculatedDiscount + state.tag.orderAmount;
       const perUnitAmount = Math.min(combinedAmount / targetActiveQty, targetUnit);
 
-      const applyRes = await admin.graphql(
+      let applyRes = await admin.graphql(
         `#graphql
         mutation ApplyBxgyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
           orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
@@ -1408,8 +1464,37 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         },
       );
-      const applyJson = await applyRes.json();
-      const applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
+      let applyJson = await applyRes.json();
+      let applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
+
+      if (applyErrors.length) {
+        const currencyMatch = applyErrors[0]?.message?.match(/must be in ([A-Z]{3})/i);
+        if (currencyMatch) {
+          const retryCurrency = currencyMatch[1].toUpperCase();
+          applyRes = await admin.graphql(
+            `#graphql
+            mutation ApplyBxgyDiscountRetry($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
+              orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
+                calculatedLineItem { id }
+                userErrors { field message }
+              }
+            }`,
+            {
+              variables: {
+                id: calculatedOrderId,
+                lineItemId: targetItem.id,
+                discount: {
+                  fixedValue: { amount: perUnitAmount.toFixed(2), currencyCode: retryCurrency },
+                  description: (resolved.code || resolved.label || discountCode).trim().slice(0, 40),
+                },
+              },
+            },
+          );
+          applyJson = await applyRes.json();
+          applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
+        }
+      }
+
       if (applyErrors.length) {
         return cors(Response.json({ userErrors: applyErrors }, { status: 422 }));
       }
@@ -1583,7 +1668,12 @@ export async function action({ request }: ActionFunctionArgs) {
       const activeQty = item.editableQuantity ?? item.quantity;
       const originalUnit = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount ?? "0");
       const originalLineTotal = originalUnit * activeQty;
-      const currencyCode = state.currencyCode || item.originalUnitPriceSet?.shopMoney?.currencyCode || "USD";
+      const currencyCode =
+        calculatedOrder.totalPriceSet?.presentmentMoney?.currencyCode ||
+        item.originalUnitPriceSet?.presentmentMoney?.currencyCode ||
+        state.currencyCode ||
+        item.originalUnitPriceSet?.shopMoney?.currencyCode ||
+        "USD";
 
       const newProductAmount = discountAmountAgainst(
         resolved.kind === "percentage"
@@ -1673,7 +1763,7 @@ export async function action({ request }: ActionFunctionArgs) {
         continue;
       }
 
-      const applyRes = await admin.graphql(
+      let applyRes = await admin.graphql(
         `#graphql
         mutation ApplyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
           orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
@@ -1692,8 +1782,37 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         },
       );
-      const applyJson = await applyRes.json();
-      const applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
+      let applyJson = await applyRes.json();
+      let applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
+
+      if (applyErrors.length) {
+        const currencyMatch = applyErrors[0]?.message?.match(/must be in ([A-Z]{3})/i);
+        if (currencyMatch) {
+          const retryCurrency = currencyMatch[1].toUpperCase();
+          applyRes = await admin.graphql(
+            `#graphql
+            mutation ApplyDiscountRetry($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
+              orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
+                calculatedLineItem { id }
+                userErrors { field message }
+              }
+            }`,
+            {
+              variables: {
+                id: calculatedOrderId,
+                lineItemId: item.id,
+                discount: {
+                  fixedValue: { amount: perUnitAmount.toFixed(2), currencyCode: retryCurrency },
+                  description: (resolved.label || discountCode).trim().slice(0, 40),
+                },
+              },
+            },
+          );
+          applyJson = await applyRes.json();
+          applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
+        }
+      }
+
       if (applyJson.errors?.length || applyErrors.length) {
         const rawMessage = applyJson.errors?.[0]?.message ?? applyErrors[0]?.message ?? "unknown error";
         warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);

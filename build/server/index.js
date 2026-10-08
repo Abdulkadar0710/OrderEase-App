@@ -5820,7 +5820,7 @@ async function loader$g({
 async function action$9({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia, _ja, _ka, _la, _ma, _na, _oa, _pa, _qa, _ra, _sa, _ta;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia, _ja, _ka, _la, _ma, _na, _oa, _pa, _qa, _ra, _sa, _ta, _ua, _va, _wa, _xa, _ya, _za, _Aa, _Ba, _Ca, _Da, _Ea, _Fa, _Ga, _Ha, _Ia, _Ja, _Ka, _La, _Ma, _Na, _Oa, _Pa, _Qa, _Ra, _Sa, _Ta;
   const {
     sessionToken,
     cors
@@ -5881,10 +5881,18 @@ async function action$9({
         orderEditBegin(id: $id) {
           calculatedOrder {
             id
+            totalPriceSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
             shippingLines {
               id
               title
               price {
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
                 shopMoney {
                   amount
                   currencyCode
@@ -5906,9 +5914,15 @@ async function action$9({
                     collections(first: 50) { nodes { id } }
                   }
                 }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
+                originalUnitPriceSet {
+                  presentmentMoney { amount currencyCode }
+                  shopMoney { amount currencyCode }
+                }
                 calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
+                  allocatedAmountSet {
+                    presentmentMoney { amount currencyCode }
+                    shopMoney { amount currencyCode }
+                  }
                   discountApplication {
                     id
                     __typename
@@ -6100,7 +6114,8 @@ async function action$9({
       }
       const cleanExistingTitle = (existingShippingTitle || "Standard").replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "").replace(/\s*\(Already Applied\)/gi, "").replace(/\s*\(Free\)/gi, "").trim();
       const freeShippingTitle = `${cleanExistingTitle} (Free - ${discountCode})`;
-      const addShipRes = await admin.graphql(`#graphql
+      const targetShippingCurrency = ((_u = (_t = calculatedOrder.totalPriceSet) == null ? void 0 : _t.presentmentMoney) == null ? void 0 : _u.currencyCode) || ((_y = (_x = (_w = (_v = calculatedOrder.shippingLines) == null ? void 0 : _v[0]) == null ? void 0 : _w.price) == null ? void 0 : _x.presentmentMoney) == null ? void 0 : _y.currencyCode) || currencyCode || "USD";
+      let addShipRes = await admin.graphql(`#graphql
         mutation AddFreeShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
           orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
             calculatedOrder { id }
@@ -6114,13 +6129,40 @@ async function action$9({
             title: freeShippingTitle,
             price: {
               amount: "0.00",
-              currencyCode
+              currencyCode: targetShippingCurrency
             }
           }
         }
       });
-      const addShipJson = await addShipRes.json();
-      const addShipErrors = ((_u = (_t = addShipJson.data) == null ? void 0 : _t.orderEditAddShippingLine) == null ? void 0 : _u.userErrors) ?? [];
+      let addShipJson = await addShipRes.json();
+      let addShipErrors = ((_A = (_z = addShipJson.data) == null ? void 0 : _z.orderEditAddShippingLine) == null ? void 0 : _A.userErrors) ?? [];
+      if (addShipErrors.length) {
+        const currencyMatch = (_C = (_B = addShipErrors[0]) == null ? void 0 : _B.message) == null ? void 0 : _C.match(/must be in ([A-Z]{3})/i);
+        if (currencyMatch) {
+          const retryCurrency = currencyMatch[1].toUpperCase();
+          addShipRes = await admin.graphql(`#graphql
+            mutation AddFreeShippingLineRetry($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
+              orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
+                calculatedOrder { id }
+                calculatedShippingLine { id }
+                userErrors { field message }
+              }
+            }`, {
+            variables: {
+              id: calculatedOrderId,
+              shippingLine: {
+                title: freeShippingTitle,
+                price: {
+                  amount: "0.00",
+                  currencyCode: retryCurrency
+                }
+              }
+            }
+          });
+          addShipJson = await addShipRes.json();
+          addShipErrors = ((_E = (_D = addShipJson.data) == null ? void 0 : _D.orderEditAddShippingLine) == null ? void 0 : _E.userErrors) ?? [];
+        }
+      }
       if (addShipErrors.length) {
         return cors(Response.json({
           userErrors: addShipErrors
@@ -6146,7 +6188,7 @@ async function action$9({
         }
       });
       const commitJson2 = await commitRes2.json();
-      const commitErrors2 = ((_w = (_v = commitJson2.data) == null ? void 0 : _v.orderEditCommit) == null ? void 0 : _w.userErrors) ?? [];
+      const commitErrors2 = ((_G = (_F = commitJson2.data) == null ? void 0 : _F.orderEditCommit) == null ? void 0 : _G.userErrors) ?? [];
       if (commitErrors2.length) {
         return cors(Response.json({
           userErrors: commitErrors2
@@ -6180,7 +6222,7 @@ async function action$9({
       for (const item of allLineItems) {
         if (lineItemMatchesRule(item, resolved.buyRule)) {
           const qty = item.editableQuantity ?? item.quantity;
-          const unitPrice = parseFloat(((_y = (_x = item.originalUnitPriceSet) == null ? void 0 : _x.shopMoney) == null ? void 0 : _y.amount) ?? "0");
+          const unitPrice = parseFloat(((_I = (_H = item.originalUnitPriceSet) == null ? void 0 : _H.shopMoney) == null ? void 0 : _I.amount) ?? "0");
           totalBuyQty += qty;
           totalBuyAmt += qty * unitPrice;
         }
@@ -6224,8 +6266,8 @@ async function action$9({
       const targetItem = eligibleYItems[0];
       const targetDisplayName = lineItemDisplayName(targetItem);
       const targetActiveQty = targetItem.editableQuantity ?? targetItem.quantity;
-      const targetUnit = parseFloat(((_A = (_z = targetItem.originalUnitPriceSet) == null ? void 0 : _z.shopMoney) == null ? void 0 : _A.amount) ?? "0");
-      const targetCurrency = ((_C = (_B = targetItem.originalUnitPriceSet) == null ? void 0 : _B.shopMoney) == null ? void 0 : _C.currencyCode) || "USD";
+      const targetUnit = parseFloat(((_K = (_J = targetItem.originalUnitPriceSet) == null ? void 0 : _J.shopMoney) == null ? void 0 : _K.amount) ?? "0");
+      const targetCurrency = ((_M = (_L = calculatedOrder.totalPriceSet) == null ? void 0 : _L.presentmentMoney) == null ? void 0 : _M.currencyCode) || ((_O = (_N = targetItem.originalUnitPriceSet) == null ? void 0 : _N.presentmentMoney) == null ? void 0 : _O.currencyCode) || ((_Q = (_P = targetItem.originalUnitPriceSet) == null ? void 0 : _P.shopMoney) == null ? void 0 : _Q.currencyCode) || "USD";
       const discountQty = Math.min(resolved.getRule.quantity, targetActiveQty);
       let calculatedDiscount = 0;
       if (resolved.getRule.kind === "percentage") {
@@ -6282,9 +6324,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_E = (_D = removeJson.data) == null ? void 0 : _D.orderEditRemoveDiscount) == null ? void 0 : _E.userErrors) ?? [];
-          if (((_F = removeJson.errors) == null ? void 0 : _F.length) || removeErrors.length) {
-            const rawMsg = ((_G = removeErrors[0]) == null ? void 0 : _G.message) ?? ((_I = (_H = removeJson.errors) == null ? void 0 : _H[0]) == null ? void 0 : _I.message) ?? "unknown error";
+          const removeErrors = ((_S = (_R = removeJson.data) == null ? void 0 : _R.orderEditRemoveDiscount) == null ? void 0 : _S.userErrors) ?? [];
+          if (((_T = removeJson.errors) == null ? void 0 : _T.length) || removeErrors.length) {
+            const rawMsg = ((_U = removeErrors[0]) == null ? void 0 : _U.message) ?? ((_W = (_V = removeJson.errors) == null ? void 0 : _V[0]) == null ? void 0 : _W.message) ?? "unknown error";
             return cors(Response.json({
               userErrors: [{
                 message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`
@@ -6321,7 +6363,7 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          if ((_L = (_K = (_J = removeJson.data) == null ? void 0 : _J.orderEditRemoveDiscount) == null ? void 0 : _K.userErrors) == null ? void 0 : _L.length) {
+          if ((_Z = (_Y = (_X = removeJson.data) == null ? void 0 : _X.orderEditRemoveDiscount) == null ? void 0 : _Y.userErrors) == null ? void 0 : _Z.length) {
             return cors(Response.json({
               userErrors: [{
                 message: `"${targetDisplayName}" already has a discount that cannot be removed.`
@@ -6370,7 +6412,7 @@ async function action$9({
       };
       const combinedAmount = calculatedDiscount + state.tag.orderAmount;
       const perUnitAmount = Math.min(combinedAmount / targetActiveQty, targetUnit);
-      const applyRes = await admin.graphql(`#graphql
+      let applyRes = await admin.graphql(`#graphql
         mutation ApplyBxgyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
           orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
             calculatedLineItem { id }
@@ -6389,8 +6431,35 @@ async function action$9({
           }
         }
       });
-      const applyJson = await applyRes.json();
-      const applyErrors = ((_N = (_M = applyJson.data) == null ? void 0 : _M.orderEditAddLineItemDiscount) == null ? void 0 : _N.userErrors) ?? [];
+      let applyJson = await applyRes.json();
+      let applyErrors = ((_$ = (__ = applyJson.data) == null ? void 0 : __.orderEditAddLineItemDiscount) == null ? void 0 : _$.userErrors) ?? [];
+      if (applyErrors.length) {
+        const currencyMatch = (_ba = (_aa = applyErrors[0]) == null ? void 0 : _aa.message) == null ? void 0 : _ba.match(/must be in ([A-Z]{3})/i);
+        if (currencyMatch) {
+          const retryCurrency = currencyMatch[1].toUpperCase();
+          applyRes = await admin.graphql(`#graphql
+            mutation ApplyBxgyDiscountRetry($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
+              orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
+                calculatedLineItem { id }
+                userErrors { field message }
+              }
+            }`, {
+            variables: {
+              id: calculatedOrderId,
+              lineItemId: targetItem.id,
+              discount: {
+                fixedValue: {
+                  amount: perUnitAmount.toFixed(2),
+                  currencyCode: retryCurrency
+                },
+                description: (resolved.code || resolved.label || discountCode).trim().slice(0, 40)
+              }
+            }
+          });
+          applyJson = await applyRes.json();
+          applyErrors = ((_da = (_ca = applyJson.data) == null ? void 0 : _ca.orderEditAddLineItemDiscount) == null ? void 0 : _da.userErrors) ?? [];
+        }
+      }
       if (applyErrors.length) {
         return cors(Response.json({
           userErrors: applyErrors
@@ -6416,7 +6485,7 @@ async function action$9({
         }
       });
       const commitJson2 = await commitRes2.json();
-      const commitErrors2 = ((_P = (_O = commitJson2.data) == null ? void 0 : _O.orderEditCommit) == null ? void 0 : _P.userErrors) ?? [];
+      const commitErrors2 = ((_fa = (_ea = commitJson2.data) == null ? void 0 : _ea.orderEditCommit) == null ? void 0 : _fa.userErrors) ?? [];
       if (commitErrors2.length) {
         return cors(Response.json({
           userErrors: commitErrors2
@@ -6461,7 +6530,7 @@ async function action$9({
     let totalNewDiscount = 0;
     for (const item of targetLineItems) {
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_R = (_Q = item.originalUnitPriceSet) == null ? void 0 : _Q.shopMoney) == null ? void 0 : _R.amount) ?? "0");
+      const originalUnit = parseFloat(((_ha = (_ga = item.originalUnitPriceSet) == null ? void 0 : _ga.shopMoney) == null ? void 0 : _ha.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
       const amount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
@@ -6494,7 +6563,7 @@ async function action$9({
     }
     if (incompatibleDiscounts.length > 0) {
       const totalIncompatibleAmount = round2$3(incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0));
-      const orderCurrency = ((_U = (_T = (_S = targetLineItems[0]) == null ? void 0 : _S.originalUnitPriceSet) == null ? void 0 : _T.shopMoney) == null ? void 0 : _U.currencyCode) || "USD";
+      const orderCurrency = ((_ka = (_ja = (_ia = targetLineItems[0]) == null ? void 0 : _ia.originalUnitPriceSet) == null ? void 0 : _ja.shopMoney) == null ? void 0 : _ka.currencyCode) || "USD";
       if (totalIncompatibleAmount >= totalNewDiscount) {
         const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
         return cors(Response.json({
@@ -6521,9 +6590,9 @@ async function action$9({
           }
         });
         const removeJson = await removeRes.json();
-        const removeErrors = ((_W = (_V = removeJson.data) == null ? void 0 : _V.orderEditRemoveDiscount) == null ? void 0 : _W.userErrors) ?? [];
-        if (((_X = removeJson.errors) == null ? void 0 : _X.length) || removeErrors.length) {
-          const rawMsg = ((_Y = removeErrors[0]) == null ? void 0 : _Y.message) ?? ((__ = (_Z = removeJson.errors) == null ? void 0 : _Z[0]) == null ? void 0 : __.message) ?? "unknown error";
+        const removeErrors = ((_ma = (_la = removeJson.data) == null ? void 0 : _la.orderEditRemoveDiscount) == null ? void 0 : _ma.userErrors) ?? [];
+        if (((_na = removeJson.errors) == null ? void 0 : _na.length) || removeErrors.length) {
+          const rawMsg = ((_oa = removeErrors[0]) == null ? void 0 : _oa.message) ?? ((_qa = (_pa = removeJson.errors) == null ? void 0 : _pa[0]) == null ? void 0 : _qa.message) ?? "unknown error";
           return cors(Response.json({
             userErrors: [{
               message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`
@@ -6538,9 +6607,9 @@ async function action$9({
       const displayName = lineItemDisplayName(item);
       const state = readLineItemDiscountState(item);
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_aa = (_$ = item.originalUnitPriceSet) == null ? void 0 : _$.shopMoney) == null ? void 0 : _aa.amount) ?? "0");
+      const originalUnit = parseFloat(((_sa = (_ra = item.originalUnitPriceSet) == null ? void 0 : _ra.shopMoney) == null ? void 0 : _sa.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
-      const currencyCode = state.currencyCode || ((_ca = (_ba = item.originalUnitPriceSet) == null ? void 0 : _ba.shopMoney) == null ? void 0 : _ca.currencyCode) || "USD";
+      const currencyCode = ((_ua = (_ta = calculatedOrder.totalPriceSet) == null ? void 0 : _ta.presentmentMoney) == null ? void 0 : _ua.currencyCode) || ((_wa = (_va = item.originalUnitPriceSet) == null ? void 0 : _va.presentmentMoney) == null ? void 0 : _wa.currencyCode) || state.currencyCode || ((_ya = (_xa = item.originalUnitPriceSet) == null ? void 0 : _xa.shopMoney) == null ? void 0 : _ya.currencyCode) || "USD";
       const newProductAmount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
         percentage: resolved.percentage
@@ -6568,8 +6637,8 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_ea = (_da = removeJson.data) == null ? void 0 : _da.orderEditRemoveDiscount) == null ? void 0 : _ea.userErrors) ?? [];
-          if (((_fa = removeJson.errors) == null ? void 0 : _fa.length) || removeErrors.length) {
+          const removeErrors = ((_Aa = (_za = removeJson.data) == null ? void 0 : _za.orderEditRemoveDiscount) == null ? void 0 : _Aa.userErrors) ?? [];
+          if (((_Ba = removeJson.errors) == null ? void 0 : _Ba.length) || removeErrors.length) {
             warnings.push(`"${displayName}" already has a discount that was applied during checkout and cannot be replaced or removed.`);
             skippedProducts.push(displayName);
             continue;
@@ -6595,9 +6664,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_ha = (_ga = removeJson.data) == null ? void 0 : _ga.orderEditRemoveDiscount) == null ? void 0 : _ha.userErrors) ?? [];
-          if (((_ia = removeJson.errors) == null ? void 0 : _ia.length) || removeErrors.length) {
-            const rawMessage = ((_ja = removeErrors[0]) == null ? void 0 : _ja.message) ?? ((_la = (_ka = removeJson.errors) == null ? void 0 : _ka[0]) == null ? void 0 : _la.message) ?? "unknown error";
+          const removeErrors = ((_Da = (_Ca = removeJson.data) == null ? void 0 : _Ca.orderEditRemoveDiscount) == null ? void 0 : _Da.userErrors) ?? [];
+          if (((_Ea = removeJson.errors) == null ? void 0 : _Ea.length) || removeErrors.length) {
+            const rawMessage = ((_Fa = removeErrors[0]) == null ? void 0 : _Fa.message) ?? ((_Ha = (_Ga = removeJson.errors) == null ? void 0 : _Ga[0]) == null ? void 0 : _Ha.message) ?? "unknown error";
             warnings.push(`Could not update the discount on "${displayName}": ${rawMessage}.`);
             skippedProducts.push(displayName);
             continue;
@@ -6618,7 +6687,7 @@ async function action$9({
         skippedProducts.push(displayName);
         continue;
       }
-      const applyRes = await admin.graphql(`#graphql
+      let applyRes = await admin.graphql(`#graphql
         mutation ApplyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
           orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
             calculatedLineItem { id }
@@ -6637,10 +6706,37 @@ async function action$9({
           }
         }
       });
-      const applyJson = await applyRes.json();
-      const applyErrors = ((_na = (_ma = applyJson.data) == null ? void 0 : _ma.orderEditAddLineItemDiscount) == null ? void 0 : _na.userErrors) ?? [];
-      if (((_oa = applyJson.errors) == null ? void 0 : _oa.length) || applyErrors.length) {
-        const rawMessage = ((_qa = (_pa = applyJson.errors) == null ? void 0 : _pa[0]) == null ? void 0 : _qa.message) ?? ((_ra = applyErrors[0]) == null ? void 0 : _ra.message) ?? "unknown error";
+      let applyJson = await applyRes.json();
+      let applyErrors = ((_Ja = (_Ia = applyJson.data) == null ? void 0 : _Ia.orderEditAddLineItemDiscount) == null ? void 0 : _Ja.userErrors) ?? [];
+      if (applyErrors.length) {
+        const currencyMatch = (_La = (_Ka = applyErrors[0]) == null ? void 0 : _Ka.message) == null ? void 0 : _La.match(/must be in ([A-Z]{3})/i);
+        if (currencyMatch) {
+          const retryCurrency = currencyMatch[1].toUpperCase();
+          applyRes = await admin.graphql(`#graphql
+            mutation ApplyDiscountRetry($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
+              orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
+                calculatedLineItem { id }
+                userErrors { field message }
+              }
+            }`, {
+            variables: {
+              id: calculatedOrderId,
+              lineItemId: item.id,
+              discount: {
+                fixedValue: {
+                  amount: perUnitAmount.toFixed(2),
+                  currencyCode: retryCurrency
+                },
+                description: (resolved.label || discountCode).trim().slice(0, 40)
+              }
+            }
+          });
+          applyJson = await applyRes.json();
+          applyErrors = ((_Na = (_Ma = applyJson.data) == null ? void 0 : _Ma.orderEditAddLineItemDiscount) == null ? void 0 : _Na.userErrors) ?? [];
+        }
+      }
+      if (((_Oa = applyJson.errors) == null ? void 0 : _Oa.length) || applyErrors.length) {
+        const rawMessage = ((_Qa = (_Pa = applyJson.errors) == null ? void 0 : _Pa[0]) == null ? void 0 : _Qa.message) ?? ((_Ra = applyErrors[0]) == null ? void 0 : _Ra.message) ?? "unknown error";
         warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);
         skippedProducts.push(displayName);
         continue;
@@ -6682,7 +6778,7 @@ async function action$9({
       }
     });
     const commitJson = await commitRes.json();
-    const commitErrors = ((_ta = (_sa = commitJson.data) == null ? void 0 : _sa.orderEditCommit) == null ? void 0 : _ta.userErrors) ?? [];
+    const commitErrors = ((_Ta = (_Sa = commitJson.data) == null ? void 0 : _Sa.orderEditCommit) == null ? void 0 : _Ta.userErrors) ?? [];
     if (commitErrors.length) {
       return cors(Response.json({
         userErrors: commitErrors
