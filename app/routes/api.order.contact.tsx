@@ -4,6 +4,74 @@ import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
 import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
 
+// Proper email validation with strict TLD, domain label, and RFC 5322 compliance
+function isValidEmail(email: string): boolean {
+  if (!email || typeof email !== "string") return false;
+  const trimmed = email.trim();
+  if (trimmed.length === 0 || trimmed.length > 254) return false;
+
+  // Must not contain whitespace
+  if (/\s/.test(trimmed)) return false;
+
+  // Exactly one @ symbol
+  const parts = trimmed.split("@");
+  if (parts.length !== 2) return false;
+
+  const [localPart, domainPart] = parts;
+  if (!localPart || !domainPart) return false;
+  if (localPart.length > 64) return false;
+
+  // Local part cannot start or end with a dot, or have consecutive dots
+  if (localPart.startsWith(".") || localPart.endsWith(".") || localPart.includes("..")) {
+    return false;
+  }
+
+  // Local part valid characters (RFC 5322 unquoted)
+  const localRegex = /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
+  if (!localRegex.test(localPart)) {
+    return false;
+  }
+
+  // Domain cannot start or end with a dot or hyphen, or have consecutive dots
+  if (domainPart.startsWith(".") || domainPart.endsWith(".") || domainPart.includes("..")) {
+    return false;
+  }
+
+  const domainLabels = domainPart.split(".");
+  // Domain must contain at least a domain name and a TLD (e.g. example.com)
+  if (domainLabels.length < 2) {
+    return false;
+  }
+
+  // Top-Level Domain (TLD) must be alphabetic only and between 2 and 63 characters long
+  const tld = domainLabels[domainLabels.length - 1];
+  if (!/^[a-zA-Z]{2,63}$/.test(tld)) {
+    return false;
+  }
+
+  // Each subdomain/domain label must be 1 to 63 alphanumeric chars (hyphens allowed in middle)
+  for (let i = 0; i < domainLabels.length - 1; i++) {
+    const label = domainLabels[i];
+    if (!label || label.length > 63) return false;
+    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Phone validation — ITU-T E.164 standard (7–15 digits)
+function isValidPhone(phone: string): boolean {
+  if (!phone || typeof phone !== "string") return false;
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 15) {
+    return false;
+  }
+  return /^\+?[\d\s\-()]+$/.test(trimmed);
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const { cors } = await authenticate.public.customerAccount(request);
   return cors(
@@ -49,8 +117,43 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  if (!email && !phone) {
+  const emailStr = typeof email === "string" ? email.trim() : "";
+  const phoneStr = typeof phone === "string" ? phone.trim() : "";
+
+  if (!emailStr && !phoneStr) {
     return cors(Response.json({ userErrors: [{ message: "Provide at least one field to update (email or phone)." }] }, { status: 400 }));
+  }
+
+  if (emailStr && !isValidEmail(emailStr)) {
+    return cors(
+      Response.json(
+        {
+          userErrors: [
+            {
+              field: ["email"],
+              message: "Please enter a valid email address format (e.g., name@example.com).",
+            },
+          ],
+        },
+        { status: 422 },
+      ),
+    );
+  }
+
+  if (phoneStr && !isValidPhone(phoneStr)) {
+    return cors(
+      Response.json(
+        {
+          userErrors: [
+            {
+              field: ["phone"],
+              message: "Please enter a valid telephone number format (7–15 digits).",
+            },
+          ],
+        },
+        { status: 422 },
+      ),
+    );
   }
 
   // ── Ownership check ────────────────────────────────────────────────────────
@@ -83,8 +186,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const input: Record<string, unknown> = { id: orderId };
-  if (email) input.email = email;
-  if (phone) input.phone = phone;
+  if (emailStr) input.email = emailStr;
+  if (phoneStr) input.phone = phoneStr;
 
   try {
     const updateRes = await admin.graphql(

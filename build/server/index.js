@@ -9263,6 +9263,52 @@ const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   action: action$6,
   loader: loader$c
 }, Symbol.toStringTag, { value: "Module" }));
+function isValidEmail(email) {
+  if (!email || typeof email !== "string") return false;
+  const trimmed = email.trim();
+  if (trimmed.length === 0 || trimmed.length > 254) return false;
+  if (/\s/.test(trimmed)) return false;
+  const parts = trimmed.split("@");
+  if (parts.length !== 2) return false;
+  const [localPart, domainPart] = parts;
+  if (!localPart || !domainPart) return false;
+  if (localPart.length > 64) return false;
+  if (localPart.startsWith(".") || localPart.endsWith(".") || localPart.includes("..")) {
+    return false;
+  }
+  const localRegex = /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
+  if (!localRegex.test(localPart)) {
+    return false;
+  }
+  if (domainPart.startsWith(".") || domainPart.endsWith(".") || domainPart.includes("..")) {
+    return false;
+  }
+  const domainLabels = domainPart.split(".");
+  if (domainLabels.length < 2) {
+    return false;
+  }
+  const tld = domainLabels[domainLabels.length - 1];
+  if (!/^[a-zA-Z]{2,63}$/.test(tld)) {
+    return false;
+  }
+  for (let i = 0; i < domainLabels.length - 1; i++) {
+    const label2 = domainLabels[i];
+    if (!label2 || label2.length > 63) return false;
+    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label2)) {
+      return false;
+    }
+  }
+  return true;
+}
+function isValidPhone(phone) {
+  if (!phone || typeof phone !== "string") return false;
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 15) {
+    return false;
+  }
+  return /^\+?[\d\s\-()]+$/.test(trimmed);
+}
 async function loader$b({
   request
 }) {
@@ -9327,13 +9373,35 @@ async function action$5({
       status: 422
     }));
   }
-  if (!email && !phone) {
+  const emailStr = typeof email === "string" ? email.trim() : "";
+  const phoneStr = typeof phone === "string" ? phone.trim() : "";
+  if (!emailStr && !phoneStr) {
     return cors(Response.json({
       userErrors: [{
         message: "Provide at least one field to update (email or phone)."
       }]
     }, {
       status: 400
+    }));
+  }
+  if (emailStr && !isValidEmail(emailStr)) {
+    return cors(Response.json({
+      userErrors: [{
+        field: ["email"],
+        message: "Please enter a valid email address format (e.g., name@example.com)."
+      }]
+    }, {
+      status: 422
+    }));
+  }
+  if (phoneStr && !isValidPhone(phoneStr)) {
+    return cors(Response.json({
+      userErrors: [{
+        field: ["phone"],
+        message: "Please enter a valid telephone number format (7–15 digits)."
+      }]
+    }, {
+      status: 422
     }));
   }
   const ownerRes = await admin.graphql(`#graphql
@@ -9384,8 +9452,8 @@ async function action$5({
   const input2 = {
     id: orderId
   };
-  if (email) input2.email = email;
-  if (phone) input2.phone = phone;
+  if (emailStr) input2.email = emailStr;
+  if (phoneStr) input2.phone = phoneStr;
   try {
     const updateRes = await admin.graphql(`#graphql
       mutation orderUpdate($input: OrderInput!) {

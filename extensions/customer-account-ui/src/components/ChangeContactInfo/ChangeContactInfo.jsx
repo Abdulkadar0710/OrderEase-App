@@ -2,14 +2,72 @@ import { useState } from 'preact/hooks';
 import { updateContactInfo } from '../../utils/api.js';
 import { useOrderEdit } from '../../context/OrderEditContext.jsx';
 
-// Basic email regex validation
+// Proper email validation with strict TLD, domain label, and RFC 5322 compliance
 function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!email || typeof email !== 'string') return false;
+  const trimmed = email.trim();
+  if (trimmed.length === 0 || trimmed.length > 254) return false;
+
+  // Must not contain whitespace
+  if (/\s/.test(trimmed)) return false;
+
+  // Exactly one @ symbol
+  const parts = trimmed.split('@');
+  if (parts.length !== 2) return false;
+
+  const [localPart, domainPart] = parts;
+  if (!localPart || !domainPart) return false;
+  if (localPart.length > 64) return false;
+
+  // Local part cannot start or end with a dot, or have consecutive dots
+  if (localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
+    return false;
+  }
+
+  // Local part valid characters (RFC 5322 unquoted)
+  const localRegex = /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
+  if (!localRegex.test(localPart)) {
+    return false;
+  }
+
+  // Domain cannot start or end with a dot or hyphen, or have consecutive dots
+  if (domainPart.startsWith('.') || domainPart.endsWith('.') || domainPart.includes('..')) {
+    return false;
+  }
+
+  const domainLabels = domainPart.split('.');
+  // Domain must contain at least a domain name and a TLD (e.g. example.com)
+  if (domainLabels.length < 2) {
+    return false;
+  }
+
+  // Top-Level Domain (TLD) must be alphabetic only and between 2 and 63 characters long
+  const tld = domainLabels[domainLabels.length - 1];
+  if (!/^[a-zA-Z]{2,63}$/.test(tld)) {
+    return false;
+  }
+
+  // Each subdomain/domain label must be 1 to 63 alphanumeric chars (hyphens allowed in middle)
+  for (let i = 0; i < domainLabels.length - 1; i++) {
+    const label = domainLabels[i];
+    if (!label || label.length > 63) return false;
+    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
-// Basic phone validation — allow +, digits, spaces, dashes, parentheses
+// Phone validation — ITU-T E.164 standard (7–15 digits)
 function isValidPhone(phone) {
-  return /^[+\d\s\-()]{7,20}$/.test(phone.trim());
+  if (!phone || typeof phone !== 'string') return false;
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) {
+    return false;
+  }
+  return /^\+?[\d\s\-()]+$/.test(trimmed);
 }
 
 /**
@@ -22,6 +80,8 @@ export function ChangeContactInfo() {
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [emailError, setEmailError] = useState(null);
+  const [phoneError, setPhoneError] = useState(null);
   const [success, setSuccess] = useState(false);
   const { notifyUpdateSuccess } = useOrderEdit();
 
@@ -30,24 +90,34 @@ export function ChangeContactInfo() {
 
   function validate() {
     if (!emailDirty && !phoneDirty) {
-      return 'Please fill in at least an email address or phone number to update.';
+      return { general: 'Please fill in at least an email address or phone number to update.' };
     }
-    if (emailDirty && !isValidEmail(email.trim())) {
-      return 'Please enter a valid email address format (e.g., name@example.com).';
+    if (emailDirty && !isValidEmail(email)) {
+      return {
+        email: 'Please enter a valid email address format (e.g., name@example.com).',
+        general: 'Please enter a valid email address format (e.g., name@example.com).'
+      };
     }
     if (phoneDirty && !isValidPhone(phone)) {
-      return 'Please enter a valid telephone number format (7–20 digits).';
+      return {
+        phone: 'Please enter a valid telephone number format (7–15 digits).',
+        general: 'Please enter a valid telephone number format (7–15 digits).'
+      };
     }
     return null;
   }
 
   const handleSave = async () => {
     setError(null);
+    setEmailError(null);
+    setPhoneError(null);
     setSuccess(false);
 
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
+    const validationResult = validate();
+    if (validationResult) {
+      if (validationResult.general) setError(validationResult.general);
+      if (validationResult.email) setEmailError(validationResult.email);
+      if (validationResult.phone) setPhoneError(validationResult.phone);
       return;
     }
 
@@ -62,6 +132,8 @@ export function ChangeContactInfo() {
       setSuccess(true);
       setEmail('');
       setPhone('');
+      setEmailError(null);
+      setPhoneError(null);
       notifyUpdateSuccess(result?.order?.statusPageUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update notification preferences.');
@@ -92,35 +164,49 @@ export function ChangeContactInfo() {
           )}
 
           <s-stack direction="block" gap="small-300">
-            <s-text-field
-              label="New Email Address for shipping receipts"
-              value={email}
-              disabled={submitting}
-              placeholder="e.g., name@example.com"
-              onInput={(e) => {
-                const target = e.currentTarget;
-                if (target && 'value' in target) {
-                  setEmail(String(target.value));
-                  setSuccess(false);
-                  setError(null);
-                }
-              }}
-            />
+            <s-stack direction="block" gap="small-100">
+              <s-text-field
+                label="New Email Address for shipping receipts"
+                type="email"
+                value={email}
+                disabled={submitting}
+                placeholder="e.g., name@example.com"
+                onInput={(e) => {
+                  const target = e.currentTarget;
+                  if (target && 'value' in target) {
+                    setEmail(String(target.value));
+                    setSuccess(false);
+                    setError(null);
+                    setEmailError(null);
+                  }
+                }}
+              />
+              {emailError && (
+                <s-text size="small" tone="critical">{emailError}</s-text>
+              )}
+            </s-stack>
 
-            <s-text-field
-              label="New Mobile Phone Number for SMS dispatch alerts"
-              value={phone}
-              disabled={submitting}
-              placeholder="e.g., +1 (555) 234-5678"
-              onInput={(e) => {
-                const target = e.currentTarget;
-                if (target && 'value' in target) {
-                  setPhone(String(target.value));
-                  setSuccess(false); 
-                  setError(null);
-                }
-              }}
-            />
+            <s-stack direction="block" gap="small-100">
+              <s-text-field
+                label="New Mobile Phone Number for SMS dispatch alerts"
+                type="tel"
+                value={phone}
+                disabled={submitting}
+                placeholder="e.g., +1 (555) 234-5678"
+                onInput={(e) => {
+                  const target = e.currentTarget;
+                  if (target && 'value' in target) {
+                    setPhone(String(target.value));
+                    setSuccess(false); 
+                    setError(null);
+                    setPhoneError(null);
+                  }
+                }}
+              />
+              {phoneError && (
+                <s-text size="small" tone="critical">{phoneError}</s-text>
+              )}
+            </s-stack>
           </s-stack>
 
           <s-stack direction="inline" justifyContent="end">
@@ -138,4 +224,5 @@ export function ChangeContactInfo() {
     </s-stack>
   );
 }
+
 
