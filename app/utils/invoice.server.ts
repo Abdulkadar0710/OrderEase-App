@@ -558,15 +558,15 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       let billedY = infoTop + 15;
       if (customerName) {
         doc.text(customerName, 50, billedY, { width: 230 });
-        billedY += 13;
+        billedY = Math.max(billedY + 13, doc.y + 2.5);
       }
       if (customerEmail) {
         doc.text(customerEmail, 50, billedY, { width: 230 });
-        billedY += 13;
+        billedY = Math.max(billedY + 13, doc.y + 2.5);
       }
       for (const line of billingLines) {
         doc.text(line, 50, billedY, { width: 230 });
-        billedY += 13;
+        billedY = Math.max(billedY + 13, doc.y + 2.5);
       }
 
       // Column 2: Shipped To / Shipping Details (x = 295, width = 250)
@@ -575,22 +575,22 @@ export function generateInvoicePdf(order: InvoiceOrder): Promise<Buffer> {
       let shippedY = infoTop + 15;
       if (recipientName) {
         doc.text(recipientName, 295, shippedY, { width: 250 });
-        shippedY += 13;
+        shippedY = Math.max(shippedY + 13, doc.y + 2.5);
       }
       if (order.shippingAddress) {
         for (const line of shippingLines) {
           doc.text(line, 295, shippedY, { width: 250 });
-          shippedY += 13;
+          shippedY = Math.max(shippedY + 13, doc.y + 2.5);
         }
       } else if (billingLines.length > 0) {
         doc.text("Same as billing address", 295, shippedY, { width: 250 });
-        shippedY += 13;
+        shippedY = Math.max(shippedY + 13, doc.y + 2.5);
       }
 
       if (shippingTitle) {
         doc.font("Helvetica-Bold").text("Method: ", 295, shippedY, { continued: true, width: 250 })
            .font("Helvetica").text(shippingTitle);
-        shippedY += 13;
+        shippedY = Math.max(shippedY + 13, doc.y + 2.5);
       }
 
       doc.y = Math.max(billedY, shippedY) + 12;
