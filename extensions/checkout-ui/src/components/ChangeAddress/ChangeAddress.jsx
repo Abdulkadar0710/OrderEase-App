@@ -205,9 +205,11 @@ export function ChangeAddress({ orderId: propOrderId }) {
   }
 
   function validate() {
-    if (!form.address1.trim()) return 'Address line 1 is required.';
-    if (!form.city.trim())     return 'City is required.';
-    if (!form.countryCode)     return 'Country is required.';
+    if (!form.firstName.trim()) return 'First name is required.';
+    if (!form.lastName.trim())  return 'Last name is required.';
+    if (!form.address1.trim())  return 'Address line 1 is required.';
+    if (!form.city.trim())      return 'City is required.';
+    if (!form.countryCode)      return 'Country is required.';
     return null;
   }
 
@@ -265,7 +267,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
                   label="Search City, Place or Postal Code"
                   placeholder="Start typing e.g. Indore, 452007, Khargone..."
                   value={searchQuery}
-                  disabled={submitting}
+                  disabled={submitting || success}
                   onInput={(e) => {
                     const target = e.currentTarget;
                     if (target && 'value' in target) {
@@ -322,20 +324,13 @@ export function ChangeAddress({ orderId: propOrderId }) {
             </s-box>
           )}
 
-          {success && (
-            <s-banner tone="success">Shipping address updated successfully!</s-banner>
-          )}
-          {error && (
-            <s-banner tone="critical">{error}</s-banner>
-          )}
-
           {/* Name row */}
           <s-stack direction="inline" gap="base">
             <s-box inlineSize="100%">
               <s-text-field
-                label="First name"
+                label="First name *"
                 value={form.firstName}
-                disabled={submitting}
+                disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
                   if (target && 'value' in target) handleChange('firstName', String(target.value));
@@ -344,9 +339,9 @@ export function ChangeAddress({ orderId: propOrderId }) {
             </s-box>
             <s-box inlineSize="100%">
               <s-text-field
-                label="Last name"
+                label="Last name *"
                 value={form.lastName}
-                disabled={submitting}
+                disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
                   if (target && 'value' in target) handleChange('lastName', String(target.value));
@@ -359,7 +354,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
           <s-text-field
             label="Address line 1 *"
             value={form.address1}
-            disabled={submitting}
+            disabled={submitting || success}
             placeholder="Street address, building, P.O. Box"
             onInput={(e) => {
               const target = e.currentTarget;
@@ -373,7 +368,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="Address line 2"
                 value={form.address2}
-                disabled={submitting}
+                disabled={submitting || success}
                 placeholder="Apartment, suite, floor, etc."
                 onInput={(e) => {
                   const target = e.currentTarget;
@@ -386,7 +381,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
                 label="Delivery Phone (optional)"
                 type="tel"
                 value={form.phone}
-                disabled={submitting}
+                disabled={submitting || success}
                 placeholder="For delivery driver contact"
                 onInput={(e) => {
                   const target = e.currentTarget;
@@ -402,7 +397,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="City *"
                 value={form.city}
-                disabled={submitting}
+                disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
                   if (target && 'value' in target) handleChange('city', String(target.value));
@@ -413,7 +408,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="Postal / ZIP code"
                 value={form.zip}
-                disabled={submitting}
+                disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
                   if (target && 'value' in target) handleChange('zip', String(target.value));
@@ -443,7 +438,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="State / Province / Region"
                 value={form.province}
-                disabled={submitting}
+                disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
                   if (target && 'value' in target) handleChange('province', String(target.value));
@@ -452,10 +447,25 @@ export function ChangeAddress({ orderId: propOrderId }) {
             </s-box>
           </s-stack>
 
+          {error && (
+            <s-banner tone="critical">{error}</s-banner>
+          )}
+
+          {success && (
+            <s-banner tone="success">Shipping address updated successfully!</s-banner>
+          )}
+
           <s-stack direction="inline" justifyContent="end">
             <s-button
               variant="primary"
-              disabled={submitting || !form.address1.trim() || !form.city.trim()}
+              disabled={
+                submitting ||
+                success ||
+                !form.firstName.trim() ||
+                !form.lastName.trim() ||
+                !form.address1.trim() ||
+                !form.city.trim()
+              }
               loading={submitting}
               onClick={handleSave}
             >
