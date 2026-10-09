@@ -114,6 +114,29 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
+  // ── 50 character limit check ───────────────────────────────────────────────
+  const fieldsToCheck = [
+    { name: "First name", value: address.firstName },
+    { name: "Last name", value: address.lastName },
+    { name: "Address line 1", value: address.address1 },
+    { name: "Address line 2", value: address.address2 },
+    { name: "City", value: address.city },
+    { name: "State / Province", value: address.province },
+    { name: "Postal / ZIP code", value: address.zip },
+    { name: "Phone", value: address.phone },
+  ];
+
+  for (const f of fieldsToCheck) {
+    if (f.value && String(f.value).trim().length > 50) {
+      return cors(
+        Response.json(
+          { userErrors: [{ message: `${f.name} cannot exceed 50 characters.` }] },
+          { status: 400 },
+        ),
+      );
+    }
+  }
+
   // ── Ownership check ────────────────────────────────────────────────────────
   const ownerRes = await admin.graphql(
     `#graphql
@@ -153,15 +176,15 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // ── Build the MailingAddressInput ──────────────────────────────────────────
   const mailingAddress = {
-    firstName: address.firstName || "",
-    lastName: address.lastName || "",
-    address1: address.address1,
-    address2: address.address2 || "",
-    city: address.city,
-    province: address.province || "",
-    zip: address.zip || "",
+    firstName: (address.firstName || "").slice(0, 50),
+    lastName: (address.lastName || "").slice(0, 50),
+    address1: (address.address1 || "").slice(0, 50),
+    address2: (address.address2 || "").slice(0, 50),
+    city: (address.city || "").slice(0, 50),
+    province: (address.province || "").slice(0, 50),
+    zip: (address.zip || "").slice(0, 50),
     countryCode: allowedCountryCode,
-    phone: address.phone || "",
+    phone: (address.phone || "").slice(0, 50),
   };
 
   // ── Build the OrderInput ───────────────────────────────────────────────────

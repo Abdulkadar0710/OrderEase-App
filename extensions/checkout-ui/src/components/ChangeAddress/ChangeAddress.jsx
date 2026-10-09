@@ -155,17 +155,18 @@ export function ChangeAddress({ orderId: propOrderId }) {
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleChange(field, value) {
     if (field === 'countryCode') return; // Country cannot be changed by the customer
-    setForm((prev) => ({ ...prev, [field]: value }));
+    const capped = String(value).slice(0, 50);
+    setForm((prev) => ({ ...prev, [field]: capped }));
     setError(null);
     setSuccess(false);
 
     // Trigger location autocomplete dropdown if Google API key is configured
     if (hasGoogleKey) {
-      if (field === 'city' && value.trim().length >= 2) {
-        setSearchQuery(value);
+      if (field === 'city' && capped.trim().length >= 2) {
+        setSearchQuery(capped);
         setShowSuggestions(true);
-      } else if (field === 'address1' && value.trim().length >= 3) {
-        setSearchQuery(value);
+      } else if (field === 'address1' && capped.trim().length >= 3) {
+        setSearchQuery(capped);
         setShowSuggestions(true);
       }
     }
@@ -174,10 +175,10 @@ export function ChangeAddress({ orderId: propOrderId }) {
   function selectSuggestion(item) {
     if (!item) return;
 
-    const newAddress1 = item.address1 || item.mainText || form.address1;
-    const newCity = item.city || item.mainText || form.city;
-    const newProvince = item.province || form.province;
-    const newZip = item.zip || form.zip;
+    const newAddress1 = String(item.address1 || item.mainText || form.address1 || '').slice(0, 50);
+    const newCity = String(item.city || item.mainText || form.city || '').slice(0, 50);
+    const newProvince = String(item.province || form.province || '').slice(0, 50);
+    const newZip = String(item.zip || form.zip || '').slice(0, 50);
 
     // Retain countryCode fixed to billing country
     setForm((prev) => ({
@@ -206,9 +207,17 @@ export function ChangeAddress({ orderId: propOrderId }) {
 
   function validate() {
     if (!form.firstName.trim()) return 'First name is required.';
+    if (form.firstName.length > 50) return 'First name cannot exceed 50 characters.';
     if (!form.lastName.trim())  return 'Last name is required.';
+    if (form.lastName.length > 50) return 'Last name cannot exceed 50 characters.';
     if (!form.address1.trim())  return 'Address line 1 is required.';
+    if (form.address1.length > 50) return 'Address line 1 cannot exceed 50 characters.';
+    if (form.address2 && form.address2.length > 50) return 'Address line 2 cannot exceed 50 characters.';
+    if (form.phone && form.phone.length > 50) return 'Phone cannot exceed 50 characters.';
     if (!form.city.trim())      return 'City is required.';
+    if (form.city.length > 50) return 'City cannot exceed 50 characters.';
+    if (form.zip && form.zip.length > 50) return 'Postal / ZIP code cannot exceed 50 characters.';
+    if (form.province && form.province.length > 50) return 'State / Province cannot exceed 50 characters.';
     if (!form.countryCode)      return 'Country is required.';
     return null;
   }
@@ -267,11 +276,12 @@ export function ChangeAddress({ orderId: propOrderId }) {
                   label="Search City, Place or Postal Code"
                   placeholder="Start typing e.g. Indore, 452007, Khargone..."
                   value={searchQuery}
+                  maxLength={50}
                   disabled={submitting || success}
                   onInput={(e) => {
                     const target = e.currentTarget;
                     if (target && 'value' in target) {
-                      setSearchQuery(String(target.value));
+                      setSearchQuery(String(target.value).slice(0, 50));
                       setShowSuggestions(true);
                       setAutoFillMsg(null);
                     }
@@ -330,6 +340,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="First name *"
                 value={form.firstName}
+                maxLength={50}
                 disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
@@ -341,6 +352,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="Last name *"
                 value={form.lastName}
+                maxLength={50}
                 disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
@@ -354,6 +366,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
           <s-text-field
             label="Address line 1 *"
             value={form.address1}
+            maxLength={50}
             disabled={submitting || success}
             placeholder="Street address, building, P.O. Box"
             onInput={(e) => {
@@ -368,6 +381,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="Address line 2"
                 value={form.address2}
+                maxLength={50}
                 disabled={submitting || success}
                 placeholder="Apartment, suite, floor, etc."
                 onInput={(e) => {
@@ -381,6 +395,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
                 label="Delivery Phone (optional)"
                 type="tel"
                 value={form.phone}
+                maxLength={50}
                 disabled={submitting || success}
                 placeholder="For delivery driver contact"
                 onInput={(e) => {
@@ -397,6 +412,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="City *"
                 value={form.city}
+                maxLength={50}
                 disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
@@ -408,6 +424,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="Postal / ZIP code"
                 value={form.zip}
+                maxLength={50}
                 disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
@@ -438,6 +455,7 @@ export function ChangeAddress({ orderId: propOrderId }) {
               <s-text-field
                 label="State / Province / Region"
                 value={form.province}
+                maxLength={50}
                 disabled={submitting || success}
                 onInput={(e) => {
                   const target = e.currentTarget;
