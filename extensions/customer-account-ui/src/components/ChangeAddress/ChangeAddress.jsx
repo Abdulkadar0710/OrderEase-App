@@ -2,19 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { getShippingAddress, updateOrderAddress, getLocationSuggestions, getServiceSettings } from '../../utils/api.js';
 import { useOrderEdit } from '../../context/OrderEditContext.jsx';
 
-// Common country options — extended dynamically if another country is selected from Google suggestions
-const COUNTRIES = [
-  { code: 'US', name: 'United States' },
-  { code: 'GB', name: 'United Kingdom' },
-  { code: 'CA', name: 'Canada' },
-  { code: 'AU', name: 'Australia' },
-  { code: 'DE', name: 'Germany' },
-  { code: 'FR', name: 'France' },
-  { code: 'IN', name: 'India' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'SG', name: 'Singapore' },
-  { code: 'AE', name: 'United Arab Emirates' },
-];
+import { COUNTRIES } from '../../utils/countries.js';
 
 const EMPTY_FORM = {
   firstName: '',
