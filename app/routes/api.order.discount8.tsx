@@ -199,6 +199,8 @@ type ResolvedDiscount =
       label: string;
       targeting: Targeting;
       combinesWith: DiscountCombinesWith;
+      minimumQuantity?: number | null;
+      minimumSubtotal?: { amount: number; currencyCode: string } | null;
     }
   | {
       type: "bxgy";
@@ -429,6 +431,18 @@ async function resolveDiscountCode(
               productDiscounts
               shippingDiscounts
             }
+            minimumRequirement {
+              __typename
+              ... on DiscountMinimumQuantity {
+                greaterThanOrEqualToQuantity
+              }
+              ... on DiscountMinimumSubtotal {
+                greaterThanOrEqualToSubtotal {
+                  amount
+                  currencyCode
+                }
+              }
+            }
             customerGets {
               value {
                 ... on DiscountPercentage { percentage }
@@ -510,6 +524,7 @@ async function resolveDiscountCode(
               amount
             }
             minimumRequirement {
+              __typename
               ... on DiscountMinimumQuantity {
                 greaterThanOrEqualToQuantity
               }
@@ -599,8 +614,41 @@ async function resolveDiscountCode(
       shippingDiscounts: !!codeDiscount.combinesWith?.shippingDiscounts,
     };
 
+    let minQty: number | null = null;
+    let minSubtotal: { amount: number; currencyCode: string } | null = null;
+    const minReq = codeDiscount.minimumRequirement;
+    if (
+      minReq &&
+      (minReq.__typename === "DiscountMinimumQuantity" || minReq.greaterThanOrEqualToQuantity != null) &&
+      minReq.greaterThanOrEqualToQuantity != null
+    ) {
+      minQty = parseInt(String(minReq.greaterThanOrEqualToQuantity), 10);
+    } else if (
+      minReq &&
+      (minReq.__typename === "DiscountMinimumSubtotal" || minReq.greaterThanOrEqualToSubtotal != null) &&
+      minReq.greaterThanOrEqualToSubtotal != null
+    ) {
+      const subtotalObj = minReq.greaterThanOrEqualToSubtotal;
+      const subtotalAmt = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.amount : subtotalObj;
+      const subtotalCurr = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.currencyCode : "USD";
+      minSubtotal = {
+        amount: parseFloat(String(subtotalAmt || 0)),
+        currencyCode: String(subtotalCurr || "USD"),
+      };
+    }
+
     if (value?.percentage != null) {
-      return { ok: true, type: "basic", kind: "percentage", percentage: value.percentage * 100, label, targeting, combinesWith };
+      return {
+        ok: true,
+        type: "basic",
+        kind: "percentage",
+        percentage: value.percentage * 100,
+        label,
+        targeting,
+        combinesWith,
+        minimumQuantity: minQty,
+        minimumSubtotal: minSubtotal,
+      };
     }
     if (value?.amount?.amount) {
       return {
@@ -612,6 +660,8 @@ async function resolveDiscountCode(
         label,
         targeting,
         combinesWith,
+        minimumQuantity: minQty,
+        minimumSubtotal: minSubtotal,
       };
     }
     return { ok: false, message: `Discount code "${code}" does not have a supported percentage or fixed value.` };
@@ -702,12 +752,23 @@ async function resolveDiscountCode(
     let minSubtotal: { amount: number; currencyCode: string } | null = null;
 
     const minReq = codeDiscount.minimumRequirement;
-    if (minReq?.__typename === "DiscountMinimumQuantity" && minReq.greaterThanOrEqualToQuantity) {
+    if (
+      minReq &&
+      (minReq.__typename === "DiscountMinimumQuantity" || minReq.greaterThanOrEqualToQuantity != null) &&
+      minReq.greaterThanOrEqualToQuantity != null
+    ) {
       minQty = parseInt(String(minReq.greaterThanOrEqualToQuantity), 10);
-    } else if (minReq?.__typename === "DiscountMinimumSubtotal" && minReq.greaterThanOrEqualToSubtotal) {
+    } else if (
+      minReq &&
+      (minReq.__typename === "DiscountMinimumSubtotal" || minReq.greaterThanOrEqualToSubtotal != null) &&
+      minReq.greaterThanOrEqualToSubtotal != null
+    ) {
+      const subtotalObj = minReq.greaterThanOrEqualToSubtotal;
+      const subtotalAmt = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.amount : subtotalObj;
+      const subtotalCurr = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.currencyCode : "USD";
       minSubtotal = {
-        amount: parseFloat(minReq.greaterThanOrEqualToSubtotal.amount),
-        currencyCode: minReq.greaterThanOrEqualToSubtotal.currencyCode,
+        amount: parseFloat(String(subtotalAmt || 0)),
+        currencyCode: String(subtotalCurr || "USD"),
       };
     }
 
@@ -1687,6 +1748,51 @@ export async function action({ request }: ActionFunctionArgs) {
           { status: 422 },
         ),
       );
+    }
+
+    if (resolved.minimumQuantity != null || resolved.minimumSubtotal != null) {
+      let targetActiveQty = 0;
+      let targetActiveSubtotal = 0;
+      let targetCurrencyCode = "USD";
+      for (const item of targetLineItems) {
+        const qty = item.editableQuantity ?? item.quantity;
+        const originalUnit = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount ?? "0");
+        if (item.originalUnitPriceSet?.shopMoney?.currencyCode) {
+          targetCurrencyCode = item.originalUnitPriceSet.shopMoney.currencyCode;
+        }
+        targetActiveQty += qty;
+        targetActiveSubtotal += qty * originalUnit;
+      }
+
+      if (resolved.minimumQuantity != null && targetActiveQty < resolved.minimumQuantity) {
+        return cors(
+          Response.json(
+            {
+              userErrors: [
+                {
+                  message: `Discount code "${discountCode}" requires a minimum of ${resolved.minimumQuantity} eligible item(s) in the order.`,
+                },
+              ],
+            },
+            { status: 422 },
+          ),
+        );
+      }
+
+      if (resolved.minimumSubtotal != null && targetActiveSubtotal < resolved.minimumSubtotal.amount) {
+        return cors(
+          Response.json(
+            {
+              userErrors: [
+                {
+                  message: `Discount code "${discountCode}" requires a minimum subtotal of ${resolved.minimumSubtotal.amount.toFixed(2)} ${resolved.minimumSubtotal.currencyCode || targetCurrencyCode}.`,
+                },
+              ],
+            },
+            { status: 422 },
+          ),
+        );
+      }
     }
 
     const warnings: string[] = [];
