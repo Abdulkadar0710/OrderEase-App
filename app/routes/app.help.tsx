@@ -739,37 +739,6 @@ export default function HelpPage(): JSX.Element {
         </s-stack>
       )}
 
-      {/* Footer Resources */}
-      <s-section slot="aside" heading="Quick Links">
-        <s-unordered-list>
-          <s-list-item>
-            <Link
-              to={`/app/active-services${location.search}`}
-              style={{
-                color: "#2c6ecb",
-                textDecoration: "underline",
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-            >
-              Active Services & Controls
-            </Link>
-          </s-list-item>
-          <s-list-item>
-            <Link
-              to={`/app/insights${location.search}`}
-              style={{
-                color: "#2c6ecb",
-                textDecoration: "underline",
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-            > 
-              Insights & Analytics
-            </Link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
     </s-page>
   );
 }
