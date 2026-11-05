@@ -23,6 +23,7 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
             name
             title
             variantTitle
+            sku
             currentQuantity
             quantity
             originalUnitPriceSet {
@@ -34,6 +35,7 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
             }
             variant {
               id
+              sku
               title
               product {
                 id
@@ -114,9 +116,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         const image = node.image || node.variant?.media?.edges?.[0]?.node?.image || null;
         const selectedOptions = node.variant?.selectedOptions || [];
+        const itemSku = node.sku || node.variant?.sku || "";
         const merchandise = {
           id: node.variant?.id || '',
           title: node.title || node.name || '',
+          sku: itemSku,
           image,
           selectedOptions,
           product: {
@@ -134,6 +138,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           name: node.name,
           title: node.title || node.name,
           variantTitle: node.variantTitle,
+          sku: itemSku,
           currentQuantity: node.currentQuantity,
           quantity: node.currentQuantity,
           image,

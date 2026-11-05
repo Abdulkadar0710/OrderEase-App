@@ -14,6 +14,7 @@ const SEARCH_QUERY = `#graphql
           nodes {
             id
             title
+            sku
             availableForSale
             selectedOptions {
               name

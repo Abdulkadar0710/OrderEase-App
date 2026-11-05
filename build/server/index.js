@@ -1,18 +1,18 @@
 var _a;
-import { jsx, jsxs } from "react/jsx-runtime";
+import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
-import { ServerRouter, UNSAFE_withComponentProps, Meta, Links, Outlet, ScrollRestoration, Scripts, useLoaderData, useActionData, Form, redirect, UNSAFE_withErrorBoundaryProps, useRouteError, useFetcher, useNavigate, useLocation, Link } from "react-router";
+import { ServerRouter, UNSAFE_withComponentProps, Meta, Links, Outlet, ScrollRestoration, Scripts, useLoaderData, useActionData, Form, redirect, UNSAFE_withErrorBoundaryProps, useRouteError, useFetcher, useSearchParams, useNavigate, useLocation } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
 import "@shopify/shopify-app-react-router/adapters/node";
 import { shopifyApp, AppDistribution, ApiVersion, LoginErrorType, boundary } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { PrismaClient } from "@prisma/client";
+import { useEffect, useState, useRef } from "react";
 import crypto from "node:crypto";
 import PDFDocument from "pdfkit";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { useState, useRef, useEffect } from "react";
 if (process.env.NODE_ENV !== "production") {
   if (!global.prismaGlobal) {
     global.prismaGlobal = new PrismaClient();
@@ -85,6 +85,22 @@ const entryServer = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineP
   streamTimeout
 }, Symbol.toStringTag, { value: "Module" }));
 const root = UNSAFE_withComponentProps(function App() {
+  useEffect(() => {
+    if (document.querySelector('script[src*="embed.tawk.to"]')) return;
+    window.Tawk_API = window.Tawk_API || {};
+    window.Tawk_LoadStart = /* @__PURE__ */ new Date();
+    const s1 = document.createElement("script");
+    const s0 = document.getElementsByTagName("script")[0];
+    s1.async = true;
+    s1.src = "https://embed.tawk.to/6ad09aba55f62534c89dc987/1k4vdor2h";
+    s1.charset = "UTF-8";
+    s1.setAttribute("crossorigin", "*");
+    if (s0 && s0.parentNode) {
+      s0.parentNode.insertBefore(s1, s0);
+    } else {
+      document.head.appendChild(s1);
+    }
+  }, []);
   return /* @__PURE__ */ jsxs("html", {
     lang: "en",
     children: [/* @__PURE__ */ jsxs("head", {
@@ -271,14 +287,14 @@ function decodeTag$3(description) {
   }
   if (endIdx === -1) return null;
   const rawJson = rest.slice(0, endIdx + 1);
-  const label2 = rest.slice(endIdx + 1).trim();
+  const label = rest.slice(endIdx + 1).trim();
   try {
     const parsed = JSON.parse(rawJson);
     return {
       checkoutAmount: parsed.c ?? 0,
       productAmount: parsed.p ?? 0,
       orderAmount: parsed.o ?? 0,
-      label: label2,
+      label,
       bxgy: parsed.bxgy
     };
   } catch {
@@ -495,16 +511,16 @@ async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
       const getQty = candidate.rule.getQuantity || 1;
       for (const activeItem of activeItems) {
         if (lineItemMatchesBuyX(activeItem, candidate.rule)) {
-          const itemQty = activeItem.editableQuantity ?? activeItem.quantity;
+          const itemQty2 = activeItem.editableQuantity ?? activeItem.quantity;
           const itemPrice = parseFloat(((_g = (_f = activeItem.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.amount) ?? "0");
           if (activeItem.id === candidate.lineItemId) {
-            if (itemQty > getQty) {
-              totalMatchingQty += itemQty - getQty;
-              totalMatchingAmt += itemPrice * (itemQty - getQty);
+            if (itemQty2 > getQty) {
+              totalMatchingQty += itemQty2 - getQty;
+              totalMatchingAmt += itemPrice * (itemQty2 - getQty);
             }
           } else {
-            totalMatchingQty += itemQty;
-            totalMatchingAmt += itemPrice * itemQty;
+            totalMatchingQty += itemQty2;
+            totalMatchingAmt += itemPrice * itemQty2;
           }
         }
       }
@@ -545,7 +561,7 @@ async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
     return { removedCount: 0, removedProducts: [] };
   }
 }
-async function loader$u({
+async function loader$w({
   request
 }) {
   const {
@@ -560,7 +576,7 @@ async function loader$u({
     }
   }));
 }
-async function action$p({
+async function action$q({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
@@ -772,10 +788,10 @@ async function action$p({
 }
 const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$p,
-  loader: loader$u
+  action: action$q,
+  loader: loader$w
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$t({
+async function loader$v({
   request
 }) {
   const {
@@ -790,7 +806,7 @@ async function loader$t({
     }
   }));
 }
-async function action$o({
+async function action$p({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
@@ -1000,10 +1016,10 @@ async function action$o({
 }
 const route2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$o,
-  loader: loader$t
+  action: action$p,
+  loader: loader$v
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$s({
+async function loader$u({
   request
 }) {
   var _a2, _b;
@@ -1074,19 +1090,19 @@ async function loader$s({
     }));
   }
 }
-async function action$n({
+async function action$o({
   request
 }) {
-  return loader$s({
+  return loader$u({
     request
   });
 }
 const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$n,
-  loader: loader$s
+  action: action$o,
+  loader: loader$u
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$r({
+async function loader$t({
   request
 }) {
   var _a2, _b;
@@ -1144,7 +1160,7 @@ async function loader$r({
     }));
   }
 }
-async function action$m({
+async function action$n({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
@@ -1342,8 +1358,814 @@ async function action$m({
 }
 const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
+  action: action$n,
+  loader: loader$t
+}, Symbol.toStringTag, { value: "Module" }));
+async function loader$s({
+  request
+}) {
+  const {
+    cors
+  } = await authenticate.public.customerAccount(request);
+  return cors(Response.json({
+    success: true,
+    message: "Bulk update endpoint ready."
+  }));
+}
+function escapeCsv(val) {
+  if (val === null || val === void 0) return "";
+  const str = String(val);
+  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+function generateErrorCsv(errors) {
+  const lines = ["Product name,sku,issue"];
+  for (const err of errors) {
+    lines.push(`${escapeCsv(err.productName)},${escapeCsv(err.sku)},${escapeCsv(err.issue)}`);
+  }
+  return lines.join("\n");
+}
+function parseCsvContent(rawCsv) {
+  if (!rawCsv || typeof rawCsv !== "string") return [];
+  const cleanCsv = rawCsv.replace(/^\uFEFF/, "").trim();
+  const lines = cleanCsv.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length < 2) return [];
+  const parseLine = (line) => {
+    const result = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === "," && !inQuotes) {
+        result.push(cur.trim());
+        cur = "";
+      } else {
+        cur += char;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  };
+  const headers2 = parseLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  let replaceSkuIdx = headers2.findIndex((h) => h.includes("replace"));
+  let skuIdx = headers2.findIndex((h) => h === "sku" || h.includes("sku") && !h.includes("replace"));
+  let productNameIdx = headers2.findIndex((h) => (h.includes("product") || h.includes("title") || h.includes("name")) && !h.includes("sku"));
+  let quantityIdx = headers2.findIndex((h) => h.includes("quantity") || h.includes("qty") || h === "count");
+  if (skuIdx === -1 && headers2.length >= 2) skuIdx = 1;
+  if (productNameIdx === -1) productNameIdx = 0;
+  if (replaceSkuIdx === -1 && headers2.length >= 3) replaceSkuIdx = 2;
+  if (quantityIdx === -1 && headers2.length >= 4) quantityIdx = 3;
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = parseLine(lines[i]);
+    if (parts.length === 0 || parts.every((p) => p === "")) continue;
+    const productName = productNameIdx !== -1 && parts[productNameIdx] ? parts[productNameIdx] : "";
+    const sku = skuIdx !== -1 && parts[skuIdx] ? parts[skuIdx] : "";
+    const replaceWithSku = replaceSkuIdx !== -1 && parts[replaceSkuIdx] ? parts[replaceSkuIdx] : "";
+    const rawQty = quantityIdx !== -1 && parts[quantityIdx] ? parts[quantityIdx] : "1";
+    const quantity = parseInt(rawQty, 10);
+    rows.push({
+      productName,
+      sku,
+      replaceWithSku,
+      quantity: isNaN(quantity) ? 1 : quantity
+    });
+  }
+  return rows;
+}
+async function action$m({
+  request
+}) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
+  const {
+    sessionToken,
+    cors
+  } = await authenticate.public.customerAccount(request);
+  if (request.method === "OPTIONS") {
+    return cors(new Response(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    }));
+  }
+  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  const customerAccountId = sessionToken.sub;
+  const {
+    admin
+  } = await unauthenticated.admin(storeDomain);
+  let body = {};
+  try {
+    body = await request.json();
+  } catch (e) {
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue: "Invalid JSON payload."
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue: "Invalid JSON payload."
+      }])
+    }, {
+      status: 400
+    }));
+  }
+  const {
+    orderId,
+    rows: rawRows,
+    rawCsv,
+    source
+  } = body || {};
+  if (!orderId) {
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue: "Missing orderId."
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue: "Missing orderId."
+      }])
+    }, {
+      status: 400
+    }));
+  }
+  const editLimitCheck = await checkOrderEditLimit({
+    shop: storeDomain,
+    orderId
+  });
+  if (editLimitCheck.isLimitReached) {
+    const issue = `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`;
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue
+      }])
+    }, {
+      status: 422
+    }));
+  }
+  let order = null;
+  try {
+    const orderRes = await admin.graphql(`#graphql
+      query GetOrderForBulkUpdate($id: ID!) {
+        order(id: $id) {
+          id
+          name
+          statusPageUrl
+          cancelledAt
+          customer { id }
+          lineItems(first: 250) {
+            nodes {
+              id
+              name
+              title
+              currentQuantity
+              quantity
+              sku
+              variant {
+                id
+                sku
+                title
+                inventoryQuantity
+                availableForSale
+                product { id title }
+              }
+            }
+          }
+        }
+      }`, {
+      variables: {
+        id: orderId
+      }
+    });
+    const orderJson = await orderRes.json();
+    order = (_a2 = orderJson.data) == null ? void 0 : _a2.order;
+  } catch (e) {
+    console.error("[bulk-update] Failed to load order:", e);
+  }
+  if (!order) {
+    const issue = "Order not found or inaccessible.";
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue
+      }])
+    }, {
+      status: 404
+    }));
+  }
+  if (order.cancelledAt) {
+    const issue = "Order has been cancelled. No further modifications can be made.";
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue
+      }])
+    }, {
+      status: 422
+    }));
+  }
+  const numericId = (gidOrId) => {
+    var _a3;
+    return (_a3 = gidOrId == null ? void 0 : gidOrId.match(/\d+$/)) == null ? void 0 : _a3[0];
+  };
+  if (!((_b = order.customer) == null ? void 0 : _b.id) || numericId(order.customer.id) !== numericId(customerAccountId)) {
+    const issue = "Not authorized to update this order.";
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue
+      }])
+    }, {
+      status: 403
+    }));
+  }
+  let parsedRows = [];
+  if (Array.isArray(rawRows) && rawRows.length > 0) {
+    parsedRows = rawRows.map((r) => ({
+      productName: String(r.productName || r["Product name"] || "").trim(),
+      sku: String(r.sku || r.SKU || "").trim(),
+      replaceWithSku: String(r.replaceWithSku || r["replace with sku"] || r.replace_with_sku || "").trim(),
+      quantity: isNaN(Number(r.quantity)) ? 1 : Number(r.quantity),
+      actionType: r.actionType,
+      lineItemId: r.lineItemId,
+      variantId: r.variantId,
+      newVariantId: r.newVariantId
+    }));
+  } else if (typeof rawCsv === "string" && rawCsv.trim().length > 0) {
+    parsedRows = parseCsvContent(rawCsv);
+  }
+  if (parsedRows.length === 0) {
+    const issue = "No update rows found in the CSV. Please ensure the CSV has data.";
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: [{
+        productName: "-",
+        sku: "-",
+        issue
+      }],
+      errorCsv: generateErrorCsv([{
+        productName: "-",
+        sku: "-",
+        issue
+      }])
+    }, {
+      status: 400
+    }));
+  }
+  const activeItemsBySku = /* @__PURE__ */ new Map();
+  const activeItemsByLineId = /* @__PURE__ */ new Map();
+  const activeItemsByVariantId = /* @__PURE__ */ new Map();
+  for (const item of ((_c = order.lineItems) == null ? void 0 : _c.nodes) || []) {
+    if (item.currentQuantity > 0) {
+      if (item.id) activeItemsByLineId.set(item.id, item);
+      if ((_d = item.variant) == null ? void 0 : _d.id) activeItemsByVariantId.set(item.variant.id, item);
+      const itemSku = (item.sku || ((_e = item.variant) == null ? void 0 : _e.sku) || "").trim().toLowerCase();
+      if (itemSku) {
+        activeItemsBySku.set(itemSku, item);
+      }
+    }
+  }
+  const variantCache = /* @__PURE__ */ new Map();
+  async function findVariantBySku(skuToFind) {
+    var _a3, _b2;
+    const key = skuToFind.trim().toLowerCase();
+    if (variantCache.has(key)) return variantCache.get(key);
+    try {
+      const res = await admin.graphql(`#graphql
+        query FindVariantBySku($query: String!) {
+          productVariants(first: 10, query: $query) {
+            nodes {
+              id
+              title
+              sku
+              inventoryQuantity
+              availableForSale
+              product { id title }
+            }
+          }
+        }`, {
+        variables: {
+          query: `sku:"${skuToFind.trim()}"`
+        }
+      });
+      const json = await res.json();
+      const nodes = ((_b2 = (_a3 = json.data) == null ? void 0 : _a3.productVariants) == null ? void 0 : _b2.nodes) || [];
+      const match = nodes.find((v) => (v.sku || "").trim().toLowerCase() === key) || null;
+      variantCache.set(key, match);
+      return match;
+    } catch (e) {
+      console.warn("[bulk-update] Error querying variant by SKU:", skuToFind, e);
+      variantCache.set(key, null);
+      return null;
+    }
+  }
+  const variantByIdCache = /* @__PURE__ */ new Map();
+  async function findVariantById(variantId) {
+    var _a3;
+    if (!variantId) return null;
+    if (variantByIdCache.has(variantId)) return variantByIdCache.get(variantId);
+    try {
+      const res = await admin.graphql(`#graphql
+        query FindVariantById($id: ID!) {
+          productVariant(id: $id) {
+            id
+            title
+            sku
+            inventoryQuantity
+            availableForSale
+            product { id title }
+          }
+        }`, {
+        variables: {
+          id: variantId
+        }
+      });
+      const json = await res.json();
+      const variant = ((_a3 = json.data) == null ? void 0 : _a3.productVariant) || null;
+      variantByIdCache.set(variantId, variant);
+      return variant;
+    } catch (e) {
+      console.warn("[bulk-update] Error querying variant by ID:", variantId, e);
+      variantByIdCache.set(variantId, null);
+      return null;
+    }
+  }
+  const rowErrors = [];
+  const plannedActions = [];
+  for (let idx = 0; idx < parsedRows.length; idx++) {
+    const row = parsedRows[idx];
+    const productName = row.productName || `Row #${idx + 1}`;
+    let sku = row.sku ? String(row.sku).trim() : "";
+    let replaceWithSku = row.replaceWithSku ? String(row.replaceWithSku).trim() : "";
+    const quantity = Number(row.quantity);
+    const lineItemId = row.lineItemId;
+    const variantId = row.variantId;
+    const newVariantId = row.newVariantId;
+    const actionType = row.actionType;
+    if (!sku && !variantId && !lineItemId) {
+      rowErrors.push({
+        productName,
+        sku: "(blank)",
+        issue: "SKU is required for each row."
+      });
+      continue;
+    }
+    if (isNaN(quantity) || quantity < 0) {
+      rowErrors.push({
+        productName,
+        sku: sku || "-",
+        issue: "Quantity must be a valid non-negative number."
+      });
+      continue;
+    }
+    let existingItem = null;
+    if (lineItemId) {
+      existingItem = activeItemsByLineId.get(lineItemId);
+    }
+    if (!existingItem && variantId && actionType !== "ADD") {
+      existingItem = activeItemsByVariantId.get(variantId);
+    }
+    if (!existingItem && sku) {
+      existingItem = activeItemsBySku.get(sku.toLowerCase());
+    }
+    const isExplicitAdd = actionType === "ADD";
+    const isExplicitReplace = actionType === "REPLACE";
+    const isExplicitUpdate = actionType === "UPDATE_QTY";
+    if (isExplicitAdd || !existingItem && !isExplicitReplace && !isExplicitUpdate) {
+      if (replaceWithSku && !isExplicitAdd) {
+        rowErrors.push({
+          productName,
+          sku: sku || "-",
+          issue: `Cannot replace product: SKU '${sku}' does not exist in this order.`
+        });
+        continue;
+      }
+      if (quantity <= 0) {
+        rowErrors.push({
+          productName,
+          sku: sku || "-",
+          issue: `Cannot add product with quantity 0.`
+        });
+        continue;
+      }
+      let variant = null;
+      if (variantId) {
+        variant = await findVariantById(variantId);
+      }
+      if (!variant && sku) {
+        variant = await findVariantBySku(sku);
+      }
+      if (!variant) {
+        rowErrors.push({
+          productName,
+          sku: sku || "-",
+          issue: sku ? `SKU '${sku}' not found in store catalog.` : "Product variant not found."
+        });
+        continue;
+      }
+      if (!sku && variant.sku) {
+        sku = variant.sku;
+      }
+      if (typeof variant.inventoryQuantity === "number" && variant.inventoryQuantity < quantity) {
+        rowErrors.push({
+          productName,
+          sku: sku || variant.sku || "-",
+          issue: `Insufficient stock for '${productName || variant.title}'. Requested: ${quantity}, Available: ${variant.inventoryQuantity}.`
+        });
+        continue;
+      }
+      plannedActions.push({
+        type: "ADD",
+        productName: productName || ((_f = variant.product) == null ? void 0 : _f.title) || variant.title,
+        sku: sku || variant.sku || "-",
+        quantity,
+        variantId: variant.id
+      });
+    } else if (isExplicitReplace || replaceWithSku) {
+      if (!existingItem) {
+        rowErrors.push({
+          productName,
+          sku: sku || "-",
+          issue: `Cannot replace item: Product does not exist in this order.`
+        });
+        continue;
+      }
+      if (quantity <= 0) {
+        rowErrors.push({
+          productName,
+          sku: sku || existingItem.sku || "-",
+          issue: `Replacement quantity must be greater than 0.`
+        });
+        continue;
+      }
+      let repVariant = null;
+      if (newVariantId) {
+        repVariant = await findVariantById(newVariantId);
+      }
+      if (!repVariant && replaceWithSku) {
+        repVariant = await findVariantBySku(replaceWithSku);
+      }
+      if (!repVariant) {
+        rowErrors.push({
+          productName,
+          sku: sku || existingItem.sku || "-",
+          issue: replaceWithSku ? `Replacement SKU '${replaceWithSku}' not found in store catalog.` : "Replacement variant not found in store catalog."
+        });
+        continue;
+      }
+      if (!replaceWithSku && repVariant.sku) {
+        replaceWithSku = repVariant.sku;
+      }
+      if (typeof repVariant.inventoryQuantity === "number" && repVariant.inventoryQuantity < quantity) {
+        rowErrors.push({
+          productName,
+          sku: sku || existingItem.sku || "-",
+          issue: `Insufficient stock for replacement '${repVariant.title}'. Requested: ${quantity}, Available: ${repVariant.inventoryQuantity}.`
+        });
+        continue;
+      }
+      plannedActions.push({
+        type: "REPLACE",
+        productName: productName || existingItem.title,
+        sku: sku || existingItem.sku || ((_g = existingItem.variant) == null ? void 0 : _g.sku) || "-",
+        replaceWithSku: replaceWithSku || repVariant.sku || "-",
+        quantity,
+        lineItemId: existingItem.id,
+        newVariantId: repVariant.id
+      });
+    } else {
+      if (!existingItem) {
+        rowErrors.push({
+          productName,
+          sku: sku || "-",
+          issue: `Item not found in current order to update quantity.`
+        });
+        continue;
+      }
+      if (quantity === existingItem.currentQuantity) {
+        continue;
+      }
+      if (quantity > existingItem.currentQuantity) {
+        const needed = quantity - existingItem.currentQuantity;
+        const invQty = (_h = existingItem.variant) == null ? void 0 : _h.inventoryQuantity;
+        if (typeof invQty === "number" && invQty < needed) {
+          rowErrors.push({
+            productName,
+            sku: sku || existingItem.sku || "-",
+            issue: `Cannot increase quantity of SKU '${sku || existingItem.title}' to ${quantity}. Only ${invQty} additional unit(s) available in stock.`
+          });
+          continue;
+        }
+      }
+      plannedActions.push({
+        type: "UPDATE_QTY",
+        productName: productName || existingItem.title,
+        sku: sku || existingItem.sku || ((_i = existingItem.variant) == null ? void 0 : _i.sku) || "-",
+        quantity,
+        lineItemId: existingItem.id
+      });
+    }
+  }
+  if (rowErrors.length > 0) {
+    const errorCsv = generateErrorCsv(rowErrors);
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: rowErrors,
+      errorCsv
+    }, {
+      status: 422
+    }));
+  }
+  if (plannedActions.length === 0) {
+    return cors(Response.json({
+      success: true,
+      hasErrors: false,
+      message: "No line item changes were required. The order is already up to date.",
+      summary: {
+        totalRows: parsedRows.length,
+        actionsApplied: 0
+      }
+    }));
+  }
+  try {
+    const beginRes = await admin.graphql(`#graphql
+      mutation OrderEditBeginBulk($id: ID!) {
+        orderEditBegin(id: $id) {
+          calculatedOrder { id }
+          userErrors { field message }
+        }
+      }`, {
+      variables: {
+        id: orderId
+      }
+    });
+    const beginJson = await beginRes.json();
+    const beginErrors = ((_k = (_j = beginJson.data) == null ? void 0 : _j.orderEditBegin) == null ? void 0 : _k.userErrors) || [];
+    if (beginErrors.length > 0) {
+      const errs = beginErrors.map((e) => ({
+        productName: "Order Edit",
+        sku: "-",
+        issue: e.message || "Failed to initiate order edit session."
+      }));
+      return cors(Response.json({
+        success: false,
+        hasErrors: true,
+        errors: errs,
+        errorCsv: generateErrorCsv(errs)
+      }, {
+        status: 422
+      }));
+    }
+    const calculatedOrderId = beginJson.data.orderEditBegin.calculatedOrder.id;
+    for (const act of plannedActions) {
+      if (act.type === "ADD") {
+        const addRes = await admin.graphql(`#graphql
+          mutation BulkAddVariant($id: ID!, $variantId: ID!, $quantity: Int!) {
+            orderEditAddVariant(id: $id, variantId: $variantId, quantity: $quantity) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            id: calculatedOrderId,
+            variantId: act.variantId,
+            quantity: act.quantity
+          }
+        });
+        const addJson = await addRes.json();
+        const errs = ((_m = (_l = addJson.data) == null ? void 0 : _l.orderEditAddVariant) == null ? void 0 : _m.userErrors) || [];
+        if (errs.length > 0) {
+          rowErrors.push({
+            productName: act.productName,
+            sku: act.sku,
+            issue: errs[0].message || "Failed to add product variant."
+          });
+        }
+      } else if (act.type === "UPDATE_QTY") {
+        const calcLineItemId = act.lineItemId.replace("LineItem", "CalculatedLineItem");
+        const setQtyRes = await admin.graphql(`#graphql
+          mutation BulkSetQuantity($id: ID!, $lineItemId: ID!, $quantity: Int!, $restock: Boolean) {
+            orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity, restock: $restock) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            id: calculatedOrderId,
+            lineItemId: calcLineItemId,
+            quantity: act.quantity,
+            restock: true
+          }
+        });
+        const setQtyJson = await setQtyRes.json();
+        const errs = ((_o = (_n = setQtyJson.data) == null ? void 0 : _n.orderEditSetQuantity) == null ? void 0 : _o.userErrors) || [];
+        if (errs.length > 0) {
+          rowErrors.push({
+            productName: act.productName,
+            sku: act.sku,
+            issue: errs[0].message || "Failed to update item quantity."
+          });
+        }
+      } else if (act.type === "REPLACE") {
+        const calcLineItemId = act.lineItemId.replace("LineItem", "CalculatedLineItem");
+        const removeRes = await admin.graphql(`#graphql
+          mutation BulkRemoveForReplace($id: ID!, $lineItemId: ID!, $quantity: Int!, $restock: Boolean) {
+            orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity, restock: $restock) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            id: calculatedOrderId,
+            lineItemId: calcLineItemId,
+            quantity: 0,
+            restock: true
+          }
+        });
+        const removeJson = await removeRes.json();
+        const remErrs = ((_q = (_p = removeJson.data) == null ? void 0 : _p.orderEditSetQuantity) == null ? void 0 : _q.userErrors) || [];
+        if (remErrs.length > 0) {
+          rowErrors.push({
+            productName: act.productName,
+            sku: act.sku,
+            issue: remErrs[0].message || "Failed to remove original item for replacement."
+          });
+          continue;
+        }
+        const repAddRes = await admin.graphql(`#graphql
+          mutation BulkAddReplacement($id: ID!, $variantId: ID!, $quantity: Int!) {
+            orderEditAddVariant(id: $id, variantId: $variantId, quantity: $quantity) {
+              calculatedOrder { id }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            id: calculatedOrderId,
+            variantId: act.newVariantId,
+            quantity: act.quantity
+          }
+        });
+        const repAddJson = await repAddRes.json();
+        const repErrs = ((_s = (_r = repAddJson.data) == null ? void 0 : _r.orderEditAddVariant) == null ? void 0 : _s.userErrors) || [];
+        if (repErrs.length > 0) {
+          rowErrors.push({
+            productName: act.productName,
+            sku: act.replaceWithSku || act.sku,
+            issue: repErrs[0].message || "Failed to add replacement product variant."
+          });
+        }
+      }
+    }
+    if (rowErrors.length > 0) {
+      return cors(Response.json({
+        success: false,
+        hasErrors: true,
+        errors: rowErrors,
+        errorCsv: generateErrorCsv(rowErrors)
+      }, {
+        status: 422
+      }));
+    }
+    try {
+      await checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId);
+    } catch (bxgyErr) {
+      console.warn("[bulk-update] BXGY discount check warning:", bxgyErr);
+    }
+    const commitRes = await admin.graphql(`#graphql
+      mutation BulkOrderEditCommit($id: ID!) {
+        orderEditCommit(id: $id, notifyCustomer: true, staffNote: "Bulk update via CSV upload") {
+          order {
+            id
+            name
+            statusPageUrl
+            totalOutstandingSet {
+              presentmentMoney { amount currencyCode }
+              shopMoney { amount currencyCode }
+            }
+          }
+          userErrors { field message }
+        }
+      }`, {
+      variables: {
+        id: calculatedOrderId
+      }
+    });
+    const commitJson = await commitRes.json();
+    const commitErrors = ((_u = (_t = commitJson.data) == null ? void 0 : _t.orderEditCommit) == null ? void 0 : _u.userErrors) || [];
+    if (commitErrors.length > 0) {
+      const errs = commitErrors.map((e) => ({
+        productName: "Order Commit",
+        sku: "-",
+        issue: e.message || "Failed to commit order edit changes."
+      }));
+      return cors(Response.json({
+        success: false,
+        hasErrors: true,
+        errors: errs,
+        errorCsv: generateErrorCsv(errs)
+      }, {
+        status: 422
+      }));
+    }
+    const updatedOrder = commitJson.data.orderEditCommit.order;
+    const balanceDue = ((_v = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _v.presentmentMoney) ?? ((_w = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _w.shopMoney) ?? null;
+    const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
+    await addOrderTags(admin, orderId, owesRefund, ["Bulk-Updated"]);
+    await trackOrderEdit({
+      shop: storeDomain,
+      orderId,
+      featureId: "bulk-update",
+      source: source || "customer_account_ui"
+    });
+    return cors(Response.json({
+      success: true,
+      hasErrors: false,
+      order: updatedOrder,
+      balanceDue,
+      summary: {
+        totalRows: parsedRows.length,
+        actionsApplied: plannedActions.length,
+        added: plannedActions.filter((a) => a.type === "ADD").length,
+        updated: plannedActions.filter((a) => a.type === "UPDATE_QTY").length,
+        replaced: plannedActions.filter((a) => a.type === "REPLACE").length
+      }
+    }));
+  } catch (err) {
+    console.error("[bulk-update] Server exception:", err);
+    const issue = err instanceof Error ? err.message : "Internal server error occurred.";
+    const errs = [{
+      productName: "-",
+      sku: "-",
+      issue
+    }];
+    return cors(Response.json({
+      success: false,
+      hasErrors: true,
+      errors: errs,
+      errorCsv: generateErrorCsv(errs)
+    }, {
+      status: 500
+    }));
+  }
+}
+const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
   action: action$m,
-  loader: loader$r
+  loader: loader$s
 }, Symbol.toStringTag, { value: "Module" }));
 const action$l = async ({
   request
@@ -1368,9 +2190,31 @@ const action$l = async ({
   }
   return new Response();
 };
-const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$l
+}, Symbol.toStringTag, { value: "Module" }));
+const SAMPLE_CSV = `Product name,sku,replace with sku,quantity
+Classic Cotton T-Shirt,TSHIRT-BLK-M,,2
+Denim Jacket,JKT-BLU-L,JKT-BLU-XL,1
+Running Shoes,SHOE-WHT-10,,3
+Baseball Cap,CAP-RED-OS,CAP-BLK-OS,1
+`;
+async function loader$r({
+  request
+}) {
+  return new Response(SAMPLE_CSV, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="sample_order_bulk_update.csv"',
+      "Access-Control-Allow-Origin": "*"
+    }
+  });
+}
+const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  loader: loader$r
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$q({
   request
@@ -1528,12 +2372,12 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
                 const detailData = await detailRes.json();
                 const comps = detailData.addressComponents || [];
                 let streetNum = "";
-                let route35 = "";
+                let route37 = "";
                 let neighborhood = "";
                 for (const c of comps) {
                   const types = c.types || [];
                   if (types.includes("street_number")) streetNum = c.longText || c.shortText;
-                  if (types.includes("route")) route35 = c.longText || c.shortText;
+                  if (types.includes("route")) route37 = c.longText || c.shortText;
                   if (types.includes("sublocality") || types.includes("neighborhood") || types.includes("sublocality_level_1")) {
                     neighborhood = c.longText || c.shortText;
                   }
@@ -1551,7 +2395,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
                   }
                 }
                 if (!city) city = neighborhood || mainText;
-                address1 = [streetNum, route35].filter(Boolean).join(" ") || neighborhood || mainText;
+                address1 = [streetNum, route37].filter(Boolean).join(" ") || neighborhood || mainText;
               }
             } catch (e) {
             }
@@ -1592,7 +2436,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
         if (detailData.status === "OK" && detailData.result) {
           const comps = detailData.result.address_components || [];
           let streetNum = "";
-          let route35 = "";
+          let route37 = "";
           let neighborhood = "";
           let city = "";
           let province = "";
@@ -1602,7 +2446,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
           for (const c of comps) {
             const types = c.types || [];
             if (types.includes("street_number")) streetNum = c.long_name;
-            if (types.includes("route")) route35 = c.long_name;
+            if (types.includes("route")) route37 = c.long_name;
             if (types.includes("sublocality") || types.includes("neighborhood") || types.includes("sublocality_level_1")) {
               neighborhood = c.long_name;
             }
@@ -1622,7 +2466,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
           if (!city) {
             city = neighborhood || (((_f = pred.structured_formatting) == null ? void 0 : _f.main_text) || "").replace(/\d+/g, "").trim();
           }
-          const address1 = [streetNum, route35].filter(Boolean).join(" ") || neighborhood || ((_g = pred.structured_formatting) == null ? void 0 : _g.main_text) || "";
+          const address1 = [streetNum, route37].filter(Boolean).join(" ") || neighborhood || ((_g = pred.structured_formatting) == null ? void 0 : _g.main_text) || "";
           googleItems.push({
             id: pred.place_id,
             description: detailData.result.formatted_address || pred.description,
@@ -1648,7 +2492,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
   }
   return [];
 }
-const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$k,
   loader: loader$q
@@ -1675,6 +2519,7 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
             name
             title
             variantTitle
+            sku
             currentQuantity
             quantity
             originalUnitPriceSet {
@@ -1686,6 +2531,7 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
             }
             variant {
               id
+              sku
               title
               product {
                 id
@@ -1749,7 +2595,7 @@ async function loader$p({
     }
     const rawEdges = ((_d = (_c = (_b = json.data) == null ? void 0 : _b.order) == null ? void 0 : _c.lineItems) == null ? void 0 : _d.edges) ?? [];
     const lineItems = rawEdges.filter((edge) => edge.node && edge.node.currentQuantity > 0).map((edge) => {
-      var _a3, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
+      var _a3, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
       const node = edge.node;
       const unitPrice = Number(((_b2 = (_a3 = node.originalUnitPriceSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
       const currencyCode = ((_d2 = (_c2 = node.originalUnitPriceSet) == null ? void 0 : _c2.shopMoney) == null ? void 0 : _d2.currencyCode) || "USD";
@@ -1759,15 +2605,17 @@ async function loader$p({
       };
       const image = node.image || ((_i = (_h = (_g = (_f = (_e2 = node.variant) == null ? void 0 : _e2.media) == null ? void 0 : _f.edges) == null ? void 0 : _g[0]) == null ? void 0 : _h.node) == null ? void 0 : _i.image) || null;
       const selectedOptions = ((_j = node.variant) == null ? void 0 : _j.selectedOptions) || [];
+      const itemSku = node.sku || ((_k = node.variant) == null ? void 0 : _k.sku) || "";
       const merchandise = {
-        id: ((_k = node.variant) == null ? void 0 : _k.id) || "",
+        id: ((_l = node.variant) == null ? void 0 : _l.id) || "",
         title: node.title || node.name || "",
+        sku: itemSku,
         image,
         selectedOptions,
         product: {
-          id: ((_m = (_l = node.variant) == null ? void 0 : _l.product) == null ? void 0 : _m.id) || "",
-          title: ((_o = (_n = node.variant) == null ? void 0 : _n.product) == null ? void 0 : _o.title) || node.title || node.name || "",
-          vendor: ((_q = (_p = node.variant) == null ? void 0 : _p.product) == null ? void 0 : _q.vendor) || ""
+          id: ((_n = (_m = node.variant) == null ? void 0 : _m.product) == null ? void 0 : _n.id) || "",
+          title: ((_p = (_o = node.variant) == null ? void 0 : _o.product) == null ? void 0 : _p.title) || node.title || node.name || "",
+          vendor: ((_r = (_q = node.variant) == null ? void 0 : _q.product) == null ? void 0 : _r.vendor) || ""
         }
       };
       const cost = {
@@ -1778,6 +2626,7 @@ async function loader$p({
         name: node.name,
         title: node.title || node.name,
         variantTitle: node.variantTitle,
+        sku: itemSku,
         currentQuantity: node.currentQuantity,
         quantity: node.currentQuantity,
         image,
@@ -1823,7 +2672,7 @@ async function action$j({
     status: 405
   }));
 }
-const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$j,
   loader: loader$p
@@ -1846,7 +2695,7 @@ const action$i = async ({
   }
   return new Response();
 };
-const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$i
 }, Symbol.toStringTag, { value: "Module" }));
@@ -1944,7 +2793,7 @@ async function action$h({
     status: 405
   }));
 }
-const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$h,
   loader: loader$o
@@ -2067,7 +2916,7 @@ async function action$g({
     status: 405
   }));
 }
-const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$g,
   loader: loader$n
@@ -2081,14 +2930,14 @@ function decodeTag$2(description) {
   const closeIdx = rest.indexOf("}");
   if (closeIdx === -1) return null;
   const raw = rest.slice(0, closeIdx + 1);
-  const label2 = rest.slice(closeIdx + 1).trim();
+  const label = rest.slice(closeIdx + 1).trim();
   try {
     const parsed = JSON.parse(raw);
     return {
       checkoutAmount: parsed.c ?? 0,
       productAmount: parsed.p ?? 0,
       orderAmount: parsed.o ?? 0,
-      label: label2
+      label
     };
   } catch {
     return null;
@@ -2214,13 +3063,13 @@ async function resolveDiscountCode$3(admin, code) {
     };
   }
   const value = (_b = codeDiscount.customerGets) == null ? void 0 : _b.value;
-  const label2 = codeDiscount.title || code.trim().toUpperCase();
+  const label = codeDiscount.title || code.trim().toUpperCase();
   if ((value == null ? void 0 : value.percentage) != null) {
     return {
       ok: true,
       kind: "percentage",
       percentage: value.percentage * 100,
-      label: label2
+      label
     };
   }
   if ((_c = value == null ? void 0 : value.amount) == null ? void 0 : _c.amount) {
@@ -2229,7 +3078,7 @@ async function resolveDiscountCode$3(admin, code) {
       kind: "fixed",
       amount: value.amount.amount,
       currencyCode: value.amount.currencyCode,
-      label: label2
+      label
     };
   }
   return {
@@ -2565,7 +3414,7 @@ async function action$f({
     }));
   }
 }
-const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$f,
   loader: loader$m
@@ -3009,7 +3858,7 @@ async function action$e({
     }));
   }
 }
-const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$e,
   loader: loader$l
@@ -3496,7 +4345,7 @@ async function action$d({
     }));
   }
 }
-const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$d,
   loader: loader$k
@@ -4004,7 +4853,7 @@ async function action$c({
     }));
   }
 }
-const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$c,
   loader: loader$j
@@ -4026,14 +4875,14 @@ function decodeTag$1(description) {
   const closeIdx = rest.indexOf("}");
   if (closeIdx === -1) return null;
   const raw = rest.slice(0, closeIdx + 1);
-  const label2 = rest.slice(closeIdx + 1).trim();
+  const label = rest.slice(closeIdx + 1).trim();
   try {
     const parsed = JSON.parse(raw);
     return {
       checkoutAmount: parsed.c ?? 0,
       productAmount: parsed.p ?? 0,
       orderAmount: parsed.o ?? 0,
-      label: label2
+      label
     };
   } catch {
     return null;
@@ -4207,13 +5056,13 @@ async function resolveDiscountCode$2(admin, code) {
     collectionIds
   };
   const value = (_f = codeDiscount.customerGets) == null ? void 0 : _f.value;
-  const label2 = codeDiscount.title || code.trim().toUpperCase();
+  const label = codeDiscount.title || code.trim().toUpperCase();
   if ((value == null ? void 0 : value.percentage) != null) {
     return {
       ok: true,
       kind: "percentage",
       percentage: value.percentage * 100,
-      label: label2,
+      label,
       targeting
     };
   }
@@ -4223,7 +5072,7 @@ async function resolveDiscountCode$2(admin, code) {
       kind: "fixed",
       amount: value.amount.amount,
       currencyCode: value.amount.currencyCode,
-      label: label2,
+      label,
       targeting
     };
   }
@@ -4526,7 +5375,7 @@ async function action$b({
     }));
   }
 }
-const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$b,
   loader: loader$i
@@ -4548,14 +5397,14 @@ function decodeTag(description) {
   const closeIdx = rest.indexOf("}");
   if (closeIdx === -1) return null;
   const raw = rest.slice(0, closeIdx + 1);
-  const label2 = rest.slice(closeIdx + 1).trim();
+  const label = rest.slice(closeIdx + 1).trim();
   try {
     const parsed = JSON.parse(raw);
     return {
       checkoutAmount: parsed.c ?? 0,
       productAmount: parsed.p ?? 0,
       orderAmount: parsed.o ?? 0,
-      label: label2
+      label
     };
   } catch {
     return null;
@@ -4730,13 +5579,13 @@ async function resolveDiscountCode$1(admin, code) {
     collectionIds
   };
   const value = (_f = codeDiscount.customerGets) == null ? void 0 : _f.value;
-  const label2 = codeDiscount.title || code.trim().toUpperCase();
+  const label = codeDiscount.title || code.trim().toUpperCase();
   if ((value == null ? void 0 : value.percentage) != null) {
     return {
       ok: true,
       kind: "percentage",
       percentage: value.percentage * 100,
-      label: label2,
+      label,
       targeting
     };
   }
@@ -4746,7 +5595,7 @@ async function resolveDiscountCode$1(admin, code) {
       kind: "fixed",
       amount: value.amount.amount,
       currencyCode: value.amount.currencyCode,
-      label: label2,
+      label,
       targeting
     };
   }
@@ -5084,7 +5933,7 @@ async function action$a({
     }));
   }
 }
-const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$a,
   loader: loader$h
@@ -5565,6 +6414,18 @@ async function resolveDiscountCode(admin, code) {
               productDiscounts
               shippingDiscounts
             }
+            minimumRequirement {
+              __typename
+              ... on DiscountMinimumQuantity {
+                greaterThanOrEqualToQuantity
+              }
+              ... on DiscountMinimumSubtotal {
+                greaterThanOrEqualToSubtotal {
+                  amount
+                  currencyCode
+                }
+              }
+            }
             customerGets {
               value {
                 ... on DiscountPercentage { percentage }
@@ -5646,6 +6507,7 @@ async function resolveDiscountCode(admin, code) {
               amount
             }
             minimumRequirement {
+              __typename
               ... on DiscountMinimumQuantity {
                 greaterThanOrEqualToQuantity
               }
@@ -5726,21 +6588,37 @@ async function resolveDiscountCode(admin, code) {
       productIds,
       collectionIds
     };
-    const label2 = codeDiscount.title || cleanCode;
+    const label = codeDiscount.title || cleanCode;
     const combinesWith = {
       orderDiscounts: !!((_g = codeDiscount.combinesWith) == null ? void 0 : _g.orderDiscounts),
       productDiscounts: !!((_h = codeDiscount.combinesWith) == null ? void 0 : _h.productDiscounts),
       shippingDiscounts: !!((_i = codeDiscount.combinesWith) == null ? void 0 : _i.shippingDiscounts)
     };
+    let minQty = null;
+    let minSubtotal = null;
+    const minReq = codeDiscount.minimumRequirement;
+    if (minReq && (minReq.__typename === "DiscountMinimumQuantity" || minReq.greaterThanOrEqualToQuantity != null) && minReq.greaterThanOrEqualToQuantity != null) {
+      minQty = parseInt(String(minReq.greaterThanOrEqualToQuantity), 10);
+    } else if (minReq && (minReq.__typename === "DiscountMinimumSubtotal" || minReq.greaterThanOrEqualToSubtotal != null) && minReq.greaterThanOrEqualToSubtotal != null) {
+      const subtotalObj = minReq.greaterThanOrEqualToSubtotal;
+      const subtotalAmt = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.amount : subtotalObj;
+      const subtotalCurr = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.currencyCode : "USD";
+      minSubtotal = {
+        amount: parseFloat(String(subtotalAmt || 0)),
+        currencyCode: String(subtotalCurr || "USD")
+      };
+    }
     if ((value == null ? void 0 : value.percentage) != null) {
       return {
         ok: true,
         type: "basic",
         kind: "percentage",
         percentage: value.percentage * 100,
-        label: label2,
+        label,
         targeting,
-        combinesWith
+        combinesWith,
+        minimumQuantity: minQty,
+        minimumSubtotal: minSubtotal
       };
     }
     if ((_j = value == null ? void 0 : value.amount) == null ? void 0 : _j.amount) {
@@ -5750,9 +6628,11 @@ async function resolveDiscountCode(admin, code) {
         kind: "fixed",
         amount: value.amount.amount,
         currencyCode: value.amount.currencyCode,
-        label: label2,
+        label,
         targeting,
-        combinesWith
+        combinesWith,
+        minimumQuantity: minQty,
+        minimumSubtotal: minSubtotal
       };
     }
     return {
@@ -5830,12 +6710,15 @@ async function resolveDiscountCode(admin, code) {
     let minQty = null;
     let minSubtotal = null;
     const minReq = codeDiscount.minimumRequirement;
-    if ((minReq == null ? void 0 : minReq.__typename) === "DiscountMinimumQuantity" && minReq.greaterThanOrEqualToQuantity) {
+    if (minReq && (minReq.__typename === "DiscountMinimumQuantity" || minReq.greaterThanOrEqualToQuantity != null) && minReq.greaterThanOrEqualToQuantity != null) {
       minQty = parseInt(String(minReq.greaterThanOrEqualToQuantity), 10);
-    } else if ((minReq == null ? void 0 : minReq.__typename) === "DiscountMinimumSubtotal" && minReq.greaterThanOrEqualToSubtotal) {
+    } else if (minReq && (minReq.__typename === "DiscountMinimumSubtotal" || minReq.greaterThanOrEqualToSubtotal != null) && minReq.greaterThanOrEqualToSubtotal != null) {
+      const subtotalObj = minReq.greaterThanOrEqualToSubtotal;
+      const subtotalAmt = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.amount : subtotalObj;
+      const subtotalCurr = typeof subtotalObj === "object" && subtotalObj !== null ? subtotalObj.currencyCode : "USD";
       minSubtotal = {
-        amount: parseFloat(minReq.greaterThanOrEqualToSubtotal.amount),
-        currencyCode: minReq.greaterThanOrEqualToSubtotal.currencyCode
+        amount: parseFloat(String(subtotalAmt || 0)),
+        currencyCode: String(subtotalCurr || "USD")
       };
     }
     const combinesWith = {
@@ -5916,7 +6799,7 @@ async function loader$g({
 async function action$9({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia, _ja, _ka, _la, _ma, _na, _oa, _pa, _qa, _ra, _sa, _ta, _ua, _va, _wa, _xa, _ya, _za, _Aa, _Ba, _Ca, _Da, _Ea, _Fa, _Ga, _Ha, _Ia, _Ja, _Ka, _La, _Ma, _Na, _Oa, _Pa, _Qa, _Ra, _Sa, _Ta, _Ua, _Va, _Wa, _Xa, _Ya, _Za, __a, _$a, _ab, _bb, _cb, _db, _eb, _fb, _gb, _hb, _ib, _jb, _kb, _lb, _mb;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q, _R, _S, _T, _U, _V, _W, _X, _Y, _Z, __, _$, _aa, _ba, _ca, _da, _ea, _fa, _ga, _ha, _ia, _ja, _ka, _la, _ma, _na, _oa, _pa, _qa, _ra, _sa, _ta, _ua, _va, _wa, _xa, _ya, _za, _Aa, _Ba, _Ca, _Da, _Ea, _Fa, _Ga, _Ha, _Ia, _Ja, _Ka, _La, _Ma, _Na, _Oa, _Pa, _Qa, _Ra, _Sa, _Ta, _Ua, _Va, _Wa, _Xa, _Ya, _Za, __a, _$a, _ab, _bb, _cb, _db, _eb, _fb, _gb, _hb, _ib, _jb, _kb, _lb, _mb, _nb, _ob, _pb, _qb;
   const {
     sessionToken,
     cors
@@ -6388,12 +7271,12 @@ async function action$9({
       }
       const isSameLineItem = eligibleYItems.length === 1 && lineItemMatchesRule(eligibleYItems[0], resolved.buyRule);
       if (isSameLineItem) {
-        const itemQty = eligibleYItems[0].editableQuantity ?? eligibleYItems[0].quantity;
+        const itemQty2 = eligibleYItems[0].editableQuantity ?? eligibleYItems[0].quantity;
         const neededQty = resolved.buyRule.minQuantity + resolved.getRule.quantity;
-        if (itemQty < neededQty) {
+        if (itemQty2 < neededQty) {
           return cors(Response.json({
             userErrors: [{
-              message: `Discount code "${discountCode}" requires at least ${neededQty} units of "${lineItemDisplayName(eligibleYItems[0])}" in your order (Buy ${resolved.buyRule.minQuantity}, Get ${resolved.getRule.quantity}). Current quantity is ${itemQty}.`
+              message: `Discount code "${discountCode}" requires at least ${neededQty} units of "${lineItemDisplayName(eligibleYItems[0])}" in your order (Buy ${resolved.buyRule.minQuantity}, Get ${resolved.getRule.quantity}). Current quantity is ${itemQty2}.`
             }]
           }, {
             status: 422
@@ -6662,6 +7545,38 @@ async function action$9({
         status: 422
       }));
     }
+    if (resolved.minimumQuantity != null || resolved.minimumSubtotal != null) {
+      let targetActiveQty = 0;
+      let targetActiveSubtotal = 0;
+      let targetCurrencyCode = "USD";
+      for (const item of targetLineItems) {
+        const qty = item.editableQuantity ?? item.quantity;
+        const originalUnit = parseFloat(((_va = (_ua = item.originalUnitPriceSet) == null ? void 0 : _ua.shopMoney) == null ? void 0 : _va.amount) ?? "0");
+        if ((_xa = (_wa = item.originalUnitPriceSet) == null ? void 0 : _wa.shopMoney) == null ? void 0 : _xa.currencyCode) {
+          targetCurrencyCode = item.originalUnitPriceSet.shopMoney.currencyCode;
+        }
+        targetActiveQty += qty;
+        targetActiveSubtotal += qty * originalUnit;
+      }
+      if (resolved.minimumQuantity != null && targetActiveQty < resolved.minimumQuantity) {
+        return cors(Response.json({
+          userErrors: [{
+            message: `Discount code "${discountCode}" requires a minimum of ${resolved.minimumQuantity} eligible item(s) in the order.`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+      if (resolved.minimumSubtotal != null && targetActiveSubtotal < resolved.minimumSubtotal.amount) {
+        return cors(Response.json({
+          userErrors: [{
+            message: `Discount code "${discountCode}" requires a minimum subtotal of ${resolved.minimumSubtotal.amount.toFixed(2)} ${resolved.minimumSubtotal.currencyCode || targetCurrencyCode}.`
+          }]
+        }, {
+          status: 422
+        }));
+      }
+    }
     const warnings = [];
     const appliedProducts = [];
     const skippedProducts = [];
@@ -6670,7 +7585,7 @@ async function action$9({
     let totalNewDiscount = 0;
     for (const item of targetLineItems) {
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_va = (_ua = item.originalUnitPriceSet) == null ? void 0 : _ua.shopMoney) == null ? void 0 : _va.amount) ?? "0");
+      const originalUnit = parseFloat(((_za = (_ya = item.originalUnitPriceSet) == null ? void 0 : _ya.shopMoney) == null ? void 0 : _za.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
       const amount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
@@ -6703,7 +7618,7 @@ async function action$9({
     }
     if (incompatibleDiscounts.length > 0) {
       const totalIncompatibleAmount = round2$3(incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0));
-      const orderCurrency = ((_xa = (_wa = calculatedOrder.totalPriceSet) == null ? void 0 : _wa.presentmentMoney) == null ? void 0 : _xa.currencyCode) || ((_Aa = (_za = (_ya = targetLineItems[0]) == null ? void 0 : _ya.originalUnitPriceSet) == null ? void 0 : _za.presentmentMoney) == null ? void 0 : _Aa.currencyCode) || ((_Da = (_Ca = (_Ba = targetLineItems[0]) == null ? void 0 : _Ba.originalUnitPriceSet) == null ? void 0 : _Ca.shopMoney) == null ? void 0 : _Da.currencyCode) || "USD";
+      const orderCurrency = ((_Ba = (_Aa = calculatedOrder.totalPriceSet) == null ? void 0 : _Aa.presentmentMoney) == null ? void 0 : _Ba.currencyCode) || ((_Ea = (_Da = (_Ca = targetLineItems[0]) == null ? void 0 : _Ca.originalUnitPriceSet) == null ? void 0 : _Da.presentmentMoney) == null ? void 0 : _Ea.currencyCode) || ((_Ha = (_Ga = (_Fa = targetLineItems[0]) == null ? void 0 : _Fa.originalUnitPriceSet) == null ? void 0 : _Ga.shopMoney) == null ? void 0 : _Ha.currencyCode) || "USD";
       if (totalIncompatibleAmount >= totalNewDiscount) {
         const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
         return cors(Response.json({
@@ -6730,9 +7645,9 @@ async function action$9({
           }
         });
         const removeJson = await removeRes.json();
-        const removeErrors = ((_Fa = (_Ea = removeJson.data) == null ? void 0 : _Ea.orderEditRemoveDiscount) == null ? void 0 : _Fa.userErrors) ?? [];
-        if (((_Ga = removeJson.errors) == null ? void 0 : _Ga.length) || removeErrors.length) {
-          const rawMsg = ((_Ha = removeErrors[0]) == null ? void 0 : _Ha.message) ?? ((_Ja = (_Ia = removeJson.errors) == null ? void 0 : _Ia[0]) == null ? void 0 : _Ja.message) ?? "unknown error";
+        const removeErrors = ((_Ja = (_Ia = removeJson.data) == null ? void 0 : _Ia.orderEditRemoveDiscount) == null ? void 0 : _Ja.userErrors) ?? [];
+        if (((_Ka = removeJson.errors) == null ? void 0 : _Ka.length) || removeErrors.length) {
+          const rawMsg = ((_La = removeErrors[0]) == null ? void 0 : _La.message) ?? ((_Na = (_Ma = removeJson.errors) == null ? void 0 : _Ma[0]) == null ? void 0 : _Na.message) ?? "unknown error";
           return cors(Response.json({
             userErrors: [{
               message: `Existing discount "${incomp.codeOrLabel}" cannot be combined with "${discountCode}" and could not be removed: ${rawMsg}`
@@ -6747,9 +7662,9 @@ async function action$9({
       const displayName = lineItemDisplayName(item);
       const state = readLineItemDiscountState(item);
       const activeQty = item.editableQuantity ?? item.quantity;
-      const originalUnit = parseFloat(((_La = (_Ka = item.originalUnitPriceSet) == null ? void 0 : _Ka.presentmentMoney) == null ? void 0 : _La.amount) ?? ((_Na = (_Ma = item.originalUnitPriceSet) == null ? void 0 : _Ma.shopMoney) == null ? void 0 : _Na.amount) ?? "0");
+      const originalUnit = parseFloat(((_Pa = (_Oa = item.originalUnitPriceSet) == null ? void 0 : _Oa.presentmentMoney) == null ? void 0 : _Pa.amount) ?? ((_Ra = (_Qa = item.originalUnitPriceSet) == null ? void 0 : _Qa.shopMoney) == null ? void 0 : _Ra.amount) ?? "0");
       const originalLineTotal = originalUnit * activeQty;
-      const currencyCode = ((_Pa = (_Oa = calculatedOrder.totalPriceSet) == null ? void 0 : _Oa.presentmentMoney) == null ? void 0 : _Pa.currencyCode) || ((_Ra = (_Qa = item.originalUnitPriceSet) == null ? void 0 : _Qa.presentmentMoney) == null ? void 0 : _Ra.currencyCode) || state.currencyCode || ((_Ta = (_Sa = item.originalUnitPriceSet) == null ? void 0 : _Sa.shopMoney) == null ? void 0 : _Ta.currencyCode) || "USD";
+      const currencyCode = ((_Ta = (_Sa = calculatedOrder.totalPriceSet) == null ? void 0 : _Sa.presentmentMoney) == null ? void 0 : _Ta.currencyCode) || ((_Va = (_Ua = item.originalUnitPriceSet) == null ? void 0 : _Ua.presentmentMoney) == null ? void 0 : _Va.currencyCode) || state.currencyCode || ((_Xa = (_Wa = item.originalUnitPriceSet) == null ? void 0 : _Wa.shopMoney) == null ? void 0 : _Xa.currencyCode) || "USD";
       const newProductAmount = discountAmountAgainst(resolved.kind === "percentage" ? {
         kind: "percentage",
         percentage: resolved.percentage
@@ -6777,8 +7692,8 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_Va = (_Ua = removeJson.data) == null ? void 0 : _Ua.orderEditRemoveDiscount) == null ? void 0 : _Va.userErrors) ?? [];
-          if (((_Wa = removeJson.errors) == null ? void 0 : _Wa.length) || removeErrors.length) {
+          const removeErrors = ((_Za = (_Ya = removeJson.data) == null ? void 0 : _Ya.orderEditRemoveDiscount) == null ? void 0 : _Za.userErrors) ?? [];
+          if (((__a = removeJson.errors) == null ? void 0 : __a.length) || removeErrors.length) {
             warnings.push(`"${displayName}" already has a discount that was applied during checkout and cannot be replaced or removed.`);
             skippedProducts.push(displayName);
             continue;
@@ -6804,9 +7719,9 @@ async function action$9({
             }
           });
           const removeJson = await removeRes.json();
-          const removeErrors = ((_Ya = (_Xa = removeJson.data) == null ? void 0 : _Xa.orderEditRemoveDiscount) == null ? void 0 : _Ya.userErrors) ?? [];
-          if (((_Za = removeJson.errors) == null ? void 0 : _Za.length) || removeErrors.length) {
-            const rawMessage = ((__a = removeErrors[0]) == null ? void 0 : __a.message) ?? ((_ab = (_$a = removeJson.errors) == null ? void 0 : _$a[0]) == null ? void 0 : _ab.message) ?? "unknown error";
+          const removeErrors = ((_ab = (_$a = removeJson.data) == null ? void 0 : _$a.orderEditRemoveDiscount) == null ? void 0 : _ab.userErrors) ?? [];
+          if (((_bb = removeJson.errors) == null ? void 0 : _bb.length) || removeErrors.length) {
+            const rawMessage = ((_cb = removeErrors[0]) == null ? void 0 : _cb.message) ?? ((_eb = (_db = removeJson.errors) == null ? void 0 : _db[0]) == null ? void 0 : _eb.message) ?? "unknown error";
             warnings.push(`Could not update the discount on "${displayName}": ${rawMessage}.`);
             skippedProducts.push(displayName);
             continue;
@@ -6847,9 +7762,9 @@ async function action$9({
         }
       });
       let applyJson = await applyRes.json();
-      let applyErrors = ((_cb = (_bb = applyJson.data) == null ? void 0 : _bb.orderEditAddLineItemDiscount) == null ? void 0 : _cb.userErrors) ?? [];
+      let applyErrors = ((_gb = (_fb = applyJson.data) == null ? void 0 : _fb.orderEditAddLineItemDiscount) == null ? void 0 : _gb.userErrors) ?? [];
       if (applyErrors.length) {
-        const currencyMatch = (_eb = (_db = applyErrors[0]) == null ? void 0 : _db.message) == null ? void 0 : _eb.match(/must be in ([A-Z]{3})/i);
+        const currencyMatch = (_ib = (_hb = applyErrors[0]) == null ? void 0 : _hb.message) == null ? void 0 : _ib.match(/must be in ([A-Z]{3})/i);
         if (currencyMatch) {
           const retryCurrency = currencyMatch[1].toUpperCase();
           applyRes = await admin.graphql(`#graphql
@@ -6872,11 +7787,11 @@ async function action$9({
             }
           });
           applyJson = await applyRes.json();
-          applyErrors = ((_gb = (_fb = applyJson.data) == null ? void 0 : _fb.orderEditAddLineItemDiscount) == null ? void 0 : _gb.userErrors) ?? [];
+          applyErrors = ((_kb = (_jb = applyJson.data) == null ? void 0 : _jb.orderEditAddLineItemDiscount) == null ? void 0 : _kb.userErrors) ?? [];
         }
       }
-      if (((_hb = applyJson.errors) == null ? void 0 : _hb.length) || applyErrors.length) {
-        const rawMessage = ((_jb = (_ib = applyJson.errors) == null ? void 0 : _ib[0]) == null ? void 0 : _jb.message) ?? ((_kb = applyErrors[0]) == null ? void 0 : _kb.message) ?? "unknown error";
+      if (((_lb = applyJson.errors) == null ? void 0 : _lb.length) || applyErrors.length) {
+        const rawMessage = ((_nb = (_mb = applyJson.errors) == null ? void 0 : _mb[0]) == null ? void 0 : _nb.message) ?? ((_ob = applyErrors[0]) == null ? void 0 : _ob.message) ?? "unknown error";
         warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);
         skippedProducts.push(displayName);
         continue;
@@ -6921,7 +7836,7 @@ async function action$9({
       }
     });
     const commitJson = await commitRes.json();
-    const commitErrors = ((_mb = (_lb = commitJson.data) == null ? void 0 : _lb.orderEditCommit) == null ? void 0 : _mb.userErrors) ?? [];
+    const commitErrors = ((_qb = (_pb = commitJson.data) == null ? void 0 : _pb.orderEditCommit) == null ? void 0 : _qb.userErrors) ?? [];
     if (commitErrors.length) {
       return cors(Response.json({
         userErrors: commitErrors
@@ -6959,7 +7874,7 @@ async function action$9({
     }));
   }
 }
-const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$9,
   loader: loader$g
@@ -7372,35 +8287,35 @@ function generateInvoicePdf(order) {
       let billedY = infoTop + 15;
       if (customerName) {
         doc.text(customerName, 50, billedY, { width: 230 });
-        billedY += 13;
+        billedY = Math.max(billedY + 13, doc.y + 2.5);
       }
       if (customerEmail) {
         doc.text(customerEmail, 50, billedY, { width: 230 });
-        billedY += 13;
+        billedY = Math.max(billedY + 13, doc.y + 2.5);
       }
       for (const line of billingLines) {
         doc.text(line, 50, billedY, { width: 230 });
-        billedY += 13;
+        billedY = Math.max(billedY + 13, doc.y + 2.5);
       }
       doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000").text("Shipped To", 295, infoTop);
       doc.font("Helvetica").fontSize(9);
       let shippedY = infoTop + 15;
       if (recipientName) {
         doc.text(recipientName, 295, shippedY, { width: 250 });
-        shippedY += 13;
+        shippedY = Math.max(shippedY + 13, doc.y + 2.5);
       }
       if (order.shippingAddress) {
         for (const line of shippingLines) {
           doc.text(line, 295, shippedY, { width: 250 });
-          shippedY += 13;
+          shippedY = Math.max(shippedY + 13, doc.y + 2.5);
         }
       } else if (billingLines.length > 0) {
         doc.text("Same as billing address", 295, shippedY, { width: 250 });
-        shippedY += 13;
+        shippedY = Math.max(shippedY + 13, doc.y + 2.5);
       }
       if (shippingTitle) {
         doc.font("Helvetica-Bold").text("Method: ", 295, shippedY, { continued: true, width: 250 }).font("Helvetica").text(shippingTitle);
-        shippedY += 13;
+        shippedY = Math.max(shippedY + 13, doc.y + 2.5);
       }
       doc.y = Math.max(billedY, shippedY) + 12;
       doc.moveDown(0.5);
@@ -7516,13 +8431,13 @@ function generateInvoicePdf(order) {
       let totalsY = rowY + 16;
       const labelX = 295;
       const labelWidth = col.total - labelX - 10;
-      const totalsRow = (label2, value, bold = false, isDiscount = false, extraSpacingBelow = 0) => {
+      const totalsRow = (label, value, bold = false, isDiscount = false, extraSpacingBelow = 0) => {
         if (!value) return;
         const valNum = Number(value.amount || 0);
         if (isDiscount && valNum <= 0) return;
         doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(9).fillColor("#000000");
-        const labelHeight = Math.ceil(doc.heightOfString(label2, { width: labelWidth }));
-        doc.text(label2, labelX, totalsY, { width: labelWidth, align: "left" });
+        const labelHeight = Math.ceil(doc.heightOfString(label, { width: labelWidth }));
+        doc.text(label, labelX, totalsY, { width: labelWidth, align: "left" });
         const formattedVal = isDiscount ? `-${formatMoney(value, currency)}` : formatMoney(value, currency);
         doc.text(formattedVal, col.total, totalsY, { width: 65, align: "right" });
         const rowHeight = Math.max(16, labelHeight + 2);
@@ -7555,8 +8470,8 @@ function generateInvoicePdf(order) {
         shippingMoney = { amount: "0.00", currencyCode: currency };
       }
       const isZeroShipping = Number(shippingMoney.amount) === 0;
-      const shippingLabel = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
-      totalsRow(shippingLabel, shippingMoney, false, false, 5);
+      const shippingLabel2 = formatShippingLabel(shippingTitle, freeShippingCode, isZeroShipping);
+      totalsRow(shippingLabel2, shippingMoney, false, false, 5);
       if (((_w = order.currentTotalTaxSet) == null ? void 0 : _w.presentmentMoney) || ((_x = order.currentTotalTaxSet) == null ? void 0 : _x.shopMoney)) {
         totalsRow("Tax", getMoney(order.currentTotalTaxSet, currency));
       }
@@ -7663,7 +8578,7 @@ async function loader$f({
     });
   }
 }
-const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$f
 }, Symbol.toStringTag, { value: "Module" }));
@@ -7754,25 +8669,25 @@ async function action$8({
       } catch {
         return null;
       }
-    }, extractInvisiblePayload = function(text2) {
-      let start = text2.indexOf(ZW_MARK_NEW);
+    }, extractInvisiblePayload = function(text) {
+      let start = text.indexOf(ZW_MARK_NEW);
       if (start !== -1) {
-        const end = text2.indexOf(ZW_MARK_NEW, start + 1);
+        const end = text.indexOf(ZW_MARK_NEW, start + 1);
         if (end !== -1) {
-          const payload = decodeBase4(text2.slice(start + 1, end));
-          const visible = text2.slice(0, start) + text2.slice(end + 1);
+          const payload = decodeBase4(text.slice(start + 1, end));
+          const visible = text.slice(0, start) + text.slice(end + 1);
           return {
             visible,
             payload
           };
         }
       }
-      start = text2.indexOf(ZW_MARK_OLD);
+      start = text.indexOf(ZW_MARK_OLD);
       if (start !== -1) {
-        const end = text2.indexOf(ZW_MARK_OLD, start + 1);
+        const end = text.indexOf(ZW_MARK_OLD, start + 1);
         if (end !== -1) {
-          const payload = decodeOldBinary(text2.slice(start + 1, end));
-          const visible = text2.slice(0, start) + text2.slice(end + 1);
+          const payload = decodeOldBinary(text.slice(start + 1, end));
+          const visible = text.slice(0, start) + text.slice(end + 1);
           return {
             visible,
             payload
@@ -7780,7 +8695,7 @@ async function action$8({
         }
       }
       return {
-        visible: text2,
+        visible: text,
         payload: null
       };
     }, formatPercentForDisplay = function(percent) {
@@ -8304,8 +9219,8 @@ async function action$8({
           appliedCount += 1;
           continue;
         }
-        const itemQty = item.editableQuantity ?? item.quantity ?? 1;
-        const perUnitAdditionalAmount = Math.min(additionalDiscountAmount / itemQty, originalUnit);
+        const itemQty2 = item.editableQuantity ?? item.quantity ?? 1;
+        const perUnitAdditionalAmount = Math.min(additionalDiscountAmount / itemQty2, originalUnit);
         itemDiscountInput = {
           fixedValue: {
             amount: perUnitAdditionalAmount.toFixed(2),
@@ -8397,7 +9312,7 @@ async function action$8({
     }));
   }
 }
-const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$8,
   loader: loader$e
@@ -8987,7 +9902,7 @@ async function action$7({
     }));
   }
 }
-const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$7,
   loader: loader$d
@@ -9128,6 +10043,42 @@ async function action$6({
       status: 400
     }));
   }
+  const fieldsToCheck = [{
+    name: "First name",
+    value: address.firstName
+  }, {
+    name: "Last name",
+    value: address.lastName
+  }, {
+    name: "Address line 1",
+    value: address.address1
+  }, {
+    name: "Address line 2",
+    value: address.address2
+  }, {
+    name: "City",
+    value: address.city
+  }, {
+    name: "State / Province",
+    value: address.province
+  }, {
+    name: "Postal / ZIP code",
+    value: address.zip
+  }, {
+    name: "Phone",
+    value: address.phone
+  }];
+  for (const f of fieldsToCheck) {
+    if (f.value && String(f.value).trim().length > 50) {
+      return cors(Response.json({
+        userErrors: [{
+          message: `${f.name} cannot exceed 50 characters.`
+        }]
+      }, {
+        status: 400
+      }));
+    }
+  }
   const ownerRes = await admin.graphql(`#graphql
     query getOrderOwner($id: ID!) {
       order(id: $id) {
@@ -9173,21 +10124,21 @@ async function action$6({
   }
   const allowedCountryCode = ((_c = order.billingAddress) == null ? void 0 : _c.countryCode) || ((_d = order.shippingAddress) == null ? void 0 : _d.countryCode) || address.countryCode;
   const mailingAddress = {
-    firstName: address.firstName || "",
-    lastName: address.lastName || "",
-    address1: address.address1,
-    address2: address.address2 || "",
-    city: address.city,
-    province: address.province || "",
-    zip: address.zip || "",
+    firstName: (address.firstName || "").slice(0, 50),
+    lastName: (address.lastName || "").slice(0, 50),
+    address1: (address.address1 || "").slice(0, 50),
+    address2: (address.address2 || "").slice(0, 50),
+    city: (address.city || "").slice(0, 50),
+    province: (address.province || "").slice(0, 50),
+    zip: (address.zip || "").slice(0, 50),
     countryCode: allowedCountryCode,
-    phone: address.phone || ""
+    phone: (address.phone || "").slice(0, 50)
   };
-  const input2 = {
+  const input = {
     id: orderId
   };
   if (addressType === "shipping") {
-    input2.shippingAddress = mailingAddress;
+    input.shippingAddress = mailingAddress;
   } else {
     return cors(Response.json({
       userErrors: [{
@@ -9221,7 +10172,7 @@ async function action$6({
         }
       }`, {
       variables: {
-        input: input2
+        input
       }
     });
     const updateJson = await updateRes.json();
@@ -9258,7 +10209,7 @@ async function action$6({
     }));
   }
 }
-const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$6,
   loader: loader$c
@@ -9292,9 +10243,9 @@ function isValidEmail(email) {
     return false;
   }
   for (let i = 0; i < domainLabels.length - 1; i++) {
-    const label2 = domainLabels[i];
-    if (!label2 || label2.length > 63) return false;
-    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label2)) {
+    const label = domainLabels[i];
+    if (!label || label.length > 63) return false;
+    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label)) {
       return false;
     }
   }
@@ -9449,11 +10400,11 @@ async function action$5({
       status: 400
     }));
   }
-  const input2 = {
+  const input = {
     id: orderId
   };
-  if (emailStr) input2.email = emailStr;
-  if (phoneStr) input2.phone = phoneStr;
+  if (emailStr) input.email = emailStr;
+  if (phoneStr) input.phone = phoneStr;
   try {
     const updateRes = await admin.graphql(`#graphql
       mutation orderUpdate($input: OrderInput!) {
@@ -9469,7 +10420,7 @@ async function action$5({
         }
       }`, {
       variables: {
-        input: input2
+        input
       }
     });
     const updateJson = await updateRes.json();
@@ -9506,7 +10457,7 @@ async function action$5({
     }));
   }
 }
-const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$5,
   loader: loader$b
@@ -9610,7 +10561,7 @@ const action$4 = async ({
     }));
   }
 };
-const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$4,
   loader: loader$a
@@ -9721,7 +10672,7 @@ async function action$3({
     }));
   }
 }
-const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$3,
   loader: loader$9
@@ -9908,7 +10859,7 @@ async function action$2({
     }));
   }
 }
-const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$2,
   loader: loader$8
@@ -9968,31 +10919,231 @@ const route$1 = UNSAFE_withComponentProps(function Auth() {
     })
   });
 });
-const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$1,
   default: route$1,
   loader: loader$7
 }, Symbol.toStringTag, { value: "Module" }));
-const index = "_index_12o3y_1";
-const heading = "_heading_12o3y_11";
-const text = "_text_12o3y_12";
-const content = "_content_12o3y_22";
-const form = "_form_12o3y_27";
-const label = "_label_12o3y_35";
-const input = "_input_12o3y_43";
-const button = "_button_12o3y_47";
-const list = "_list_12o3y_51";
+const pageWrapper = "_pageWrapper_ak723_18";
+const container = "_container_ak723_29";
+const header = "_header_ak723_37";
+const nav = "_nav_ak723_48";
+const logo = "_logo_ak723_55";
+const logoIcon = "_logoIcon_ak723_66";
+const logoText = "_logoText_ak723_77";
+const navLinks = "_navLinks_ak723_81";
+const navLink = "_navLink_ak723_81";
+const navActions = "_navActions_ak723_102";
+const installButtonPill = "_installButtonPill_ak723_108";
+const heroSection = "_heroSection_ak723_140";
+const heroGrid = "_heroGrid_ak723_144";
+const heroContent = "_heroContent_ak723_151";
+const heroBadge = "_heroBadge_ak723_155";
+const heroHeading = "_heroHeading_ak723_168";
+const heroDescription = "_heroDescription_ak723_177";
+const domainForm = "_domainForm_ak723_184";
+const formLabel = "_formLabel_ak723_190";
+const inputRow = "_inputRow_ak723_196";
+const domainInput = "_domainInput_ak723_203";
+const primaryButton = "_primaryButton_ak723_222";
+const formHelper = "_formHelper_ak723_242";
+const heroCardWrapper = "_heroCardWrapper_ak723_250";
+const orderCard = "_orderCard_ak723_255";
+const orderCardHeader = "_orderCardHeader_ak723_272";
+const orderNumber = "_orderNumber_ak723_279";
+const timerBadge = "_timerBadge_ak723_285";
+const timerPulse = "_timerPulse_ak723_297";
+const orderItemRow = "_orderItemRow_ak723_321";
+const itemThumb = "_itemThumb_ak723_332";
+const itemDetails = "_itemDetails_ak723_344";
+const itemTitle = "_itemTitle_ak723_348";
+const itemVariant = "_itemVariant_ak723_355";
+const variantFrom = "_variantFrom_ak723_363";
+const variantArrow = "_variantArrow_ak723_368";
+const variantTo = "_variantTo_ak723_373";
+const itemQty = "_itemQty_ak723_378";
+const shippingBox = "_shippingBox_ak723_384";
+const shippingLabel = "_shippingLabel_ak723_392";
+const shippingText = "_shippingText_ak723_401";
+const shippingTextSub = "_shippingTextSub_ak723_407";
+const saveChangesBtn = "_saveChangesBtn_ak723_412";
+const saveFeedback = "_saveFeedback_ak723_433";
+const syncNote = "_syncNote_ak723_437";
+const syncDot = "_syncDot_ak723_447";
+const whereSection = "_whereSection_ak723_456";
+const whereContainer = "_whereContainer_ak723_460";
+const whereHeading = "_whereHeading_ak723_470";
+const whereBlock = "_whereBlock_ak723_479";
+const whereBlockTitle = "_whereBlockTitle_ak723_484";
+const whereBlockText = "_whereBlockText_ak723_491";
+const featuresSection = "_featuresSection_ak723_500";
+const sectionEyebrow = "_sectionEyebrow_ak723_504";
+const sectionHeading = "_sectionHeading_ak723_513";
+const sectionSubhead = "_sectionSubhead_ak723_522";
+const featuresGrid = "_featuresGrid_ak723_528";
+const featureCard = "_featureCard_ak723_534";
+const featureNumber = "_featureNumber_ak723_550";
+const featureTitle = "_featureTitle_ak723_558";
+const featureText = "_featureText_ak723_566";
+const featuresNote = "_featuresNote_ak723_573";
+const howSection = "_howSection_ak723_581";
+const stepsGrid = "_stepsGrid_ak723_585";
+const stepCard = "_stepCard_ak723_592";
+const stepTag = "_stepTag_ak723_597";
+const stepTitle = "_stepTitle_ak723_604";
+const stepText = "_stepText_ak723_612";
+const controlsSection = "_controlsSection_ak723_621";
+const controlsCard = "_controlsCard_ak723_625";
+const controlsLeft = "_controlsLeft_ak723_636";
+const controlsEyebrow = "_controlsEyebrow_ak723_641";
+const controlsHeading = "_controlsHeading_ak723_650";
+const controlsSubhead = "_controlsSubhead_ak723_659";
+const controlsRight = "_controlsRight_ak723_666";
+const controlItem = "_controlItem_ak723_672";
+const controlItemTitle = "_controlItemTitle_ak723_677";
+const controlItemText = "_controlItemText_ak723_684";
+const faqSection = "_faqSection_ak723_693";
+const faqHeader = "_faqHeader_ak723_697";
+const faqContainer = "_faqContainer_ak723_702";
+const faqItem = "_faqItem_ak723_708";
+const faqQuestionBtn = "_faqQuestionBtn_ak723_712";
+const faqQuestionLeft = "_faqQuestionLeft_ak723_728";
+const faqArrow = "_faqArrow_ak723_734";
+const faqArrowOpen = "_faqArrowOpen_ak723_741";
+const faqAnswer = "_faqAnswer_ak723_745";
+const bottomCtaSection = "_bottomCtaSection_ak723_755";
+const bottomCtaCard = "_bottomCtaCard_ak723_759";
+const bottomCtaHeading = "_bottomCtaHeading_ak723_770";
+const bottomCtaSubhead = "_bottomCtaSubhead_ak723_779";
+const bottomCtaForm = "_bottomCtaForm_ak723_785";
+const bottomCtaFormGroup = "_bottomCtaFormGroup_ak723_793";
+const bottomCtaLabel = "_bottomCtaLabel_ak723_801";
+const bottomCtaInputRow = "_bottomCtaInputRow_ak723_807";
+const bottomCtaInput = "_bottomCtaInput_ak723_807";
+const bottomCtaButton = "_bottomCtaButton_ak723_831";
+const footer = "_footer_ak723_853";
+const footerContent = "_footerContent_ak723_858";
+const footerLeft = "_footerLeft_ak723_866";
+const footerRight = "_footerRight_ak723_870";
+const footerLink = "_footerLink_ak723_876";
+const modalBackdrop = "_modalBackdrop_ak723_893";
+const modalBox = "_modalBox_ak723_905";
+const modalCloseBtn = "_modalCloseBtn_ak723_917";
 const styles = {
-  index,
-  heading,
-  text,
-  content,
-  form,
-  label,
-  input,
-  button,
-  list
+  pageWrapper,
+  container,
+  header,
+  nav,
+  logo,
+  logoIcon,
+  logoText,
+  navLinks,
+  navLink,
+  navActions,
+  installButtonPill,
+  heroSection,
+  heroGrid,
+  heroContent,
+  heroBadge,
+  heroHeading,
+  heroDescription,
+  domainForm,
+  formLabel,
+  inputRow,
+  domainInput,
+  primaryButton,
+  formHelper,
+  heroCardWrapper,
+  orderCard,
+  orderCardHeader,
+  orderNumber,
+  timerBadge,
+  timerPulse,
+  orderItemRow,
+  itemThumb,
+  itemDetails,
+  itemTitle,
+  itemVariant,
+  variantFrom,
+  variantArrow,
+  variantTo,
+  itemQty,
+  shippingBox,
+  shippingLabel,
+  shippingText,
+  shippingTextSub,
+  saveChangesBtn,
+  saveFeedback,
+  syncNote,
+  syncDot,
+  whereSection,
+  whereContainer,
+  whereHeading,
+  whereBlock,
+  whereBlockTitle,
+  whereBlockText,
+  featuresSection,
+  sectionEyebrow,
+  sectionHeading,
+  sectionSubhead,
+  featuresGrid,
+  featureCard,
+  featureNumber,
+  featureTitle,
+  featureText,
+  featuresNote,
+  howSection,
+  stepsGrid,
+  stepCard,
+  stepTag,
+  stepTitle,
+  stepText,
+  controlsSection,
+  controlsCard,
+  controlsLeft,
+  controlsEyebrow,
+  controlsHeading,
+  controlsSubhead,
+  controlsRight,
+  controlItem,
+  controlItemTitle,
+  controlItemText,
+  faqSection,
+  faqHeader,
+  faqContainer,
+  faqItem,
+  faqQuestionBtn,
+  faqQuestionLeft,
+  faqArrow,
+  faqArrowOpen,
+  faqAnswer,
+  bottomCtaSection,
+  bottomCtaCard,
+  bottomCtaHeading,
+  bottomCtaSubhead,
+  bottomCtaForm,
+  bottomCtaFormGroup,
+  bottomCtaLabel,
+  bottomCtaInputRow,
+  bottomCtaInput,
+  bottomCtaButton,
+  footer,
+  footerContent,
+  footerLeft,
+  footerRight,
+  footerLink,
+  modalBackdrop,
+  modalBox,
+  modalCloseBtn
+};
+const meta = () => {
+  return [{
+    title: "OrderEase - Self-Serve Order Editing for Shopify"
+  }, {
+    name: "description",
+    content: "OrderEase lets shoppers update shipping addresses, sizes, colors and items on unfulfilled orders right after checkout, with no support ticket needed."
+  }];
 };
 const loader$6 = async ({
   request
@@ -10009,59 +11160,783 @@ const route = UNSAFE_withComponentProps(function App2() {
   const {
     showForm
   } = useLoaderData();
-  return /* @__PURE__ */ jsx("div", {
-    className: styles.index,
-    children: /* @__PURE__ */ jsxs("div", {
-      className: styles.content,
-      children: [/* @__PURE__ */ jsx("h1", {
-        className: styles.heading,
-        children: "A short heading about [your app]"
-      }), /* @__PURE__ */ jsx("p", {
-        className: styles.text,
-        children: "A tagline about [your app] that describes your value proposition."
-      }), showForm && /* @__PURE__ */ jsxs(Form, {
-        className: styles.form,
-        method: "post",
-        action: "/auth/login",
-        children: [/* @__PURE__ */ jsxs("label", {
-          className: styles.label,
-          children: [/* @__PURE__ */ jsx("span", {
-            children: "Shop domain"
-          }), /* @__PURE__ */ jsx("input", {
-            className: styles.input,
-            type: "text",
-            name: "shop"
-          }), /* @__PURE__ */ jsx("span", {
-            children: "e.g: my-shop-domain.myshopify.com"
+  const [shopDomain, setShopDomain] = useState("");
+  const [openFaq, setOpenFaq] = useState(null);
+  const [savedDemo, setSavedDemo] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(872);
+  const [activeModal, setActiveModal] = useState(null);
+  const heroInputRef = useRef(null);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSecondsLeft((prev) => prev > 0 ? prev - 1 : 900);
+    }, 1e3);
+    return () => clearInterval(timer);
+  }, []);
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+  const handleDemoSave = () => {
+    setSavedDemo(true);
+    setTimeout(() => setSavedDemo(false), 2200);
+  };
+  const scrollToInstall = (e) => {
+    var _a2;
+    e.preventDefault();
+    (_a2 = heroInputRef.current) == null ? void 0 : _a2.scrollIntoView({
+      behavior: "smooth",
+      block: "center"
+    });
+    setTimeout(() => {
+      var _a3;
+      (_a3 = heroInputRef.current) == null ? void 0 : _a3.focus();
+    }, 400);
+  };
+  const handleFormSubmit = (e) => {
+    const form = e.currentTarget;
+    const input = form.elements.namedItem("shop");
+    if (input && input.value) {
+      let val = input.value.trim().toLowerCase();
+      val = val.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      if (!val.includes(".") && val.length > 0) {
+        val = `${val}.myshopify.com`;
+      }
+      input.value = val;
+    }
+  };
+  const toggleFaq = (index) => {
+    setOpenFaq(openFaq === index ? null : index);
+  };
+  const handleSupportClick = () => {
+    var _a2;
+    if (typeof window !== "undefined" && ((_a2 = window.Tawk_API) == null ? void 0 : _a2.maximize)) {
+      window.Tawk_API.maximize();
+    } else {
+      setActiveModal("support");
+    }
+  };
+  const faqs = [{
+    q: "Which orders can customers edit?",
+    a: "Unfulfilled orders, within the time window and edit limits you configure."
+  }, {
+    q: "Does it update my Shopify admin?",
+    a: "Yes. Edits are validated first, then applied to the order in Shopify admin instantly."
+  }, {
+    q: "Where do customers find the editor?",
+    a: "On the checkout thank-you page and in the order details of their customer account."
+  }, {
+    q: "Can I turn features on or off?",
+    a: "Yes. Manage which of the 11 services are active from inside the app."
+  }];
+  return /* @__PURE__ */ jsxs("div", {
+    className: styles.pageWrapper,
+    children: [/* @__PURE__ */ jsx("header", {
+      className: styles.header,
+      children: /* @__PURE__ */ jsx("div", {
+        className: styles.container,
+        children: /* @__PURE__ */ jsxs("nav", {
+          className: styles.nav,
+          children: [/* @__PURE__ */ jsxs("a", {
+            href: "/",
+            className: styles.logo,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.logoIcon,
+              children: /* @__PURE__ */ jsx("svg", {
+                width: "16",
+                height: "16",
+                viewBox: "0 0 24 24",
+                fill: "none",
+                stroke: "currentColor",
+                strokeWidth: "3",
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                children: /* @__PURE__ */ jsx("polyline", {
+                  points: "20 6 9 17 4 12"
+                })
+              })
+            }), /* @__PURE__ */ jsx("span", {
+              className: styles.logoText,
+              children: "OrderEase"
+            })]
+          }), /* @__PURE__ */ jsxs("ul", {
+            className: styles.navLinks,
+            children: [/* @__PURE__ */ jsx("li", {
+              children: /* @__PURE__ */ jsx("a", {
+                href: "#features",
+                className: styles.navLink,
+                children: "Features"
+              })
+            }), /* @__PURE__ */ jsx("li", {
+              children: /* @__PURE__ */ jsx("a", {
+                href: "#how-it-works",
+                className: styles.navLink,
+                children: "How it works"
+              })
+            }), /* @__PURE__ */ jsx("li", {
+              children: /* @__PURE__ */ jsx("a", {
+                href: "#controls",
+                className: styles.navLink,
+                children: "Controls"
+              })
+            }), /* @__PURE__ */ jsx("li", {
+              children: /* @__PURE__ */ jsx("a", {
+                href: "#faq",
+                className: styles.navLink,
+                children: "FAQ"
+              })
+            })]
+          }), /* @__PURE__ */ jsx("div", {
+            className: styles.navActions,
+            children: /* @__PURE__ */ jsx("button", {
+              type: "button",
+              onClick: scrollToInstall,
+              className: styles.installButtonPill,
+              children: "Install app"
+            })
           })]
-        }), /* @__PURE__ */ jsx("button", {
-          className: styles.button,
-          type: "submit",
-          children: "Log in"
+        })
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: styles.heroSection,
+      children: /* @__PURE__ */ jsx("div", {
+        className: styles.container,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: styles.heroGrid,
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: styles.heroContent,
+            children: [/* @__PURE__ */ jsx("div", {
+              className: styles.heroBadge,
+              children: "Order editing for Shopify"
+            }), /* @__PURE__ */ jsxs("h1", {
+              className: styles.heroHeading,
+              children: ["Let customers fix", /* @__PURE__ */ jsx("br", {}), "their own orders."]
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.heroDescription,
+              children: "OrderEase lets shoppers update shipping addresses, sizes, colors and items on unfulfilled orders right after checkout, with no support ticket needed."
+            }), showForm && /* @__PURE__ */ jsxs("div", {
+              id: "hero-install-form",
+              className: styles.domainForm,
+              children: [/* @__PURE__ */ jsx("label", {
+                htmlFor: "hero-shop-input",
+                className: styles.formLabel,
+                children: "Your Shopify store domain"
+              }), /* @__PURE__ */ jsx(Form, {
+                method: "post",
+                action: "/auth/login",
+                onSubmit: handleFormSubmit,
+                children: /* @__PURE__ */ jsxs("div", {
+                  className: styles.inputRow,
+                  children: [/* @__PURE__ */ jsx("input", {
+                    ref: heroInputRef,
+                    id: "hero-shop-input",
+                    className: styles.domainInput,
+                    type: "text",
+                    name: "shop",
+                    value: shopDomain,
+                    onChange: (e) => setShopDomain(e.target.value),
+                    placeholder: "my-shop-domain.myshopify.com",
+                    required: true
+                  }), /* @__PURE__ */ jsx("button", {
+                    className: styles.primaryButton,
+                    type: "submit",
+                    children: "Install OrderEase"
+                  })]
+                })
+              }), /* @__PURE__ */ jsx("span", {
+                className: styles.formHelper,
+                children: "e.g. my-shop-domain.myshopify.com"
+              })]
+            })]
+          }), /* @__PURE__ */ jsx("div", {
+            className: styles.heroCardWrapper,
+            children: /* @__PURE__ */ jsxs("div", {
+              className: styles.orderCard,
+              children: [/* @__PURE__ */ jsxs("div", {
+                className: styles.orderCardHeader,
+                children: [/* @__PURE__ */ jsx("span", {
+                  className: styles.orderNumber,
+                  children: "Order #1001"
+                }), /* @__PURE__ */ jsxs("span", {
+                  className: styles.timerBadge,
+                  children: [/* @__PURE__ */ jsx("span", {
+                    className: styles.timerPulse
+                  }), "Edit window: ", formatTime(secondsLeft), " left"]
+                })]
+              }), /* @__PURE__ */ jsxs("div", {
+                className: styles.orderItemRow,
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: styles.itemThumb,
+                  children: /* @__PURE__ */ jsx("svg", {
+                    width: "24",
+                    height: "24",
+                    viewBox: "0 0 24 24",
+                    fill: "none",
+                    stroke: "currentColor",
+                    strokeWidth: "1.8",
+                    strokeLinecap: "round",
+                    strokeLinejoin: "round",
+                    children: /* @__PURE__ */ jsx("path", {
+                      d: "M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"
+                    })
+                  })
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: styles.itemDetails,
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: styles.itemTitle,
+                    children: "Classic Tee"
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: styles.itemVariant,
+                    children: [/* @__PURE__ */ jsx("span", {
+                      className: styles.variantFrom,
+                      children: "Size M"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: styles.variantArrow,
+                      children: "→"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: styles.variantTo,
+                      children: "Size L"
+                    })]
+                  })]
+                }), /* @__PURE__ */ jsx("div", {
+                  className: styles.itemQty,
+                  children: "Qty 1"
+                })]
+              }), /* @__PURE__ */ jsxs("div", {
+                className: styles.shippingBox,
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: styles.shippingLabel,
+                  children: "SHIPPING ADDRESS"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: styles.shippingText,
+                  children: "12 Example Street, Apt 4B"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: styles.shippingTextSub,
+                  children: "Springfield, 00000"
+                })]
+              }), /* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: handleDemoSave,
+                className: `${styles.saveChangesBtn} ${savedDemo ? styles.saveFeedback : ""}`,
+                children: savedDemo ? /* @__PURE__ */ jsxs(Fragment, {
+                  children: [/* @__PURE__ */ jsx("svg", {
+                    width: "16",
+                    height: "16",
+                    viewBox: "0 0 24 24",
+                    fill: "none",
+                    stroke: "currentColor",
+                    strokeWidth: "3",
+                    strokeLinecap: "round",
+                    strokeLinejoin: "round",
+                    children: /* @__PURE__ */ jsx("polyline", {
+                      points: "20 6 9 17 4 12"
+                    })
+                  }), "Saved successfully!"]
+                }) : "Save changes"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: styles.syncNote,
+                children: [/* @__PURE__ */ jsx("span", {
+                  className: styles.syncDot
+                }), "Synced to Shopify admin instantly"]
+              })]
+            })
+          })]
+        })
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: styles.whereSection,
+      children: /* @__PURE__ */ jsx("div", {
+        className: styles.container,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: styles.whereContainer,
+          children: [/* @__PURE__ */ jsxs("h2", {
+            className: styles.whereHeading,
+            children: ["Right where customers", /* @__PURE__ */ jsx("br", {}), "already are"]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.whereBlock,
+            children: [/* @__PURE__ */ jsx("h3", {
+              className: styles.whereBlockTitle,
+              children: "Checkout thank-you page"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.whereBlockText,
+              children: "Appears right after purchase, perfect for the wrong size or a mistyped address caught seconds later."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.whereBlock,
+            children: [/* @__PURE__ */ jsx("h3", {
+              className: styles.whereBlockTitle,
+              children: "Customer account"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.whereBlockText,
+              children: "An order status block on past and active orders gives shoppers control over anything still pending."
+            })]
+          })]
+        })
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      id: "features",
+      className: styles.featuresSection,
+      children: /* @__PURE__ */ jsxs("div", {
+        className: styles.container,
+        children: [/* @__PURE__ */ jsx("div", {
+          className: styles.sectionEyebrow,
+          children: "FEATURES"
+        }), /* @__PURE__ */ jsx("h2", {
+          className: styles.sectionHeading,
+          children: "Every common order fix, self-serve"
+        }), /* @__PURE__ */ jsx("p", {
+          className: styles.sectionSubhead,
+          children: "Fewer support tickets, fewer wrong shipments, happier customers."
+        }), /* @__PURE__ */ jsxs("div", {
+          className: styles.featuresGrid,
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: styles.featureCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.featureNumber,
+              children: "01"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.featureTitle,
+              children: "Update shipping address"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.featureText,
+              children: "Typed it wrong? Customers correct the address themselves before the order ships."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.featureCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.featureNumber,
+              children: "02"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.featureTitle,
+              children: "Swap size or color"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.featureText,
+              children: "Variant changes on unfulfilled orders, with no ticket and no back and forth."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.featureCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.featureNumber,
+              children: "03"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.featureTitle,
+              children: "Change quantity"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.featureText,
+              children: "Add or remove units. Inventory is checked before any change goes through."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.featureCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.featureNumber,
+              children: "04"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.featureTitle,
+              children: "Add forgotten items"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.featureText,
+              children: "Shoppers add what they missed straight after purchase, so you keep the extra sale."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.featureCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.featureNumber,
+              children: "05"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.featureTitle,
+              children: "Apply missed discount codes"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.featureText,
+              children: "Forgot a code at checkout? Customers can apply it right after they order."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.featureCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.featureNumber,
+              children: "06"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.featureTitle,
+              children: "Order notes and PDF invoice"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.featureText,
+              children: "Edit the order note and download an invoice from the same screen."
+            })]
+          })]
+        }), /* @__PURE__ */ jsx("p", {
+          className: styles.featuresNote,
+          children: "OrderEase includes 11 services in total. Turn on only the ones you want."
         })]
-      }), /* @__PURE__ */ jsxs("ul", {
-        className: styles.list,
-        children: [/* @__PURE__ */ jsxs("li", {
-          children: [/* @__PURE__ */ jsx("strong", {
-            children: "Product feature"
-          }), ". Some detail about your feature and its benefit to your customer."]
-        }), /* @__PURE__ */ jsxs("li", {
-          children: [/* @__PURE__ */ jsx("strong", {
-            children: "Product feature"
-          }), ". Some detail about your feature and its benefit to your customer."]
-        }), /* @__PURE__ */ jsxs("li", {
-          children: [/* @__PURE__ */ jsx("strong", {
-            children: "Product feature"
-          }), ". Some detail about your feature and its benefit to your customer."]
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      id: "how-it-works",
+      className: styles.howSection,
+      children: /* @__PURE__ */ jsxs("div", {
+        className: styles.container,
+        children: [/* @__PURE__ */ jsx("div", {
+          className: styles.sectionEyebrow,
+          children: "HOW IT WORKS"
+        }), /* @__PURE__ */ jsxs("h2", {
+          className: styles.sectionHeading,
+          children: ["From order to corrected order", /* @__PURE__ */ jsx("br", {}), "in four steps"]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: styles.stepsGrid,
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: styles.stepCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.stepTag,
+              children: "Step 1"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.stepTitle,
+              children: "Customer orders"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.stepText,
+              children: "They check out on your store and the edit countdown starts immediately."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.stepCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.stepTag,
+              children: "Step 2"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.stepTitle,
+              children: "They open their order"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.stepText,
+              children: "From the thank-you page or the order details in their account."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.stepCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.stepTag,
+              children: "Step 3"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.stepTitle,
+              children: "They make the edit"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.stepText,
+              children: "Quantity, variant, address, note or invoice, whatever you have enabled."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.stepCard,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles.stepTag,
+              children: "Step 4"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: styles.stepTitle,
+              children: "Shopify updates"
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.stepText,
+              children: "The edit is validated against your rules, then your Shopify admin updates instantly."
+            })]
+          })]
         })]
-      })]
-    })
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      id: "controls",
+      className: styles.controlsSection,
+      children: /* @__PURE__ */ jsx("div", {
+        className: styles.container,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: styles.controlsCard,
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: styles.controlsLeft,
+            children: [/* @__PURE__ */ jsx("div", {
+              className: styles.controlsEyebrow,
+              children: "CONTROLS"
+            }), /* @__PURE__ */ jsxs("h2", {
+              className: styles.controlsHeading,
+              children: ["You set the rules.", /* @__PURE__ */ jsx("br", {}), "Customers work inside", /* @__PURE__ */ jsx("br", {}), "them."]
+            }), /* @__PURE__ */ jsx("p", {
+              className: styles.controlsSubhead,
+              children: "No surprise changes to orders that are ready to ship."
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.controlsRight,
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: styles.controlItem,
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: styles.controlItemTitle,
+                children: "Time window limits"
+              }), /* @__PURE__ */ jsx("p", {
+                className: styles.controlItemText,
+                children: "Choose how long after checkout an order can be edited."
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles.controlItem,
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: styles.controlItemTitle,
+                children: "Edit count limits"
+              }), /* @__PURE__ */ jsx("p", {
+                className: styles.controlItemText,
+                children: "Cap how many times a single order can be changed."
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles.controlItem,
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: styles.controlItemTitle,
+                children: "Inventory checks"
+              }), /* @__PURE__ */ jsx("p", {
+                className: styles.controlItemText,
+                children: "Edits are validated against stock levels before anything changes."
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles.controlItem,
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: styles.controlItemTitle,
+                children: "Live Shopify sync"
+              }), /* @__PURE__ */ jsx("p", {
+                className: styles.controlItemText,
+                children: "Approved edits show up in Shopify admin right away."
+              })]
+            })]
+          })]
+        })
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      id: "faq",
+      className: styles.faqSection,
+      children: /* @__PURE__ */ jsxs("div", {
+        className: styles.container,
+        children: [/* @__PURE__ */ jsx("div", {
+          className: styles.faqHeader,
+          children: /* @__PURE__ */ jsx("h2", {
+            className: styles.sectionHeading,
+            children: "Questions merchants ask"
+          })
+        }), /* @__PURE__ */ jsx("div", {
+          className: styles.faqContainer,
+          children: faqs.map((faq, index) => {
+            const isOpen = openFaq === index;
+            return /* @__PURE__ */ jsxs("div", {
+              className: styles.faqItem,
+              children: [/* @__PURE__ */ jsx("button", {
+                type: "button",
+                className: styles.faqQuestionBtn,
+                onClick: () => toggleFaq(index),
+                "aria-expanded": isOpen,
+                children: /* @__PURE__ */ jsxs("span", {
+                  className: styles.faqQuestionLeft,
+                  children: [/* @__PURE__ */ jsx("span", {
+                    className: `${styles.faqArrow} ${isOpen ? styles.faqArrowOpen : ""}`,
+                    children: "▶"
+                  }), faq.q]
+                })
+              }), isOpen && /* @__PURE__ */ jsx("p", {
+                className: styles.faqAnswer,
+                children: faq.a
+              })]
+            }, index);
+          })
+        })]
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: styles.bottomCtaSection,
+      children: /* @__PURE__ */ jsx("div", {
+        className: styles.container,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: styles.bottomCtaCard,
+          children: [/* @__PURE__ */ jsx("h2", {
+            className: styles.bottomCtaHeading,
+            children: "Stop fixing orders by email"
+          }), /* @__PURE__ */ jsx("p", {
+            className: styles.bottomCtaSubhead,
+            children: "Enter your store domain to add OrderEase to Shopify."
+          }), showForm && /* @__PURE__ */ jsx("div", {
+            className: styles.bottomCtaForm,
+            children: /* @__PURE__ */ jsxs(Form, {
+              method: "post",
+              action: "/auth/login",
+              onSubmit: handleFormSubmit,
+              className: styles.bottomCtaFormGroup,
+              children: [/* @__PURE__ */ jsx("label", {
+                htmlFor: "bottom-shop-input",
+                className: styles.bottomCtaLabel,
+                children: "Your Shopify store domain"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: styles.bottomCtaInputRow,
+                children: [/* @__PURE__ */ jsx("input", {
+                  id: "bottom-shop-input",
+                  className: styles.bottomCtaInput,
+                  type: "text",
+                  name: "shop",
+                  value: shopDomain,
+                  onChange: (e) => setShopDomain(e.target.value),
+                  placeholder: "my-shop-domain.myshopify.com",
+                  required: true
+                }), /* @__PURE__ */ jsx("button", {
+                  className: styles.bottomCtaButton,
+                  type: "submit",
+                  children: "Install OrderEase"
+                })]
+              })]
+            })
+          })]
+        })
+      })
+    }), /* @__PURE__ */ jsx("footer", {
+      className: styles.footer,
+      children: /* @__PURE__ */ jsx("div", {
+        className: styles.container,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: styles.footerContent,
+          children: [/* @__PURE__ */ jsx("div", {
+            className: styles.footerLeft,
+            children: "© OrderEase"
+          }), /* @__PURE__ */ jsxs("div", {
+            className: styles.footerRight,
+            children: [/* @__PURE__ */ jsx("button", {
+              type: "button",
+              className: styles.footerLink,
+              onClick: () => setActiveModal("privacy"),
+              children: "Privacy policy"
+            }), /* @__PURE__ */ jsx("button", {
+              type: "button",
+              className: styles.footerLink,
+              onClick: handleSupportClick,
+              children: "Support"
+            })]
+          })]
+        })
+      })
+    }), activeModal === "privacy" && /* @__PURE__ */ jsx("div", {
+      className: styles.modalBackdrop,
+      onClick: () => setActiveModal(null),
+      children: /* @__PURE__ */ jsxs("div", {
+        className: styles.modalBox,
+        onClick: (e) => e.stopPropagation(),
+        children: [/* @__PURE__ */ jsx("button", {
+          type: "button",
+          className: styles.modalCloseBtn,
+          onClick: () => setActiveModal(null),
+          "aria-label": "Close",
+          children: "✕"
+        }), /* @__PURE__ */ jsx("h2", {
+          style: {
+            fontSize: "22px",
+            fontWeight: 700,
+            marginBottom: "16px",
+            color: "#111827"
+          },
+          children: "Privacy Policy"
+        }), /* @__PURE__ */ jsxs("div", {
+          style: {
+            color: "#4b5563",
+            fontSize: "14px",
+            lineHeight: "1.6"
+          },
+          children: [/* @__PURE__ */ jsx("p", {
+            style: {
+              marginBottom: "12px"
+            },
+            children: "OrderEase is committed to protecting the privacy of merchants and their customers. This Privacy Policy describes how personal information is collected, used, and shared when you install or use the app in connection with your Shopify-supported store."
+          }), /* @__PURE__ */ jsx("h4", {
+            style: {
+              fontWeight: 600,
+              color: "#111827",
+              margin: "16px 0 6px"
+            },
+            children: "Information We Collect"
+          }), /* @__PURE__ */ jsx("p", {
+            style: {
+              marginBottom: "12px"
+            },
+            children: "When you install OrderEase, we automatically receive access to certain order information via Shopify APIs (such as order ID, shipping address, line items, and fulfillment status) strictly necessary to facilitate self-serve customer order adjustments."
+          }), /* @__PURE__ */ jsx("h4", {
+            style: {
+              fontWeight: 600,
+              color: "#111827",
+              margin: "16px 0 6px"
+            },
+            children: "How We Use Your Information"
+          }), /* @__PURE__ */ jsx("p", {
+            style: {
+              marginBottom: "12px"
+            },
+            children: "We use the information solely to perform customer-requested order edits, validate changes against merchant-configured rules, and update Shopify admin records accordingly. We never sell customer personal data to third parties."
+          }), /* @__PURE__ */ jsx("h4", {
+            style: {
+              fontWeight: 600,
+              color: "#111827",
+              margin: "16px 0 6px"
+            },
+            children: "Contact Us"
+          }), /* @__PURE__ */ jsx("p", {
+            children: "If you have questions about our privacy practices, please contact us at support@orderease.io."
+          })]
+        })]
+      })
+    }), activeModal === "support" && /* @__PURE__ */ jsx("div", {
+      className: styles.modalBackdrop,
+      onClick: () => setActiveModal(null),
+      children: /* @__PURE__ */ jsxs("div", {
+        className: styles.modalBox,
+        onClick: (e) => e.stopPropagation(),
+        children: [/* @__PURE__ */ jsx("button", {
+          type: "button",
+          className: styles.modalCloseBtn,
+          onClick: () => setActiveModal(null),
+          "aria-label": "Close",
+          children: "✕"
+        }), /* @__PURE__ */ jsx("h2", {
+          style: {
+            fontSize: "22px",
+            fontWeight: 700,
+            marginBottom: "16px",
+            color: "#111827"
+          },
+          children: "OrderEase Support"
+        }), /* @__PURE__ */ jsxs("div", {
+          style: {
+            color: "#4b5563",
+            fontSize: "14px",
+            lineHeight: "1.6"
+          },
+          children: [/* @__PURE__ */ jsx("p", {
+            style: {
+              marginBottom: "16px"
+            },
+            children: "Need help setting up OrderEase or configuring your self-serve editing rules? Our team is here to assist you!"
+          }), /* @__PURE__ */ jsxs("div", {
+            style: {
+              background: "#f3f4f6",
+              padding: "16px",
+              borderRadius: "8px",
+              marginBottom: "16px"
+            },
+            children: [/* @__PURE__ */ jsx("div", {
+              style: {
+                fontWeight: 600,
+                color: "#111827",
+                marginBottom: "4px"
+              },
+              children: "Email Support"
+            }), /* @__PURE__ */ jsx("div", {
+              children: "support@orderease.io"
+            }), /* @__PURE__ */ jsx("div", {
+              style: {
+                fontSize: "12.5px",
+                color: "#6b7280",
+                marginTop: "4px"
+              },
+              children: "Response time: Usually within a few hours"
+            })]
+          }), /* @__PURE__ */ jsx("p", {
+            style: {
+              fontSize: "13px",
+              color: "#6b7280"
+            },
+            children: "You can also use the live chat widget at the bottom right corner of the page to speak with a specialist immediately."
+          })]
+        })]
+      })
+    })]
   });
 });
-const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: route,
-  loader: loader$6
+  loader: loader$6,
+  meta
 }, Symbol.toStringTag, { value: "Module" }));
 const loader$5 = async ({
   request
@@ -10072,7 +11947,7 @@ const loader$5 = async ({
 const headers$4 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   headers: headers$4,
   loader: loader$5
@@ -10112,7 +11987,7 @@ const ErrorBoundary = UNSAFE_withErrorBoundaryProps(function ErrorBoundary2() {
 const headers$3 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   ErrorBoundary,
   default: app,
@@ -10189,6 +12064,11 @@ const SERVICES = [{
   description: "Enable customers to switch product size, color, or variant options easily.",
   category: "Item Management"
 }, {
+  id: "bulk-update",
+  title: "Bulk Update Order Items",
+  description: "Allow customers to bulk add, adjust quantities, swap variants, or replace items via CSV upload.",
+  category: "Item Management"
+}, {
   id: "change-address",
   title: "Change Shipping Address",
   description: "Allow customers to update their delivery address before order dispatch.",
@@ -10224,17 +12104,6 @@ const SERVICES = [{
   description: "Provide downloadable PDF invoices on customer order status pages.",
   category: "Billing & Receipts"
 }];
-function maskApiKey(key) {
-  if (!key || key.trim().length === 0) return "";
-  const trimmed = key.trim();
-  if (trimmed.length <= 8) {
-    return "••••••••";
-  }
-  const prefix = trimmed.slice(0, 6);
-  const suffix = trimmed.slice(-4);
-  const maskedMiddle = "•".repeat(Math.min(Math.max(trimmed.length - 10, 4), 24));
-  return `${prefix}${maskedMiddle}${suffix}`;
-}
 const loader$3 = async ({
   request
 }) => {
@@ -10293,8 +12162,6 @@ const loader$3 = async ({
       shop
     }
   });
-  const hasGoogleApiKey = Boolean((googleConfig == null ? void 0 : googleConfig.apiKey) && googleConfig.apiKey.trim().length > 0);
-  const maskedGoogleApiKey = hasGoogleApiKey ? maskApiKey(googleConfig == null ? void 0 : googleConfig.apiKey) : "";
   const initialProducts = [];
   return {
     shop,
@@ -10305,8 +12172,7 @@ const loader$3 = async ({
       customUnit: timeLimitRecord.customUnit ?? "hours",
       maxEdits: timeLimitRecord.maxEdits ?? null
     },
-    hasGoogleApiKey,
-    maskedGoogleApiKey,
+    googleApiKey: (googleConfig == null ? void 0 : googleConfig.apiKey) || "",
     initialProducts
   };
 };
@@ -10415,15 +12281,8 @@ const action = async ({
   if (intent === "saveGoogleApiKey") {
     const apiKeyRaw = formData.get("googleApiKey");
     const apiKey = apiKeyRaw ? apiKeyRaw.trim() : null;
-    if (!apiKey) {
-      return {
-        ok: false,
-        type: "googleApiKey",
-        error: "API key cannot be empty"
-      };
-    }
     console.log(`[ActiveServices Action] Saving Google Places API Key: shop=${shop}, hasKey=${Boolean(apiKey)}`);
-    await prisma.googlePlacesConfig.upsert({
+    const result2 = await prisma.googlePlacesConfig.upsert({
       where: {
         shop
       },
@@ -10439,8 +12298,7 @@ const action = async ({
       ok: true,
       type: "googleApiKey",
       action: "saved",
-      hasGoogleApiKey: true,
-      maskedGoogleApiKey: maskApiKey(apiKey)
+      result: result2
     };
   }
   if (intent === "deleteGoogleApiKey") {
@@ -10468,9 +12326,7 @@ const action = async ({
     return {
       ok: true,
       type: "googleApiKey",
-      action: "deleted",
-      hasGoogleApiKey: false,
-      maskedGoogleApiKey: ""
+      action: "deleted"
     };
   }
   if (intent === "saveMaxEdits") {
@@ -10562,8 +12418,7 @@ const app_activeServices = UNSAFE_withComponentProps(function ActiveServicesPage
   const {
     services,
     timeLimitSettings,
-    hasGoogleApiKey,
-    maskedGoogleApiKey,
+    googleApiKey,
     initialProducts
   } = useLoaderData();
   return /* @__PURE__ */ jsxs("s-page", {
@@ -10576,8 +12431,7 @@ const app_activeServices = UNSAFE_withComponentProps(function ActiveServicesPage
     }), /* @__PURE__ */ jsx(ProductTagsSection, {
       initialProducts
     }), /* @__PURE__ */ jsx(GoogleApiKeySection, {
-      hasInitialKey: hasGoogleApiKey,
-      initialMaskedKey: maskedGoogleApiKey
+      initialApiKey: googleApiKey
     }), /* @__PURE__ */ jsx(MaxEditsSection, {
       initialMaxEdits: timeLimitSettings.maxEdits
     }), /* @__PURE__ */ jsx(TimeLimitSection, {
@@ -11088,24 +12942,20 @@ function ServiceRow({
   });
 }
 function GoogleApiKeySection({
-  hasInitialKey,
-  initialMaskedKey
+  initialApiKey
 }) {
   var _a2, _b;
   const fetcher = useFetcher();
-  const [hasKey, setHasKey] = useEffectState(hasInitialKey);
-  const [maskedKey, setMaskedKey] = useEffectState(initialMaskedKey || "");
-  const [inputKey, setInputKey] = useState("");
+  const [apiKey, setApiKey] = useEffectState(initialApiKey || "");
   const [showKey, setShowKey] = useState(false);
   const [isSaved, setIsSaved] = useEffectState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [lastAction, setLastAction] = useState(null);
   useEffect(() => {
-    setHasKey(hasInitialKey);
-    setMaskedKey(initialMaskedKey || "");
-  }, [hasInitialKey, initialMaskedKey]);
+    setApiKey(initialApiKey || "");
+  }, [initialApiKey]);
   useEffect(() => {
-    var _a3, _b2, _c, _d, _e;
+    var _a3, _b2, _c, _d;
     if (fetcher.state === "idle" && ((_a3 = fetcher.data) == null ? void 0 : _a3.ok) && ((_b2 = fetcher.data) == null ? void 0 : _b2.type) === "googleApiKey") {
       setIsSaved(true);
       const isDeleted = ((_c = fetcher.data) == null ? void 0 : _c.action) === "deleted";
@@ -11113,18 +12963,9 @@ function GoogleApiKeySection({
       const msg = isDeleted ? "Google Places API key deleted successfully!" : "Google Places API key saved successfully!";
       setActionMessage(msg);
       if (isDeleted) {
-        setHasKey(false);
-        setMaskedKey("");
-        setInputKey("");
-      } else {
-        setHasKey(true);
-        if ((_d = fetcher.data) == null ? void 0 : _d.maskedGoogleApiKey) {
-          setMaskedKey(fetcher.data.maskedGoogleApiKey);
-        }
-        setInputKey("");
-        setShowKey(false);
+        setApiKey("");
       }
-      if (typeof window !== "undefined" && ((_e = window.shopify) == null ? void 0 : _e.toast)) {
+      if (typeof window !== "undefined" && ((_d = window.shopify) == null ? void 0 : _d.toast)) {
         window.shopify.toast.show(msg);
       }
       const timer = setTimeout(() => {
@@ -11135,10 +12976,9 @@ function GoogleApiKeySection({
     }
   }, [fetcher.state, fetcher.data]);
   const handleSave = () => {
-    if (!inputKey.trim()) return;
     fetcher.submit({
       intent: "saveGoogleApiKey",
-      googleApiKey: inputKey.trim()
+      googleApiKey: apiKey
     }, {
       method: "post"
     });
@@ -11151,10 +12991,8 @@ function GoogleApiKeySection({
     });
   };
   const isDeleting = fetcher.state !== "idle" && ((_a2 = fetcher.formData) == null ? void 0 : _a2.get("intent")) === "deleteGoogleApiKey";
-  const isSaving = fetcher.state !== "idle" && ((_b = fetcher.formData) == null ? void 0 : _b.get("intent")) === "saveGoogleApiKey";
-  const isConfigured = Boolean(hasKey && lastAction !== "deleted" || isDeleting);
+  const isConfigured = Boolean(apiKey && apiKey.trim().length > 0 || isDeleting);
   const showDeleteButton = isConfigured || isDeleting || isSaved && lastAction === "deleted";
-  const canSave = inputKey.trim().length > 0 && !isSaving;
   return /* @__PURE__ */ jsx("s-section", {
     heading: "Google Places & Location Suggestions",
     children: /* @__PURE__ */ jsx("s-box", {
@@ -11191,36 +13029,9 @@ function GoogleApiKeySection({
           children: /* @__PURE__ */ jsxs("s-stack", {
             direction: "block",
             gap: "base",
-            children: [/* @__PURE__ */ jsxs("s-stack", {
-              direction: "inline",
-              justifyContent: "space-between",
-              alignItems: "center",
-              children: [/* @__PURE__ */ jsx("s-text", {
-                type: "strong",
-                children: "Merchant API Key"
-              }), isConfigured && maskedKey ? /* @__PURE__ */ jsxs("s-stack", {
-                direction: "inline",
-                gap: "small",
-                alignItems: "center",
-                children: [/* @__PURE__ */ jsx("s-text", {
-                  size: "small",
-                  color: "subdued",
-                  children: "Active Key:"
-                }), /* @__PURE__ */ jsx("code", {
-                  style: {
-                    padding: "3px 8px",
-                    borderRadius: "4px",
-                    backgroundColor: "#eaf4f0",
-                    color: "#004c3f",
-                    border: "1px solid #95c9b4",
-                    fontFamily: "monospace",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    letterSpacing: "0.5px"
-                  },
-                  children: maskedKey
-                })]
-              }) : null]
+            children: [/* @__PURE__ */ jsx("s-text", {
+              type: "strong",
+              children: "Merchant API Key"
             }), /* @__PURE__ */ jsxs("div", {
               style: {
                 display: "flex",
@@ -11233,7 +13044,7 @@ function GoogleApiKeySection({
                 },
                 children: [/* @__PURE__ */ jsx("s-text", {
                   color: "subdued",
-                  children: isConfigured ? "Enter new key to replace active key (Places API & Geocoding API enabled)" : "API Key (Places API & Geocoding API enabled)"
+                  children: "API Key (Places API & Geocoding API enabled)"
                 }), /* @__PURE__ */ jsxs("div", {
                   style: {
                     position: "relative",
@@ -11241,11 +13052,9 @@ function GoogleApiKeySection({
                   },
                   children: [/* @__PURE__ */ jsx("input", {
                     type: showKey ? "text" : "password",
-                    value: inputKey,
-                    onChange: (e) => setInputKey(e.target.value),
-                    placeholder: isConfigured ? "Enter new API key to update (e.g. AIzaSyD...)" : "e.g. AIzaSyD...",
-                    autoComplete: "off",
-                    spellCheck: false,
+                    value: apiKey,
+                    onChange: (e) => setApiKey(e.target.value),
+                    placeholder: "e.g. AIzaSyD...",
                     style: {
                       padding: "8px 50px 8px 12px",
                       borderRadius: "6px",
@@ -11256,7 +13065,7 @@ function GoogleApiKeySection({
                       boxSizing: "border-box",
                       fontFamily: "monospace"
                     }
-                  }), inputKey.length > 0 && /* @__PURE__ */ jsx("button", {
+                  }), /* @__PURE__ */ jsx("button", {
                     type: "button",
                     onClick: () => setShowKey(!showKey),
                     style: {
@@ -11280,20 +13089,19 @@ function GoogleApiKeySection({
               }), /* @__PURE__ */ jsx("button", {
                 type: "button",
                 onClick: handleSave,
-                disabled: !canSave,
                 style: {
                   padding: "9px 20px",
                   borderRadius: "6px",
                   border: "none",
-                  backgroundColor: canSave ? "#008060" : "#a0c8ba",
+                  backgroundColor: "#008060",
                   color: "#ffffff",
                   fontWeight: "600",
-                  cursor: canSave ? "pointer" : "not-allowed",
+                  cursor: "pointer",
                   whiteSpace: "nowrap",
                   height: "36px",
                   flexShrink: 0
                 },
-                children: isSaving ? "Saving..." : isConfigured ? "Update Key" : "Save Key"
+                children: fetcher.state !== "idle" && ((_b = fetcher.formData) == null ? void 0 : _b.get("intent")) === "saveGoogleApiKey" ? "Saving..." : "Save Key"
               }), showDeleteButton && /* @__PURE__ */ jsx("button", {
                 type: "button",
                 onClick: handleDelete,
@@ -11638,7 +13446,7 @@ function ProductTagsSection({
     })
   });
 }
-const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action,
   default: app_activeServices,
@@ -11680,7 +13488,7 @@ const app_additional = UNSAFE_withComponentProps(function AdditionalPage() {
     })]
   });
 });
-const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_additional
 }, Symbol.toStringTag, { value: "Module" }));
@@ -11699,6 +13507,10 @@ const ALL_SERVICES = [{
 }, {
   id: "swap-variant",
   title: "Swap Product Variant",
+  category: "Item Management"
+}, {
+  id: "bulk-update",
+  title: "Bulk Update Order Items",
   category: "Item Management"
 }, {
   id: "change-address",
@@ -11732,12 +13544,14 @@ const ALL_SERVICES = [{
 const loader$2 = async ({
   request
 }) => {
-  var _a2, _b;
+  var _a2, _b, _c;
   const {
     admin,
     session
   } = await authenticate.admin(request);
   const shop = session.shop;
+  const url = new URL(request.url);
+  const initialRange = (url.searchParams.get("range") || "today").toLowerCase();
   let totalStoreOrders = 0;
   try {
     const ordersRes = await admin.graphql(`#graphql
@@ -11751,15 +13565,121 @@ const loader$2 = async ({
   } catch (err) {
     console.error("[insights-loader] Error fetching orders count:", err);
   }
-  const editedOrders = await prisma.editedOrder.findMany({
+  const allEditedOrders = await prisma.editedOrder.findMany({
     where: {
       shop
+    },
+    orderBy: {
+      createdAt: "desc"
     }
   });
-  const uniqueOrdersSet = new Set(editedOrders.map((o) => o.orderId));
-  const totalEditedOrders = uniqueOrdersSet.size;
-  const customerAccountEditsCount = editedOrders.filter((o) => o.source === "customer_account_ui").length;
-  const checkoutUiEditsCount = editedOrders.filter((o) => o.source === "checkout_ui").length;
+  const uniqueOrderIds = Array.from(new Set(allEditedOrders.map((o) => o.orderId)));
+  const gidsToFetch = uniqueOrderIds.map((id) => id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`).slice(0, 100);
+  const orderInfoMap = /* @__PURE__ */ new Map();
+  if (gidsToFetch.length > 0) {
+    try {
+      const detailsRes = await admin.graphql(`#graphql
+        query GetOrderDetailsForUpdates($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Order {
+              id
+              name
+              createdAt
+              displayFinancialStatus
+              displayFulfillmentStatus
+              totalPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              customer {
+                id
+                displayName
+                firstName
+                lastName
+                email
+              }
+            }
+          }
+        }`, {
+        variables: {
+          ids: gidsToFetch
+        }
+      });
+      const detailsJson = await detailsRes.json();
+      const nodes = ((_c = detailsJson.data) == null ? void 0 : _c.nodes) || [];
+      for (const node of nodes) {
+        if (node == null ? void 0 : node.id) {
+          orderInfoMap.set(node.id, node);
+          const numId = node.id.replace(/[^0-9]/g, "");
+          if (numId) {
+            orderInfoMap.set(numId, node);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[insights-loader] Error fetching batch order details:", err);
+    }
+  }
+  const shopDomain = shop.replace(/^https?:\/\//, "");
+  const shopName = shopDomain.split(".")[0];
+  const enrichedEdits = allEditedOrders.map((record) => {
+    var _a3, _b2, _c2, _d, _e, _f;
+    const gid = record.orderId.startsWith("gid://") ? record.orderId : `gid://shopify/Order/${record.orderId}`;
+    const numericId = record.orderId.replace(/[^0-9]/g, "");
+    const orderInfo = orderInfoMap.get(gid) || orderInfoMap.get(numericId) || null;
+    const customerName = ((_a3 = orderInfo == null ? void 0 : orderInfo.customer) == null ? void 0 : _a3.displayName) || [(_b2 = orderInfo == null ? void 0 : orderInfo.customer) == null ? void 0 : _b2.firstName, (_c2 = orderInfo == null ? void 0 : orderInfo.customer) == null ? void 0 : _c2.lastName].filter(Boolean).join(" ") || ((_d = orderInfo == null ? void 0 : orderInfo.customer) == null ? void 0 : _d.email) || "Customer";
+    const orderTotal = ((_e = orderInfo == null ? void 0 : orderInfo.totalPriceSet) == null ? void 0 : _e.shopMoney) ? `${orderInfo.totalPriceSet.shopMoney.currencyCode} ${Number(orderInfo.totalPriceSet.shopMoney.amount).toFixed(2)}` : null;
+    const adminOrderUrl = `https://admin.shopify.com/store/${shopName}/orders/${numericId}`;
+    return {
+      id: record.id,
+      orderId: record.orderId,
+      numericOrderId: numericId,
+      orderName: (orderInfo == null ? void 0 : orderInfo.name) || `#${numericId.slice(-4) || numericId}`,
+      customerName,
+      customerEmail: ((_f = orderInfo == null ? void 0 : orderInfo.customer) == null ? void 0 : _f.email) || null,
+      orderTotal,
+      financialStatus: (orderInfo == null ? void 0 : orderInfo.displayFinancialStatus) || null,
+      fulfillmentStatus: (orderInfo == null ? void 0 : orderInfo.displayFulfillmentStatus) || null,
+      source: record.source,
+      createdAt: record.createdAt.toISOString(),
+      adminOrderUrl
+    };
+  });
+  const now = /* @__PURE__ */ new Date();
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+  const dayOfWeek = now.getUTCDay();
+  const diffToMonday = now.getUTCDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+  const startOfWeek = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), diffToMonday, 0, 0, 0, 0));
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  function buildPeriodStats(startDate) {
+    const filtered = enrichedEdits.filter((item) => {
+      if (!startDate) return true;
+      return new Date(item.createdAt) >= startDate;
+    });
+    const uniqueOrders = new Set(filtered.map((o) => o.orderId));
+    const customerAccountEditsCount = filtered.filter((o) => o.source === "customer_account_ui").length;
+    const checkoutUiEditsCount = filtered.filter((o) => o.source === "checkout_ui").length;
+    const totalEditsCount = filtered.length;
+    const customerAccountPercent = totalEditsCount > 0 ? Math.round(customerAccountEditsCount / totalEditsCount * 100) : 0;
+    const checkoutUiPercent = totalEditsCount > 0 ? Math.round(checkoutUiEditsCount / totalEditsCount * 100) : 0;
+    return {
+      totalEditedOrders: uniqueOrders.size,
+      totalEditsCount,
+      customerAccountEditsCount,
+      checkoutUiEditsCount,
+      customerAccountPercent,
+      checkoutUiPercent,
+      customerUpdates: filtered
+    };
+  }
+  const filterStats = {
+    today: buildPeriodStats(startOfToday),
+    week: buildPeriodStats(startOfWeek),
+    month: buildPeriodStats(startOfMonth),
+    all: buildPeriodStats(null)
+  };
   const serviceSettings = await prisma.serviceSettings.findMany({
     where: {
       shop
@@ -11785,10 +13705,9 @@ const loader$2 = async ({
   }));
   return {
     shop,
+    initialRange,
+    filterStats,
     totalStoreOrders,
-    totalEditedOrders,
-    customerAccountEditsCount,
-    checkoutUiEditsCount,
     activeFeaturesCount,
     totalFeatures,
     featureUsageList
@@ -11797,33 +13716,126 @@ const loader$2 = async ({
 const headers$1 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
+function formatUpdateDate(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = /* @__PURE__ */ new Date();
+  const isToday = date.getUTCDate() === now.getUTCDate() && date.getUTCMonth() === now.getUTCMonth() && date.getUTCFullYear() === now.getUTCFullYear();
+  const timeStr = date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+  if (isToday) {
+    return `Today at ${timeStr}`;
+  }
+  const dateStr = date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+  return `${dateStr} at ${timeStr}`;
+}
 const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
+  var _a2;
   const {
+    initialRange,
+    filterStats,
     totalStoreOrders,
-    totalEditedOrders,
-    customerAccountEditsCount,
-    checkoutUiEditsCount,
     activeFeaturesCount,
     totalFeatures,
     featureUsageList
   } = useLoaderData();
-  const totalEditsCount = customerAccountEditsCount + checkoutUiEditsCount;
-  const customerAccountPercent = totalEditsCount > 0 ? Math.round(customerAccountEditsCount / totalEditsCount * 100) : 0;
-  const checkoutUiPercent = totalEditsCount > 0 ? Math.round(checkoutUiEditsCount / totalEditsCount * 100) : 0;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlRange = (_a2 = searchParams.get("range")) == null ? void 0 : _a2.toLowerCase();
+  const activeFilter = urlRange === "today" || urlRange === "week" || urlRange === "month" || urlRange === "all" ? urlRange : initialRange || "today";
+  const handleFilterChange = (rangeKey) => {
+    setSearchParams({
+      range: rangeKey
+    });
+  };
+  const currentData = filterStats[activeFilter] || filterStats.today;
+  const timeframeLabels = {
+    today: "Today",
+    week: "This Week",
+    month: "This Month",
+    all: "All Time"
+  };
+  const timeframeLabel = timeframeLabels[activeFilter] || "Selected Period";
   return /* @__PURE__ */ jsxs("s-page", {
     heading: "Insights",
     children: [/* @__PURE__ */ jsx("s-section", {
       heading: "Analytics & Performance Overview",
       children: /* @__PURE__ */ jsx("s-paragraph", {
         color: "subdued",
-        children: "Monitor your store's total order edits, entry-point channels (Customer Account UI vs Checkout UI), active capabilities, and usage frequency across all app features."
+        children: "Monitor customer-initiated order updates across your store. Filter by today, this week, or this month to track real-time edits, channel distribution, and feature usage."
       })
     }), /* @__PURE__ */ jsx("s-section", {
-      heading: "Key Metrics",
+      heading: "Filter by Time Period",
+      children: /* @__PURE__ */ jsx("s-box", {
+        padding: "base",
+        border: "base",
+        borderRadius: "base",
+        background: "subdued",
+        children: /* @__PURE__ */ jsxs("s-stack", {
+          direction: "inline",
+          gap: "small",
+          alignItems: "center",
+          children: [/* @__PURE__ */ jsxs("s-button", {
+            variant: activeFilter === "today" ? "primary" : "secondary",
+            onClick: () => handleFilterChange("today"),
+            children: ["Today (", filterStats.today.totalEditsCount, ")"]
+          }), /* @__PURE__ */ jsxs("s-button", {
+            variant: activeFilter === "week" ? "primary" : "secondary",
+            onClick: () => handleFilterChange("week"),
+            children: ["This Week (", filterStats.week.totalEditsCount, ")"]
+          }), /* @__PURE__ */ jsxs("s-button", {
+            variant: activeFilter === "month" ? "primary" : "secondary",
+            onClick: () => handleFilterChange("month"),
+            children: ["This Month (", filterStats.month.totalEditsCount, ")"]
+          }), /* @__PURE__ */ jsxs("s-button", {
+            variant: activeFilter === "all" ? "primary" : "secondary",
+            onClick: () => handleFilterChange("all"),
+            children: ["All Time (", filterStats.all.totalEditsCount, ")"]
+          })]
+        })
+      })
+    }), /* @__PURE__ */ jsx("s-section", {
+      heading: `Key Metrics (${timeframeLabel})`,
       children: /* @__PURE__ */ jsxs("s-grid", {
         gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
         gap: "base",
         children: [/* @__PURE__ */ jsx("s-box", {
+          padding: "large",
+          border: "base",
+          borderRadius: "base",
+          children: /* @__PURE__ */ jsxs("s-stack", {
+            direction: "block",
+            gap: "small",
+            children: [/* @__PURE__ */ jsxs("s-stack", {
+              direction: "inline",
+              justifyContent: "space-between",
+              alignItems: "center",
+              children: [/* @__PURE__ */ jsxs("s-text", {
+                color: "subdued",
+                children: ["Orders Edited (", timeframeLabel, ")"]
+              }), /* @__PURE__ */ jsxs("s-badge", {
+                tone: "success",
+                children: [currentData.totalEditsCount, " edits"]
+              })]
+            }), /* @__PURE__ */ jsx("div", {
+              style: {
+                fontSize: "32px",
+                fontWeight: "700",
+                color: "#008060"
+              },
+              children: currentData.totalEditedOrders
+            }), /* @__PURE__ */ jsxs("s-text", {
+              size: "small",
+              color: "subdued",
+              children: ["Unique customer orders updated ", timeframeLabel.toLowerCase()]
+            })]
+          })
+        }), /* @__PURE__ */ jsx("s-box", {
           padding: "large",
           border: "base",
           borderRadius: "base",
@@ -11840,25 +13852,10 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
                 color: "#1a1d1f"
               },
               children: totalStoreOrders
-            })]
-          })
-        }), /* @__PURE__ */ jsx("s-box", {
-          padding: "large",
-          border: "base",
-          borderRadius: "base",
-          children: /* @__PURE__ */ jsxs("s-stack", {
-            direction: "block",
-            gap: "small",
-            children: [/* @__PURE__ */ jsx("s-text", {
+            }), /* @__PURE__ */ jsx("s-text", {
+              size: "small",
               color: "subdued",
-              children: "Total Orders Edited"
-            }), /* @__PURE__ */ jsx("div", {
-              style: {
-                fontSize: "32px",
-                fontWeight: "700",
-                color: "#008060"
-              },
-              children: totalEditedOrders
+              children: "Active orders currently pending fulfillment"
             })]
           })
         }), /* @__PURE__ */ jsx("s-box", {
@@ -11885,12 +13882,16 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
                 },
                 children: ["/ ", totalFeatures, " Enabled"]
               })]
+            }), /* @__PURE__ */ jsx("s-text", {
+              size: "small",
+              color: "subdued",
+              children: "Self-service features available to customers"
             })]
           })
         })]
       })
     }), /* @__PURE__ */ jsx("s-section", {
-      heading: "Edit Location Breakdown",
+      heading: `Edit Location Breakdown (${timeframeLabel})`,
       children: /* @__PURE__ */ jsx("s-box", {
         padding: "large",
         border: "base",
@@ -11898,9 +13899,9 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
         children: /* @__PURE__ */ jsxs("s-stack", {
           direction: "block",
           gap: "large",
-          children: [/* @__PURE__ */ jsx("s-paragraph", {
+          children: [/* @__PURE__ */ jsxs("s-paragraph", {
             color: "subdued",
-            children: "Shows which UI interface customers used to edit their orders."
+            children: ["Shows which UI interface customers used to edit their orders during ", timeframeLabel.toLowerCase(), "."]
           }), /* @__PURE__ */ jsxs("s-stack", {
             direction: "block",
             gap: "base",
@@ -11915,7 +13916,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
                   children: "Customer Account UI (Order Status Page)"
                 }), /* @__PURE__ */ jsxs("s-text", {
                   type: "strong",
-                  children: [customerAccountEditsCount, " edits (", customerAccountPercent, "%)"]
+                  children: [currentData.customerAccountEditsCount, " edits (", currentData.customerAccountPercent, "%)"]
                 })]
               }), /* @__PURE__ */ jsx("div", {
                 style: {
@@ -11928,7 +13929,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
                 children: /* @__PURE__ */ jsx("div", {
                   style: {
                     height: "100%",
-                    width: `${customerAccountPercent}%`,
+                    width: `${currentData.customerAccountPercent}%`,
                     backgroundColor: "#008060",
                     borderRadius: "5px",
                     transition: "width 0.3s ease"
@@ -11946,7 +13947,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
                   children: "Checkout UI (Thank-You Page)"
                 }), /* @__PURE__ */ jsxs("s-text", {
                   type: "strong",
-                  children: [checkoutUiEditsCount, " edits (", checkoutUiPercent, "%)"]
+                  children: [currentData.checkoutUiEditsCount, " edits (", currentData.checkoutUiPercent, "%)"]
                 })]
               }), /* @__PURE__ */ jsx("div", {
                 style: {
@@ -11959,7 +13960,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
                 children: /* @__PURE__ */ jsx("div", {
                   style: {
                     height: "100%",
-                    width: `${checkoutUiPercent}%`,
+                    width: `${currentData.checkoutUiPercent}%`,
                     backgroundColor: "#2c6ecb",
                     borderRadius: "5px",
                     transition: "width 0.3s ease"
@@ -11971,7 +13972,134 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
         })
       })
     }), /* @__PURE__ */ jsx("s-section", {
-      heading: "Feature Usage Frequency",
+      heading: `Customer Order Updates (${currentData.customerUpdates.length})`,
+      children: /* @__PURE__ */ jsx("s-box", {
+        padding: "large",
+        border: "base",
+        borderRadius: "base",
+        children: /* @__PURE__ */ jsxs("s-stack", {
+          direction: "block",
+          gap: "base",
+          children: [/* @__PURE__ */ jsxs("s-stack", {
+            direction: "inline",
+            justifyContent: "space-between",
+            alignItems: "center",
+            children: [/* @__PURE__ */ jsxs("s-stack", {
+              direction: "block",
+              gap: "small",
+              children: [/* @__PURE__ */ jsxs("s-text", {
+                type: "strong",
+                children: ["Recent Customer Modifications (", timeframeLabel, ")"]
+              }), /* @__PURE__ */ jsxs("s-paragraph", {
+                color: "subdued",
+                children: ["Itemized list of customer order modifications performed ", timeframeLabel.toLowerCase(), "."]
+              })]
+            }), /* @__PURE__ */ jsxs("s-badge", {
+              tone: currentData.customerUpdates.length > 0 ? "success" : "neutral",
+              children: [currentData.customerUpdates.length, " Record", currentData.customerUpdates.length !== 1 ? "s" : ""]
+            })]
+          }), /* @__PURE__ */ jsx("s-divider", {}), currentData.customerUpdates.length === 0 ? /* @__PURE__ */ jsx("s-box", {
+            padding: "large",
+            background: "subdued",
+            borderRadius: "base",
+            children: /* @__PURE__ */ jsxs("s-stack", {
+              direction: "block",
+              gap: "small",
+              alignItems: "center",
+              children: [/* @__PURE__ */ jsxs("s-text", {
+                type: "strong",
+                children: ["No customer order updates for ", timeframeLabel.toLowerCase()]
+              }), /* @__PURE__ */ jsx("s-text", {
+                color: "subdued",
+                size: "small",
+                children: "When customers edit their items, addresses, or options, their update activity will be recorded and displayed here."
+              })]
+            })
+          }) : /* @__PURE__ */ jsx("s-stack", {
+            direction: "block",
+            gap: "small",
+            children: currentData.customerUpdates.map((update) => /* @__PURE__ */ jsx("s-box", {
+              padding: "base",
+              border: "base",
+              borderRadius: "base",
+              background: "subdued",
+              children: /* @__PURE__ */ jsxs("s-grid", {
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                gap: "base",
+                children: [/* @__PURE__ */ jsxs("s-stack", {
+                  direction: "block",
+                  gap: "small",
+                  children: [/* @__PURE__ */ jsxs("s-stack", {
+                    direction: "inline",
+                    gap: "small",
+                    alignItems: "center",
+                    children: [/* @__PURE__ */ jsx("a", {
+                      href: update.adminOrderUrl,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      style: {
+                        textDecoration: "none",
+                        color: "#2c6ecb",
+                        fontWeight: "700"
+                      },
+                      children: /* @__PURE__ */ jsx("s-text", {
+                        type: "strong",
+                        color: "interactive",
+                        children: update.orderName
+                      })
+                    }), /* @__PURE__ */ jsx("s-badge", {
+                      tone: "neutral",
+                      children: update.customerName
+                    }), update.financialStatus && /* @__PURE__ */ jsx("s-badge", {
+                      tone: update.financialStatus === "PAID" ? "success" : update.financialStatus.includes("REFUND") ? "critical" : "neutral",
+                      children: update.financialStatus
+                    }), update.orderTotal && /* @__PURE__ */ jsxs("s-text", {
+                      size: "small",
+                      color: "subdued",
+                      children: ["• ", update.orderTotal]
+                    })]
+                  }), /* @__PURE__ */ jsxs("s-stack", {
+                    direction: "inline",
+                    gap: "small",
+                    alignItems: "center",
+                    children: [update.customerEmail && /* @__PURE__ */ jsxs("s-text", {
+                      size: "small",
+                      color: "subdued",
+                      children: [update.customerEmail, " •"]
+                    }), /* @__PURE__ */ jsxs("s-text", {
+                      size: "small",
+                      color: "subdued",
+                      children: ["Updated ", formatUpdateDate(update.createdAt)]
+                    })]
+                  })]
+                }), /* @__PURE__ */ jsxs("s-stack", {
+                  direction: "inline",
+                  gap: "small",
+                  alignItems: "center",
+                  children: [/* @__PURE__ */ jsx("s-badge", {
+                    tone: update.source === "customer_account_ui" ? "success" : "info",
+                    children: update.source === "customer_account_ui" ? "Customer Account UI" : "Checkout UI"
+                  }), /* @__PURE__ */ jsx("a", {
+                    href: update.adminOrderUrl,
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    style: {
+                      textDecoration: "none"
+                    },
+                    children: /* @__PURE__ */ jsx("s-button", {
+                      variant: "secondary",
+                      children: "View Order ↗"
+                    })
+                  })]
+                })]
+              })
+            }, update.id))
+          })]
+        })
+      })
+    }), /* @__PURE__ */ jsx("s-section", {
+      heading: "Feature Usage Frequency (All Time)",
       children: /* @__PURE__ */ jsx("s-box", {
         padding: "large",
         border: "base",
@@ -12022,7 +14150,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
     })]
   });
 });
-const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_insights,
   headers: headers$1,
@@ -12044,7 +14172,7 @@ const app__index = UNSAFE_withComponentProps(function Index() {
   }, [navigate, location.search]);
   return null;
 });
-const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route35 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app__index,
   loader: loader$1
@@ -12963,44 +15091,16 @@ const app_help = UNSAFE_withComponentProps(function HelpPage() {
           })]
         })
       })
-    }), /* @__PURE__ */ jsx("s-section", {
-      slot: "aside",
-      heading: "Quick Links",
-      children: /* @__PURE__ */ jsxs("s-unordered-list", {
-        children: [/* @__PURE__ */ jsx("s-list-item", {
-          children: /* @__PURE__ */ jsx(Link, {
-            to: `/app/active-services${location.search}`,
-            style: {
-              color: "#2c6ecb",
-              textDecoration: "underline",
-              cursor: "pointer",
-              fontWeight: 500
-            },
-            children: "Active Services & Controls"
-          })
-        }), /* @__PURE__ */ jsx("s-list-item", {
-          children: /* @__PURE__ */ jsx(Link, {
-            to: `/app/insights${location.search}`,
-            style: {
-              color: "#2c6ecb",
-              textDecoration: "underline",
-              cursor: "pointer",
-              fontWeight: 500
-            },
-            children: "Insights & Analytics"
-          })
-        })]
-      })
     })]
   });
 });
-const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_help,
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-CNopFeEv.js", "imports": ["/assets/jsx-runtime-aUIzaXkR.js", "/assets/chunk-62JRHF6Z-bDVxlu27.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-BOMhVD5q.js", "imports": ["/assets/jsx-runtime-aUIzaXkR.js", "/assets/chunk-62JRHF6Z-bDVxlu27.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.update-quantity": { "id": "routes/api.order-edit.update-quantity", "parentId": "root", "path": "api/order-edit/update-quantity", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.update-quantity-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.change-variant": { "id": "routes/api.order-edit.change-variant", "parentId": "root", "path": "api/order-edit/change-variant", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.change-variant-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.variant-stock": { "id": "routes/api.order-edit.variant-stock", "parentId": "root", "path": "api/order-edit/variant-stock", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.variant-stock-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.add-product": { "id": "routes/api.order-edit.add-product", "parentId": "root", "path": "api/order-edit/add-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.add-product-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.location-suggestions": { "id": "routes/api.location-suggestions", "parentId": "root", "path": "api/location-suggestions", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.location-suggestions-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.get-order": { "id": "routes/api.order-edit.get-order", "parentId": "root", "path": "api/order-edit/get-order", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.get-order-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.upsell-tags": { "id": "routes/api.order.upsell-tags", "parentId": "root", "path": "api/order/upsell-tags", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.upsell-tags-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.service-settings": { "id": "routes/api.service-settings", "parentId": "root", "path": "api/service-settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.service-settings-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount2": { "id": "routes/api.order.discount2", "parentId": "root", "path": "api/order/discount2", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount2-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount3": { "id": "routes/api.order.discount3", "parentId": "root", "path": "api/order/discount3", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount3-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount4": { "id": "routes/api.order.discount4", "parentId": "root", "path": "api/order/discount4", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount4-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount5": { "id": "routes/api.order.discount5", "parentId": "root", "path": "api/order/discount5", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount5-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount6": { "id": "routes/api.order.discount6", "parentId": "root", "path": "api/order/discount6", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount6-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount7": { "id": "routes/api.order.discount7", "parentId": "root", "path": "api/order/discount7", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount7-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount8": { "id": "routes/api.order.discount8", "parentId": "root", "path": "api/order/discount8", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount8-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/public.invoice-link": { "id": "routes/public.invoice-link", "parentId": "root", "path": "public/invoice-link", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/public.invoice-link-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount": { "id": "routes/api.order.discount", "parentId": "root", "path": "api/order/discount", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.shipping": { "id": "routes/api.order.shipping", "parentId": "root", "path": "api/order/shipping", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.shipping-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.address": { "id": "routes/api.order.address", "parentId": "root", "path": "api/order/address", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.address-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.contact": { "id": "routes/api.order.contact", "parentId": "root", "path": "api/order/contact", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.contact-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.invoice": { "id": "routes/api.order.invoice", "parentId": "root", "path": "api/order/invoice", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.invoice-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.cancel": { "id": "routes/api.order.cancel", "parentId": "root", "path": "api/order/cancel", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.cancel-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.note": { "id": "routes/api.order.note", "parentId": "root", "path": "api/order/note", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.note-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.login": { "id": "routes/auth.login", "parentId": "root", "path": "auth/login", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CvhHqqgp.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js", "/assets/AppProxyLink-MicN_kWB.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index": { "id": "routes/_index", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-fgW0wePr.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js"], "css": ["/assets/route-Xpdx9QZl.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-DiqPgGtF.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js", "/assets/AppProxyLink-MicN_kWB.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.active-services": { "id": "routes/app.active-services", "parentId": "routes/app", "path": "active-services", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.active-services-Bh4-pBf-.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.additional": { "id": "routes/app.additional", "parentId": "routes/app", "path": "additional", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.additional-D8TdgdMq.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.insights": { "id": "routes/app.insights", "parentId": "routes/app", "path": "insights", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.insights-BlZv6Vdg.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-fSP9zTXg.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.help": { "id": "routes/app.help", "parentId": "routes/app", "path": "help", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.help-Cm4CkBfq.js", "imports": ["/assets/chunk-62JRHF6Z-bDVxlu27.js", "/assets/jsx-runtime-aUIzaXkR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-3f6a1ad5.js", "version": "3f6a1ad5", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-D_SMyjUh.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-BnzjYjt2.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.update-quantity": { "id": "routes/api.order-edit.update-quantity", "parentId": "root", "path": "api/order-edit/update-quantity", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.update-quantity-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.change-variant": { "id": "routes/api.order-edit.change-variant", "parentId": "root", "path": "api/order-edit/change-variant", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.change-variant-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.variant-stock": { "id": "routes/api.order-edit.variant-stock", "parentId": "root", "path": "api/order-edit/variant-stock", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.variant-stock-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.add-product": { "id": "routes/api.order-edit.add-product", "parentId": "root", "path": "api/order-edit/add-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.add-product-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.bulk-update": { "id": "routes/api.order-edit.bulk-update", "parentId": "root", "path": "api/order-edit/bulk-update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.bulk-update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.sample-csv": { "id": "routes/api.order-edit.sample-csv", "parentId": "root", "path": "api/order-edit/sample-csv", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.sample-csv-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.location-suggestions": { "id": "routes/api.location-suggestions", "parentId": "root", "path": "api/location-suggestions", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.location-suggestions-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.get-order": { "id": "routes/api.order-edit.get-order", "parentId": "root", "path": "api/order-edit/get-order", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.get-order-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.upsell-tags": { "id": "routes/api.order.upsell-tags", "parentId": "root", "path": "api/order/upsell-tags", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.upsell-tags-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.service-settings": { "id": "routes/api.service-settings", "parentId": "root", "path": "api/service-settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.service-settings-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount2": { "id": "routes/api.order.discount2", "parentId": "root", "path": "api/order/discount2", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount2-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount3": { "id": "routes/api.order.discount3", "parentId": "root", "path": "api/order/discount3", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount3-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount4": { "id": "routes/api.order.discount4", "parentId": "root", "path": "api/order/discount4", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount4-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount5": { "id": "routes/api.order.discount5", "parentId": "root", "path": "api/order/discount5", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount5-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount6": { "id": "routes/api.order.discount6", "parentId": "root", "path": "api/order/discount6", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount6-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount7": { "id": "routes/api.order.discount7", "parentId": "root", "path": "api/order/discount7", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount7-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount8": { "id": "routes/api.order.discount8", "parentId": "root", "path": "api/order/discount8", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount8-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/public.invoice-link": { "id": "routes/public.invoice-link", "parentId": "root", "path": "public/invoice-link", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/public.invoice-link-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount": { "id": "routes/api.order.discount", "parentId": "root", "path": "api/order/discount", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.shipping": { "id": "routes/api.order.shipping", "parentId": "root", "path": "api/order/shipping", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.shipping-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.address": { "id": "routes/api.order.address", "parentId": "root", "path": "api/order/address", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.address-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.contact": { "id": "routes/api.order.contact", "parentId": "root", "path": "api/order/contact", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.contact-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.invoice": { "id": "routes/api.order.invoice", "parentId": "root", "path": "api/order/invoice", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.invoice-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.cancel": { "id": "routes/api.order.cancel", "parentId": "root", "path": "api/order/cancel", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.cancel-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.note": { "id": "routes/api.order.note", "parentId": "root", "path": "api/order/note", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.note-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.login": { "id": "routes/auth.login", "parentId": "root", "path": "auth/login", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DZ80wcFk.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index": { "id": "routes/_index", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DOL2-fDy.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": ["/assets/route-BuT_mVdb.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-ClWiU-Mw.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.active-services": { "id": "routes/app.active-services", "parentId": "routes/app", "path": "active-services", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.active-services-DTGvZ6rj.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.additional": { "id": "routes/app.additional", "parentId": "routes/app", "path": "additional", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.additional-C26EtW3I.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.insights": { "id": "routes/app.insights", "parentId": "routes/app", "path": "insights", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.insights-D7NAzqqn.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-D51Vph1h.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.help": { "id": "routes/app.help", "parentId": "routes/app", "path": "help", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.help-DNBJRTX2.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-d5fb12b5.js", "version": "d5fb12b5", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
@@ -13051,13 +15151,29 @@ const routes = {
     caseSensitive: void 0,
     module: route4
   },
+  "routes/api.order-edit.bulk-update": {
+    id: "routes/api.order-edit.bulk-update",
+    parentId: "root",
+    path: "api/order-edit/bulk-update",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route5
+  },
   "routes/webhooks.app.scopes_update": {
     id: "routes/webhooks.app.scopes_update",
     parentId: "root",
     path: "webhooks/app/scopes_update",
     index: void 0,
     caseSensitive: void 0,
-    module: route5
+    module: route6
+  },
+  "routes/api.order-edit.sample-csv": {
+    id: "routes/api.order-edit.sample-csv",
+    parentId: "root",
+    path: "api/order-edit/sample-csv",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route7
   },
   "routes/api.location-suggestions": {
     id: "routes/api.location-suggestions",
@@ -13065,7 +15181,7 @@ const routes = {
     path: "api/location-suggestions",
     index: void 0,
     caseSensitive: void 0,
-    module: route6
+    module: route8
   },
   "routes/api.order-edit.get-order": {
     id: "routes/api.order-edit.get-order",
@@ -13073,7 +15189,7 @@ const routes = {
     path: "api/order-edit/get-order",
     index: void 0,
     caseSensitive: void 0,
-    module: route7
+    module: route9
   },
   "routes/webhooks.app.uninstalled": {
     id: "routes/webhooks.app.uninstalled",
@@ -13081,7 +15197,7 @@ const routes = {
     path: "webhooks/app/uninstalled",
     index: void 0,
     caseSensitive: void 0,
-    module: route8
+    module: route10
   },
   "routes/api.order.upsell-tags": {
     id: "routes/api.order.upsell-tags",
@@ -13089,7 +15205,7 @@ const routes = {
     path: "api/order/upsell-tags",
     index: void 0,
     caseSensitive: void 0,
-    module: route9
+    module: route11
   },
   "routes/api.service-settings": {
     id: "routes/api.service-settings",
@@ -13097,7 +15213,7 @@ const routes = {
     path: "api/service-settings",
     index: void 0,
     caseSensitive: void 0,
-    module: route10
+    module: route12
   },
   "routes/api.order.discount2": {
     id: "routes/api.order.discount2",
@@ -13105,7 +15221,7 @@ const routes = {
     path: "api/order/discount2",
     index: void 0,
     caseSensitive: void 0,
-    module: route11
+    module: route13
   },
   "routes/api.order.discount3": {
     id: "routes/api.order.discount3",
@@ -13113,7 +15229,7 @@ const routes = {
     path: "api/order/discount3",
     index: void 0,
     caseSensitive: void 0,
-    module: route12
+    module: route14
   },
   "routes/api.order.discount4": {
     id: "routes/api.order.discount4",
@@ -13121,7 +15237,7 @@ const routes = {
     path: "api/order/discount4",
     index: void 0,
     caseSensitive: void 0,
-    module: route13
+    module: route15
   },
   "routes/api.order.discount5": {
     id: "routes/api.order.discount5",
@@ -13129,7 +15245,7 @@ const routes = {
     path: "api/order/discount5",
     index: void 0,
     caseSensitive: void 0,
-    module: route14
+    module: route16
   },
   "routes/api.order.discount6": {
     id: "routes/api.order.discount6",
@@ -13137,7 +15253,7 @@ const routes = {
     path: "api/order/discount6",
     index: void 0,
     caseSensitive: void 0,
-    module: route15
+    module: route17
   },
   "routes/api.order.discount7": {
     id: "routes/api.order.discount7",
@@ -13145,7 +15261,7 @@ const routes = {
     path: "api/order/discount7",
     index: void 0,
     caseSensitive: void 0,
-    module: route16
+    module: route18
   },
   "routes/api.order.discount8": {
     id: "routes/api.order.discount8",
@@ -13153,7 +15269,7 @@ const routes = {
     path: "api/order/discount8",
     index: void 0,
     caseSensitive: void 0,
-    module: route17
+    module: route19
   },
   "routes/public.invoice-link": {
     id: "routes/public.invoice-link",
@@ -13161,7 +15277,7 @@ const routes = {
     path: "public/invoice-link",
     index: void 0,
     caseSensitive: void 0,
-    module: route18
+    module: route20
   },
   "routes/api.order.discount": {
     id: "routes/api.order.discount",
@@ -13169,7 +15285,7 @@ const routes = {
     path: "api/order/discount",
     index: void 0,
     caseSensitive: void 0,
-    module: route19
+    module: route21
   },
   "routes/api.order.shipping": {
     id: "routes/api.order.shipping",
@@ -13177,7 +15293,7 @@ const routes = {
     path: "api/order/shipping",
     index: void 0,
     caseSensitive: void 0,
-    module: route20
+    module: route22
   },
   "routes/api.order.address": {
     id: "routes/api.order.address",
@@ -13185,7 +15301,7 @@ const routes = {
     path: "api/order/address",
     index: void 0,
     caseSensitive: void 0,
-    module: route21
+    module: route23
   },
   "routes/api.order.contact": {
     id: "routes/api.order.contact",
@@ -13193,7 +15309,7 @@ const routes = {
     path: "api/order/contact",
     index: void 0,
     caseSensitive: void 0,
-    module: route22
+    module: route24
   },
   "routes/api.order.invoice": {
     id: "routes/api.order.invoice",
@@ -13201,7 +15317,7 @@ const routes = {
     path: "api/order/invoice",
     index: void 0,
     caseSensitive: void 0,
-    module: route23
+    module: route25
   },
   "routes/api.order.cancel": {
     id: "routes/api.order.cancel",
@@ -13209,7 +15325,7 @@ const routes = {
     path: "api/order/cancel",
     index: void 0,
     caseSensitive: void 0,
-    module: route24
+    module: route26
   },
   "routes/api.order.note": {
     id: "routes/api.order.note",
@@ -13217,7 +15333,7 @@ const routes = {
     path: "api/order/note",
     index: void 0,
     caseSensitive: void 0,
-    module: route25
+    module: route27
   },
   "routes/auth.login": {
     id: "routes/auth.login",
@@ -13225,7 +15341,7 @@ const routes = {
     path: "auth/login",
     index: void 0,
     caseSensitive: void 0,
-    module: route26
+    module: route28
   },
   "routes/_index": {
     id: "routes/_index",
@@ -13233,7 +15349,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route27
+    module: route29
   },
   "routes/auth.$": {
     id: "routes/auth.$",
@@ -13241,7 +15357,7 @@ const routes = {
     path: "auth/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route28
+    module: route30
   },
   "routes/app": {
     id: "routes/app",
@@ -13249,7 +15365,7 @@ const routes = {
     path: "app",
     index: void 0,
     caseSensitive: void 0,
-    module: route29
+    module: route31
   },
   "routes/app.active-services": {
     id: "routes/app.active-services",
@@ -13257,7 +15373,7 @@ const routes = {
     path: "active-services",
     index: void 0,
     caseSensitive: void 0,
-    module: route30
+    module: route32
   },
   "routes/app.additional": {
     id: "routes/app.additional",
@@ -13265,7 +15381,7 @@ const routes = {
     path: "additional",
     index: void 0,
     caseSensitive: void 0,
-    module: route31
+    module: route33
   },
   "routes/app.insights": {
     id: "routes/app.insights",
@@ -13273,7 +15389,7 @@ const routes = {
     path: "insights",
     index: void 0,
     caseSensitive: void 0,
-    module: route32
+    module: route34
   },
   "routes/app._index": {
     id: "routes/app._index",
@@ -13281,7 +15397,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route33
+    module: route35
   },
   "routes/app.help": {
     id: "routes/app.help",
@@ -13289,7 +15405,7 @@ const routes = {
     path: "help",
     index: void 0,
     caseSensitive: void 0,
-    module: route34
+    module: route36
   }
 };
 const allowedActionOrigins = false;

@@ -14,6 +14,7 @@ import { ChangeShippingMethod } from './components/ChangeShippingMethod/ChangeSh
 import { AddOrderNote } from './components/AddOrderNote/AddOrderNote.jsx';
 import { ApplyDiscountCode } from './components/ApplyDiscountCode/ApplyDiscountCode.jsx';
 import { UpsellSlider } from './components/UpsellSlider/UpsellSlider.jsx';
+import { BulkUpdate } from './components/BulkUpdate/BulkUpdate.jsx';
 import { getServiceSettings } from './utils/api.js';
 import { OrderEditContext, useOrderEdit } from './context/OrderEditContext.jsx';
 import { useEffect } from "preact/hooks";
@@ -162,7 +163,7 @@ function Extension() {
   const isEnabled = (serviceId) => serviceSettings !== null && serviceSettings[serviceId] === true;
 
   // Category-level visibility — only show a category if at least one of its services is enabled
-  const showItemsCategory     = isEnabled('add-product') || isEnabled('edit-quantity') || isEnabled('swap-variant');
+  const showItemsCategory     = isEnabled('add-product') || isEnabled('edit-quantity') || isEnabled('swap-variant') || isEnabled('bulk-update');
   const showDeliveryCategory  = isEnabled('change-address') || isEnabled('contact-info') || isEnabled('change-shipping-method') || isEnabled('order-note');
   const showPromotionsCategory = isEnabled('apply-discount') || isEnabled('download-invoice');
   const showCancellationCategory = isEnabled('cancel-order') && !isCancelled;
@@ -432,6 +433,22 @@ function Extension() {
                     >
                       <s-stack direction="block" gap="large" inlineSize="100%">
                         <ChangeProductOptions />
+                      </s-stack>
+                    </ModalSection>
+                  );
+                }
+              })()}
+
+              {(() => {
+                if (isEnabled('bulk-update')) {
+                  return (
+                    <ModalSection
+                      title="Bulk update order items"
+                      subtitle="Add products, adjust quantities, or swap and replace items in bulk via visual UI or .CSV spreadsheet"
+                      iconType="order"
+                    >
+                      <s-stack direction="block" gap="large" inlineSize="100%">
+                        <BulkUpdate />
                       </s-stack>
                     </ModalSection>
                   );

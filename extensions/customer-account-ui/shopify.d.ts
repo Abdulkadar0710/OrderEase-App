@@ -85,6 +85,12 @@ declare module './src/components/UpsellSlider/UpsellSlider.jsx' {
 }
 
 //@ts-ignore
+declare module './src/components/BulkUpdate/BulkUpdate.jsx' {
+  const shopify: import('@shopify/ui-extensions/customer-account.order-status.block.render').Api;
+  const globalThis: { shopify: typeof shopify };
+}
+
+//@ts-ignore
 declare module './src/utils/api.js' {
   const shopify: import('@shopify/ui-extensions/customer-account.order-status.block.render').Api;
   const globalThis: { shopify: typeof shopify };
@@ -146,6 +152,12 @@ declare module './src/utils/countries.js' {
 
 //@ts-ignore
 declare module './src/hooks/useUpsellProducts.js' {
+  const shopify: import('@shopify/ui-extensions/customer-account.order-status.block.render').Api;
+  const globalThis: { shopify: typeof shopify };
+}
+
+//@ts-ignore
+declare module './src/components/BulkUpdate/BulkUpdateUI.jsx' {
   const shopify: import('@shopify/ui-extensions/customer-account.order-status.block.render').Api;
   const globalThis: { shopify: typeof shopify };
 }

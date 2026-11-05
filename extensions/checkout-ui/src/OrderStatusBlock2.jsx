@@ -12,6 +12,7 @@ import { ChangeShippingMethod } from './components/ChangeShippingMethod/ChangeSh
 import { AddOrderNote } from './components/AddOrderNote/AddOrderNote.jsx';
 import { ApplyDiscountCode } from './components/ApplyDiscountCode/ApplyDiscountCode.jsx';
 import { UpsellSlider } from './components/UpsellSlider/UpsellSlider.jsx';
+import { BulkUpdate } from './components/BulkUpdate/BulkUpdate.jsx';
 import { getExtensionOrderId } from './utils/shopifyHelpers.js';
 import { getServiceSettings, getOrderDetails } from './utils/api.js';
 
@@ -160,7 +161,7 @@ export default function OrderStatusBlock2() {
   const isEnabled = (serviceId) => serviceSettings !== null && serviceSettings[serviceId] === true;
 
   // Category-level visibility
-  const showItemsCategory     = isEnabled('add-product') || isEnabled('edit-quantity') || isEnabled('swap-variant');
+  const showItemsCategory     = isEnabled('add-product') || isEnabled('edit-quantity') || isEnabled('swap-variant') || isEnabled('bulk-update');
   const showDeliveryCategory  = isEnabled('change-address') || isEnabled('contact-info') || isEnabled('change-shipping-method') || isEnabled('order-note');
   const showPromotionsCategory = isEnabled('apply-discount') || isEnabled('download-invoice');
   const showCancellationCategory = isEnabled('cancel-order') && !isCancelled;
@@ -350,6 +351,18 @@ export default function OrderStatusBlock2() {
                     >
                       <s-stack direction="block" gap="large" inlineSize="100%">
                         <ChangeProductOptions orderId={orderId} />
+                      </s-stack>
+                    </ModalSection>
+                  )}
+
+                  {isEnabled('bulk-update') && (
+                    <ModalSection
+                      title="Bulk update order items"
+                      subtitle="Add products, adjust quantities, or swap and replace items in bulk via visual UI or .CSV spreadsheet"
+                      iconType="order"
+                    >
+                      <s-stack direction="block" gap="large" inlineSize="100%">
+                        <BulkUpdate orderId={orderId} />
                       </s-stack>
                     </ModalSection>
                   )}

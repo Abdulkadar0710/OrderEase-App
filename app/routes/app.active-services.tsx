@@ -96,6 +96,13 @@ const SERVICES = [
     category: "Item Management",
   },
   {
+    id: "bulk-update",
+    title: "Bulk Update Order Items",
+    description:
+      "Allow customers to bulk add, adjust quantities, swap variants, or replace items via CSV upload.",
+    category: "Item Management",
+  },
+  {
     id: "change-address",
     title: "Change Shipping Address",
     description:

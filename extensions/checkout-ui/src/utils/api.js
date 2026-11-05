@@ -1,5 +1,5 @@
 // TODO: replace with your app's deployed URL (must match SHOPIFY_APP_URL / application_url).
-const APP_URL = 'https://orderease-app-production-c6a0.up.railway.app';
+const APP_URL = 'https://wrapping-inserted-bear-minus.trycloudflare.com';
 
 /**
  * Normalizes any order ID string to standard Shopify Admin GID format:
@@ -511,4 +511,35 @@ export async function getLocationSuggestions(query, countryCode) {
   } catch (err) {
     return [];
   }
+}
+
+/**
+ * Executes a bulk order line items update via CSV.
+ * @param {Object} params
+ * @param {string} params.orderId
+ * @param {Array<Object>} [params.rows]
+ * @param {string} [params.rawCsv]
+ * @param {string} [params.source]
+ */
+export async function bulkUpdateOrder({ orderId, rows, rawCsv, source = 'checkout_ui' }) {
+  const token = await shopify.sessionToken.get();
+
+  const response = await fetch(`${APP_URL}/api/order-edit/bulk-update`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ orderId, rows, rawCsv, source }),
+  });
+
+  const result = await response.json();
+  return result;
+}
+
+/**
+ * Returns the URL to download the sample bulk update CSV.
+ */
+export function getSampleCsvUrl() {
+  return `${APP_URL}/api/order-edit/sample-csv`;
 }
