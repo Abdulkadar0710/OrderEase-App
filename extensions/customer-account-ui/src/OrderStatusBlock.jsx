@@ -159,6 +159,28 @@ function Extension() {
   const orderCancelledAt = shopify?.order?.value?.cancelledAt || order?.cancelledAt;
   const isCancelled = isOrderCancelled || Boolean(orderCancelledAt);
 
+  // Check if order is fully paid
+  const isOrderPaid =
+    (order?.displayFinancialStatus === "PAID" ||
+      shopify?.order?.value?.financialStatus === "PAID") &&
+    (!order?.totalOutstanding ||
+      parseFloat(order.totalOutstanding.amount || "0") <= 0);
+
+  // Detect whether payment is pending (order on hold for balance due)
+  const isPaymentPending =
+    !isOrderPaid &&
+    Boolean(
+      order?.hasPaymentPending ||
+        (order?.tags &&
+          (Array.isArray(order.tags)
+            ? order.tags.some(
+                (t) => String(t).toLowerCase() === "payment-pending",
+              )
+            : String(order.tags).toLowerCase().includes("payment-pending"))) ||
+        (order?.totalOutstanding &&
+          parseFloat(order.totalOutstanding.amount || "0") > 0),
+    );
+
   // Helper: returns true only when the service is explicitly enabled.
   const isEnabled = (serviceId) => serviceSettings !== null && serviceSettings[serviceId] === true;
 
@@ -335,6 +357,12 @@ function Extension() {
               <s-text type="strong">{remainingTime}</s-text>
             </s-stack>
           </s-box>
+        )}
+
+        {isPaymentPending && !isCancelled && (
+          <s-banner tone="warning" title="Order on Hold">
+            Your order is on hold until the pending balance is paid. Please complete payment via the invoice link sent to your email.
+          </s-banner>
         )}
 
         {/* ── Standalone Upsell Feature Outside Manage Order (hidden if cancelled) ── */}

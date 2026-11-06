@@ -1,8 +1,9 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
+import { applyPaymentPendingHold } from "../utils/fulfillmentHoldHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
+import { validateOrderEditable } from "../utils/orderGuard.server";
 import { checkAndRemoveInvalidBxgyDiscounts } from "../utils/bxgyDiscountHelper.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -188,10 +189,16 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  // Check edit limit guard
-  const editLimitCheck = await checkOrderEditLimit({ shop: storeDomain, orderId });
-  if (editLimitCheck.isLimitReached) {
-    const issue = `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`;
+  // Centralized security guard (Ownership, Cancellation, Fulfillment, Time Limit, Max Edits)
+  const guard = await validateOrderEditable({
+    admin,
+    shop: storeDomain,
+    orderId,
+    customerAccountId,
+  });
+
+  if (!guard.allowed) {
+    const issue = guard.message;
     return cors(
       Response.json(
         {
@@ -200,7 +207,7 @@ export async function action({ request }: ActionFunctionArgs) {
           errors: [{ productName: "-", sku: "-", issue }],
           errorCsv: generateErrorCsv([{ productName: "-", sku: "-", issue }]),
         },
-        { status: 422 },
+        { status: guard.status },
       ),
     );
   }
@@ -858,7 +865,13 @@ export async function action({ request }: ActionFunctionArgs) {
       null;
 
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund, ["Bulk-Updated"]);
+    const hasBalanceDue = balanceDue ? parseFloat(balanceDue.amount) > 0 : false;
+
+    if (hasBalanceDue) {
+      await applyPaymentPendingHold(admin, orderId);
+    } else {
+      await addOrderTags(admin, orderId, owesRefund, ["Bulk-Updated"]);
+    }
 
     // Track analytics
     await trackOrderEdit({

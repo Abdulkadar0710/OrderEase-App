@@ -184,6 +184,208 @@ async function addOrderTags(admin, orderId, owesRefund = false, extraTags = []) 
     console.error("[orderTagsHelper] Unexpected error while updating tags:", err);
   }
 }
+const TAG_PAYMENT_PENDING = "Payment-Pending";
+const GET_FULFILLMENT_ORDERS_QUERY = `#graphql
+  query GetOrderFulfillmentOrders($id: ID!) {
+    order(id: $id) {
+      id
+      fulfillmentOrders(first: 10) {
+        nodes {
+          id
+          status
+          supportedActions {
+            action
+          }
+        }
+      }
+    }
+  }
+`;
+const FULFILLMENT_ORDER_HOLD_MUTATION = `#graphql
+  mutation FulfillmentOrderHold($id: ID!, $fulfillmentHold: FulfillmentOrderHoldInput!) {
+    fulfillmentOrderHold(id: $id, fulfillmentHold: $fulfillmentHold) {
+      fulfillmentOrder {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+async function applyPaymentPendingHold(admin, orderId) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h;
+  const normalizedOrderId = orderId.includes("gid://shopify/Order/") ? orderId : `gid://shopify/Order/${orderId}`;
+  const errors = [];
+  let holdsApplied = 0;
+  try {
+    await addOrderTags(admin, normalizedOrderId, false, [TAG_PAYMENT_PENDING]);
+  } catch (tagErr) {
+    console.error("[applyPaymentPendingHold] Error tagging order:", tagErr);
+    errors.push(
+      tagErr instanceof Error ? tagErr.message : "Failed to add Payment-Pending tag"
+    );
+  }
+  try {
+    const foRes = await admin.graphql(GET_FULFILLMENT_ORDERS_QUERY, {
+      variables: { id: normalizedOrderId }
+    });
+    const foJson = await foRes.json();
+    if ((_a2 = foJson.errors) == null ? void 0 : _a2.length) {
+      console.warn(
+        "[applyPaymentPendingHold] GraphQL errors fetching fulfillment orders:",
+        foJson.errors
+      );
+      errors.push(((_b = foJson.errors[0]) == null ? void 0 : _b.message) || "GraphQL error on fulfillmentOrders query");
+    }
+    const fulfillmentOrders = ((_e = (_d = (_c = foJson.data) == null ? void 0 : _c.order) == null ? void 0 : _d.fulfillmentOrders) == null ? void 0 : _e.nodes) ?? [];
+    for (const fo of fulfillmentOrders) {
+      if (fo.status === "ON_HOLD") continue;
+      const canHold = ((_f = fo.supportedActions) == null ? void 0 : _f.some(
+        (a) => a.action === "HOLD"
+      )) || fo.status === "OPEN" || fo.status === "SCHEDULED";
+      if (!canHold) continue;
+      try {
+        const holdRes = await admin.graphql(FULFILLMENT_ORDER_HOLD_MUTATION, {
+          variables: {
+            id: fo.id,
+            fulfillmentHold: {
+              reason: "AWAITING_PAYMENT",
+              reasonNotes: "Order edit created an unpaid balance due. Awaiting customer invoice payment.",
+              notifyMerchant: false
+            }
+          }
+        });
+        const holdJson = await holdRes.json();
+        const userErrors = ((_h = (_g = holdJson.data) == null ? void 0 : _g.fulfillmentOrderHold) == null ? void 0 : _h.userErrors) ?? [];
+        if (userErrors.length > 0) {
+          console.warn(
+            `[applyPaymentPendingHold] Fulfillment hold errors on ${fo.id}:`,
+            userErrors
+          );
+          errors.push(userErrors.map((e) => e.message).join(", "));
+        } else {
+          holdsApplied++;
+        }
+      } catch (holdErr) {
+        console.error(
+          `[applyPaymentPendingHold] Failed to hold fulfillment order ${fo.id}:`,
+          holdErr
+        );
+        errors.push(
+          holdErr instanceof Error ? holdErr.message : `Failed to hold FO ${fo.id}`
+        );
+      }
+    }
+  } catch (err) {
+    console.error(
+      "[applyPaymentPendingHold] Error fetching fulfillment orders:",
+      err
+    );
+    errors.push(
+      err instanceof Error ? err.message : "Error fetching fulfillment orders"
+    );
+  }
+  return {
+    success: errors.length === 0,
+    holdsApplied,
+    errors
+  };
+}
+const RELEASE_FULFILLMENT_ORDER_HOLD_MUTATION = `#graphql
+  mutation ReleaseFulfillmentOrderHold($id: ID!) {
+    fulfillmentOrderReleaseHold(id: $id) {
+      fulfillmentOrder {
+        id
+        status
+        requestStatus
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+const REMOVE_TAGS_MUTATION$1 = `#graphql
+  mutation RemoveOrderTags($id: ID!, $tags: [String!]!) {
+    tagsRemove(id: $id, tags: $tags) {
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+async function releasePaymentPendingHold(admin, orderId) {
+  var _a2, _b, _c, _d, _e;
+  const normalizedOrderId = orderId.includes("gid://shopify/Order/") ? orderId : `gid://shopify/Order/${orderId}`;
+  const errors = [];
+  let holdsReleased = 0;
+  try {
+    await admin.graphql(REMOVE_TAGS_MUTATION$1, {
+      variables: {
+        id: normalizedOrderId,
+        tags: [TAG_PAYMENT_PENDING]
+      }
+    });
+  } catch (tagErr) {
+    console.error("[releasePaymentPendingHold] Error removing tag:", tagErr);
+    errors.push(
+      tagErr instanceof Error ? tagErr.message : "Error removing tag"
+    );
+  }
+  try {
+    const foRes = await admin.graphql(GET_FULFILLMENT_ORDERS_QUERY, {
+      variables: { id: normalizedOrderId }
+    });
+    const foJson = await foRes.json();
+    const fulfillmentOrders = ((_c = (_b = (_a2 = foJson.data) == null ? void 0 : _a2.order) == null ? void 0 : _b.fulfillmentOrders) == null ? void 0 : _c.nodes) ?? [];
+    for (const fo of fulfillmentOrders) {
+      if (fo.status !== "ON_HOLD") continue;
+      try {
+        const relRes = await admin.graphql(
+          RELEASE_FULFILLMENT_ORDER_HOLD_MUTATION,
+          { variables: { id: fo.id } }
+        );
+        const relJson = await relRes.json();
+        const userErrors = ((_e = (_d = relJson.data) == null ? void 0 : _d.fulfillmentOrderReleaseHold) == null ? void 0 : _e.userErrors) ?? [];
+        if (userErrors.length > 0) {
+          console.warn(
+            `[releasePaymentPendingHold] Errors releasing FO ${fo.id}:`,
+            userErrors
+          );
+          errors.push(userErrors.map((e) => e.message).join(", "));
+        } else {
+          holdsReleased++;
+        }
+      } catch (relErr) {
+        console.error(
+          `[releasePaymentPendingHold] Failed releasing FO ${fo.id}:`,
+          relErr
+        );
+        errors.push(
+          relErr instanceof Error ? relErr.message : `Failed releasing FO ${fo.id}`
+        );
+      }
+    }
+  } catch (err) {
+    console.error(
+      "[releasePaymentPendingHold] Error fetching fulfillment orders:",
+      err
+    );
+    errors.push(
+      err instanceof Error ? err.message : "Error fetching fulfillment orders"
+    );
+  }
+  return {
+    success: errors.length === 0,
+    holdsReleased,
+    errors
+  };
+}
 async function trackOrderEdit({
   shop,
   orderId,
@@ -264,6 +466,135 @@ async function checkOrderEditLimit({
     currentEditCount,
     maxEdits
   };
+}
+function extractNumericId(id) {
+  if (!id) return null;
+  const match = id.match(/\d+$/);
+  return match ? match[0] : id;
+}
+function isCustomerAuthorized(orderCustomerId, sessionCustomerId) {
+  if (!orderCustomerId || !sessionCustomerId) return false;
+  if (orderCustomerId === sessionCustomerId) return true;
+  const num1 = extractNumericId(orderCustomerId);
+  const num2 = extractNumericId(sessionCustomerId);
+  return Boolean(num1 && num2 && num1 === num2);
+}
+function getTimeLimitInMs(record) {
+  if (!record || !record.timeLimit) return 60 * 60 * 1e3;
+  const preset = record.timeLimit;
+  if (preset === "15m") return 15 * 60 * 1e3;
+  if (preset === "30m") return 30 * 60 * 1e3;
+  if (preset === "1h") return 60 * 60 * 1e3;
+  if (preset === "2h") return 2 * 60 * 60 * 1e3;
+  if (preset === "1d") return 24 * 60 * 60 * 1e3;
+  if (preset === "2d") return 48 * 60 * 60 * 1e3;
+  if (preset === "custom") {
+    const val = Number(record.customValue) || 1;
+    if (record.customUnit === "minutes") return val * 60 * 1e3;
+    if (record.customUnit === "hours") return val * 60 * 60 * 1e3;
+    if (record.customUnit === "days") return val * 24 * 60 * 60 * 1e3;
+    return val * 60 * 60 * 1e3;
+  }
+  return 60 * 60 * 1e3;
+}
+const ORDER_GUARD_QUERY = `#graphql
+  query GetOrderForGuard($id: ID!) {
+    order(id: $id) {
+      id
+      name
+      createdAt
+      cancelledAt
+      displayFulfillmentStatus
+      displayFinancialStatus
+      customer {
+        id
+      }
+    }
+  }
+`;
+async function validateOrderEditable({
+  admin,
+  shop,
+  orderId,
+  customerAccountId,
+  checkFulfillment = true,
+  checkCancellation = true,
+  checkTimeLimit = true,
+  checkEditLimit = true
+}) {
+  var _a2, _b;
+  if (!orderId) {
+    return { allowed: false, status: 400, message: "Missing order ID." };
+  }
+  const normalizedOrderId = orderId.includes("gid://shopify/Order/") ? orderId : `gid://shopify/Order/${orderId}`;
+  try {
+    const res = await admin.graphql(ORDER_GUARD_QUERY, {
+      variables: { id: normalizedOrderId }
+    });
+    const json = await res.json();
+    const order = (_a2 = json.data) == null ? void 0 : _a2.order;
+    if (!order) {
+      return { allowed: false, status: 404, message: "Order not found." };
+    }
+    if (!isCustomerAuthorized((_b = order.customer) == null ? void 0 : _b.id, customerAccountId)) {
+      return {
+        allowed: false,
+        status: 403,
+        message: "You are not authorized to modify this order."
+      };
+    }
+    if (checkCancellation && order.cancelledAt) {
+      return {
+        allowed: false,
+        status: 422,
+        message: "This order has already been cancelled and cannot be modified."
+      };
+    }
+    if (checkFulfillment && order.displayFulfillmentStatus && order.displayFulfillmentStatus !== "UNFULFILLED" && order.displayFulfillmentStatus !== "ON_HOLD") {
+      return {
+        allowed: false,
+        status: 422,
+        message: "This order has already been processed or shipped and can no longer be modified."
+      };
+    }
+    if (checkTimeLimit && order.createdAt) {
+      const timeLimitRecord = await prisma.orderEditTimeLimit.findUnique({
+        where: { shop }
+      });
+      const limitMs = getTimeLimitInMs(timeLimitRecord);
+      if (limitMs > 0) {
+        const orderCreatedTime = new Date(order.createdAt).getTime();
+        if (Date.now() > orderCreatedTime + limitMs) {
+          return {
+            allowed: false,
+            status: 422,
+            message: "The time limit to edit this order has expired."
+          };
+        }
+      }
+    }
+    if (checkEditLimit) {
+      const editLimitCheck = await checkOrderEditLimit({
+        shop,
+        orderId: normalizedOrderId
+      });
+      if (editLimitCheck.isLimitReached) {
+        return {
+          allowed: false,
+          status: 422,
+          message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        };
+      }
+    }
+    return { allowed: true, order };
+  } catch (err) {
+    console.error("[validateOrderEditable] Error:", err);
+    return {
+      allowed: false,
+      status: 500,
+      message: err instanceof Error ? err.message : "Error validating order access."
+    };
+  }
 }
 const TAG_PREFIX$3 = "@d2:";
 function round2$3(n) {
@@ -576,7 +907,7 @@ async function loader$w({
     }
   }));
 }
-async function action$q({
+async function action$r({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
@@ -612,17 +943,19 @@ async function action$q({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId: sessionToken.sub
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   const calculatedLineItemId = lineItemId.replace("LineItem", "CalculatedLineItem");
@@ -761,7 +1094,12 @@ async function action$q({
     const order = commitJson.data.orderEditCommit.order;
     const balanceDue = ((_l = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _l.presentmentMoney) ?? ((_m = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _m.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund);
+    const hasBalanceDue = balanceDue ? parseFloat(balanceDue.amount) > 0 : false;
+    if (hasBalanceDue) {
+      await applyPaymentPendingHold(admin, orderId);
+    } else {
+      await addOrderTags(admin, orderId, owesRefund);
+    }
     await trackOrderEdit({
       shop: storeDomain,
       orderId,
@@ -788,7 +1126,7 @@ async function action$q({
 }
 const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$q,
+  action: action$r,
   loader: loader$w
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$v({
@@ -806,7 +1144,7 @@ async function loader$v({
     }
   }));
 }
-async function action$p({
+async function action$q({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
@@ -843,17 +1181,19 @@ async function action$p({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId: sessionToken.sub
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   const calculatedLineItemId = oldLineItemId.replace("LineItem", "CalculatedLineItem");
@@ -990,7 +1330,12 @@ async function action$p({
     const order = commitJson.data.orderEditCommit.order;
     const balanceDue = ((_o = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _o.presentmentMoney) ?? ((_p = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _p.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund);
+    const hasBalanceDue = balanceDue ? parseFloat(balanceDue.amount) > 0 : false;
+    if (hasBalanceDue) {
+      await applyPaymentPendingHold(admin, orderId);
+    } else {
+      await addOrderTags(admin, orderId, owesRefund);
+    }
     await trackOrderEdit({
       shop: storeDomain,
       orderId,
@@ -1016,7 +1361,7 @@ async function action$p({
 }
 const route2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$p,
+  action: action$q,
   loader: loader$v
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$u({
@@ -1090,7 +1435,7 @@ async function loader$u({
     }));
   }
 }
-async function action$o({
+async function action$p({
   request
 }) {
   return loader$u({
@@ -1099,7 +1444,7 @@ async function action$o({
 }
 const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$o,
+  action: action$p,
   loader: loader$u
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$t({
@@ -1160,7 +1505,7 @@ async function loader$t({
     }));
   }
 }
-async function action$n({
+async function action$o({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
@@ -1197,17 +1542,19 @@ async function action$n({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId: sessionToken.sub
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   try {
@@ -1331,7 +1678,12 @@ async function action$n({
     const order = commitJson.data.orderEditCommit.order;
     const balanceDue = ((_i = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _i.presentmentMoney) ?? ((_j = order == null ? void 0 : order.totalOutstandingSet) == null ? void 0 : _j.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund);
+    const hasBalanceDue = balanceDue ? parseFloat(balanceDue.amount) > 0 : false;
+    if (hasBalanceDue) {
+      await applyPaymentPendingHold(admin, orderId);
+    } else {
+      await addOrderTags(admin, orderId, owesRefund);
+    }
     await trackOrderEdit({
       shop: storeDomain,
       orderId,
@@ -1358,7 +1710,7 @@ async function action$n({
 }
 const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$n,
+  action: action$o,
   loader: loader$t
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$s({
@@ -1442,7 +1794,7 @@ function parseCsvContent(rawCsv) {
   }
   return rows;
 }
-async function action$m({
+async function action$n({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
@@ -1508,12 +1860,14 @@ async function action$m({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId
   });
-  if (editLimitCheck.isLimitReached) {
-    const issue = `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`;
+  if (!guard.allowed) {
+    const issue = guard.message;
     return cors(Response.json({
       success: false,
       hasErrors: true,
@@ -1528,7 +1882,7 @@ async function action$m({
         issue
       }])
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   let order = null;
@@ -2124,7 +2478,12 @@ async function action$m({
     const updatedOrder = commitJson.data.orderEditCommit.order;
     const balanceDue = ((_v = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _v.presentmentMoney) ?? ((_w = updatedOrder == null ? void 0 : updatedOrder.totalOutstandingSet) == null ? void 0 : _w.shopMoney) ?? null;
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund, ["Bulk-Updated"]);
+    const hasBalanceDue = balanceDue ? parseFloat(balanceDue.amount) > 0 : false;
+    if (hasBalanceDue) {
+      await applyPaymentPendingHold(admin, orderId);
+    } else {
+      await addOrderTags(admin, orderId, owesRefund, ["Bulk-Updated"]);
+    }
     await trackOrderEdit({
       shop: storeDomain,
       orderId,
@@ -2164,10 +2523,10 @@ async function action$m({
 }
 const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$m,
+  action: action$n,
   loader: loader$s
 }, Symbol.toStringTag, { value: "Module" }));
-const action$l = async ({
+const action$m = async ({
   request
 }) => {
   const {
@@ -2192,7 +2551,7 @@ const action$l = async ({
 };
 const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$l
+  action: action$m
 }, Symbol.toStringTag, { value: "Module" }));
 const SAMPLE_CSV = `Product name,sku,replace with sku,quantity
 Classic Cotton T-Shirt,TSHIRT-BLK-M,,2
@@ -2256,7 +2615,7 @@ async function loader$q({
     suggestions
   }));
 }
-async function action$k({
+async function action$l({
   request
 }) {
   var _a2;
@@ -2372,12 +2731,12 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
                 const detailData = await detailRes.json();
                 const comps = detailData.addressComponents || [];
                 let streetNum = "";
-                let route37 = "";
+                let route38 = "";
                 let neighborhood = "";
                 for (const c of comps) {
                   const types = c.types || [];
                   if (types.includes("street_number")) streetNum = c.longText || c.shortText;
-                  if (types.includes("route")) route37 = c.longText || c.shortText;
+                  if (types.includes("route")) route38 = c.longText || c.shortText;
                   if (types.includes("sublocality") || types.includes("neighborhood") || types.includes("sublocality_level_1")) {
                     neighborhood = c.longText || c.shortText;
                   }
@@ -2395,7 +2754,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
                   }
                 }
                 if (!city) city = neighborhood || mainText;
-                address1 = [streetNum, route37].filter(Boolean).join(" ") || neighborhood || mainText;
+                address1 = [streetNum, route38].filter(Boolean).join(" ") || neighborhood || mainText;
               }
             } catch (e) {
             }
@@ -2436,7 +2795,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
         if (detailData.status === "OK" && detailData.result) {
           const comps = detailData.result.address_components || [];
           let streetNum = "";
-          let route37 = "";
+          let route38 = "";
           let neighborhood = "";
           let city = "";
           let province = "";
@@ -2446,7 +2805,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
           for (const c of comps) {
             const types = c.types || [];
             if (types.includes("street_number")) streetNum = c.long_name;
-            if (types.includes("route")) route37 = c.long_name;
+            if (types.includes("route")) route38 = c.long_name;
             if (types.includes("sublocality") || types.includes("neighborhood") || types.includes("sublocality_level_1")) {
               neighborhood = c.long_name;
             }
@@ -2466,7 +2825,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
           if (!city) {
             city = neighborhood || (((_f = pred.structured_formatting) == null ? void 0 : _f.main_text) || "").replace(/\d+/g, "").trim();
           }
-          const address1 = [streetNum, route37].filter(Boolean).join(" ") || neighborhood || ((_g = pred.structured_formatting) == null ? void 0 : _g.main_text) || "";
+          const address1 = [streetNum, route38].filter(Boolean).join(" ") || neighborhood || ((_g = pred.structured_formatting) == null ? void 0 : _g.main_text) || "";
           googleItems.push({
             id: pred.place_id,
             description: detailData.result.formatted_address || pred.description,
@@ -2494,7 +2853,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
 }
 const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$k,
+  action: action$l,
   loader: loader$q
 }, Symbol.toStringTag, { value: "Module" }));
 const GET_ORDER_DETAILS_QUERY = `#graphql
@@ -2506,6 +2865,14 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
       cancelledAt
       cancelReason
       currencyCode
+      customer { id }
+      tags
+      displayFinancialStatus
+      displayFulfillmentStatus
+      totalOutstandingSet {
+        shopMoney { amount currencyCode }
+        presentmentMoney { amount currencyCode }
+      }
       currentSubtotalPriceSet {
         shopMoney { amount currencyCode }
       }
@@ -2561,7 +2928,7 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
 async function loader$p({
   request
 }) {
-  var _a2, _b, _c, _d, _e;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
   const {
     sessionToken,
     cors
@@ -2593,9 +2960,28 @@ async function loader$p({
         status: 400
       }));
     }
-    const rawEdges = ((_d = (_c = (_b = json.data) == null ? void 0 : _b.order) == null ? void 0 : _c.lineItems) == null ? void 0 : _d.edges) ?? [];
+    const orderData = (_b = json.data) == null ? void 0 : _b.order;
+    if (!orderData) {
+      return cors(Response.json({
+        error: "Order not found"
+      }, {
+        status: 404
+      }));
+    }
+    const numericId = (gidOrId) => {
+      var _a3;
+      return (_a3 = gidOrId == null ? void 0 : gidOrId.match(/\d+$/)) == null ? void 0 : _a3[0];
+    };
+    if (!((_c = orderData.customer) == null ? void 0 : _c.id) || numericId(orderData.customer.id) !== numericId(sessionToken.sub)) {
+      return cors(Response.json({
+        error: "Unauthorized access to order."
+      }, {
+        status: 403
+      }));
+    }
+    const rawEdges = ((_f = (_e = (_d = json.data) == null ? void 0 : _d.order) == null ? void 0 : _e.lineItems) == null ? void 0 : _f.edges) ?? [];
     const lineItems = rawEdges.filter((edge) => edge.node && edge.node.currentQuantity > 0).map((edge) => {
-      var _a3, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
+      var _a3, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r;
       const node = edge.node;
       const unitPrice = Number(((_b2 = (_a3 = node.originalUnitPriceSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
       const currencyCode = ((_d2 = (_c2 = node.originalUnitPriceSet) == null ? void 0 : _c2.shopMoney) == null ? void 0 : _d2.currencyCode) || "USD";
@@ -2603,19 +2989,19 @@ async function loader$p({
         amount: (unitPrice * node.currentQuantity).toFixed(2),
         currencyCode
       };
-      const image = node.image || ((_i = (_h = (_g = (_f = (_e2 = node.variant) == null ? void 0 : _e2.media) == null ? void 0 : _f.edges) == null ? void 0 : _g[0]) == null ? void 0 : _h.node) == null ? void 0 : _i.image) || null;
-      const selectedOptions = ((_j = node.variant) == null ? void 0 : _j.selectedOptions) || [];
-      const itemSku = node.sku || ((_k = node.variant) == null ? void 0 : _k.sku) || "";
+      const image = node.image || ((_i2 = (_h2 = (_g2 = (_f2 = (_e2 = node.variant) == null ? void 0 : _e2.media) == null ? void 0 : _f2.edges) == null ? void 0 : _g2[0]) == null ? void 0 : _h2.node) == null ? void 0 : _i2.image) || null;
+      const selectedOptions = ((_j2 = node.variant) == null ? void 0 : _j2.selectedOptions) || [];
+      const itemSku = node.sku || ((_k2 = node.variant) == null ? void 0 : _k2.sku) || "";
       const merchandise = {
-        id: ((_l = node.variant) == null ? void 0 : _l.id) || "",
+        id: ((_l2 = node.variant) == null ? void 0 : _l2.id) || "",
         title: node.title || node.name || "",
         sku: itemSku,
         image,
         selectedOptions,
         product: {
-          id: ((_n = (_m = node.variant) == null ? void 0 : _m.product) == null ? void 0 : _n.id) || "",
-          title: ((_p = (_o = node.variant) == null ? void 0 : _o.product) == null ? void 0 : _p.title) || node.title || node.name || "",
-          vendor: ((_r = (_q = node.variant) == null ? void 0 : _q.product) == null ? void 0 : _r.vendor) || ""
+          id: ((_n2 = (_m2 = node.variant) == null ? void 0 : _m2.product) == null ? void 0 : _n2.id) || "",
+          title: ((_p2 = (_o2 = node.variant) == null ? void 0 : _o2.product) == null ? void 0 : _p2.title) || node.title || node.name || "",
+          vendor: ((_r = (_q2 = node.variant) == null ? void 0 : _q2.product) == null ? void 0 : _r.vendor) || ""
         }
       };
       const cost = {
@@ -2636,8 +3022,25 @@ async function loader$p({
         merchandise
       };
     });
+    let orderTags = ((_h = (_g = json.data) == null ? void 0 : _g.order) == null ? void 0 : _h.tags) ?? [];
+    const totalOutstanding = ((_k = (_j = (_i = json.data) == null ? void 0 : _i.order) == null ? void 0 : _j.totalOutstandingSet) == null ? void 0 : _k.presentmentMoney) ?? ((_n = (_m = (_l = json.data) == null ? void 0 : _l.order) == null ? void 0 : _m.totalOutstandingSet) == null ? void 0 : _n.shopMoney) ?? null;
+    const isPaid = ((_p = (_o = json.data) == null ? void 0 : _o.order) == null ? void 0 : _p.displayFinancialStatus) === "PAID" && (!totalOutstanding || parseFloat(totalOutstanding.amount) <= 0);
+    if (isPaid && orderTags.some((t) => t.toLowerCase() === "payment-pending")) {
+      try {
+        await releasePaymentPendingHold(admin, orderId);
+        orderTags = orderTags.filter((t) => t.toLowerCase() !== "payment-pending");
+      } catch (e) {
+        console.warn("[get-order] Failed to auto-release hold on paid order:", e);
+      }
+    }
+    const hasPaymentPending = !isPaid && (orderTags.some((t) => t.toLowerCase() === "payment-pending") || (totalOutstanding ? parseFloat(totalOutstanding.amount) > 0 : false));
     return cors(Response.json({
-      order: ((_e = json.data) == null ? void 0 : _e.order) ?? null,
+      order: {
+        ...((_q = json.data) == null ? void 0 : _q.order) ?? {},
+        tags: orderTags,
+        hasPaymentPending: Boolean(hasPaymentPending),
+        totalOutstanding
+      },
       lineItems
     }));
   } catch (err) {
@@ -2649,7 +3052,7 @@ async function loader$p({
     }));
   }
 }
-async function action$j({
+async function action$k({
   request
 }) {
   if (request.method === "OPTIONS") {
@@ -2674,10 +3077,10 @@ async function action$j({
 }
 const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$j,
+  action: action$k,
   loader: loader$p
 }, Symbol.toStringTag, { value: "Module" }));
-const action$i = async ({
+const action$j = async ({
   request
 }) => {
   const {
@@ -2697,7 +3100,7 @@ const action$i = async ({
 };
 const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$i
+  action: action$j
 }, Symbol.toStringTag, { value: "Module" }));
 const ORDER_TAGS_QUERY = `#graphql
   query GetOrderLineItemTags($id: ID!) {
@@ -2773,7 +3176,7 @@ async function loader$o({
     }));
   }
 }
-async function action$h({
+async function action$i({
   request
 }) {
   const {
@@ -2795,7 +3198,7 @@ async function action$h({
 }
 const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$h,
+  action: action$i,
   loader: loader$o
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$n({
@@ -2879,7 +3282,7 @@ async function loader$n({
     }
   }));
 }
-async function action$g({
+async function action$h({
   request
 }) {
   if (request.method === "OPTIONS") {
@@ -2918,8 +3321,37 @@ async function action$g({
 }
 const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$g,
+  action: action$h,
   loader: loader$n
+}, Symbol.toStringTag, { value: "Module" }));
+const action$g = async ({
+  request
+}) => {
+  const {
+    shop,
+    topic,
+    payload
+  } = await authenticate.webhook(request);
+  console.log(`[webhooks.orders.paid] Received ${topic} for ${shop}`);
+  const orderId = (payload == null ? void 0 : payload.admin_graphql_api_id) || ((payload == null ? void 0 : payload.id) ? `gid://shopify/Order/${payload.id}` : null);
+  if (orderId && shop) {
+    try {
+      const {
+        admin
+      } = await unauthenticated.admin(shop);
+      const res = await releasePaymentPendingHold(admin, orderId);
+      console.log(`[webhooks.orders.paid] Released hold for ${orderId}:`, res);
+    } catch (err) {
+      console.error(`[webhooks.orders.paid] Error releasing hold for ${orderId}:`, err);
+    }
+  }
+  return new Response(null, {
+    status: 200
+  });
+};
+const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  action: action$g
 }, Symbol.toStringTag, { value: "Module" }));
 const TAG_PREFIX$2 = "@d2:";
 const CHECKOUT_ORIGIN_TYPENAMES = /* @__PURE__ */ new Set(["DiscountCodeApplication", "AutomaticDiscountApplication", "ScriptDiscountApplication"]);
@@ -3414,7 +3846,7 @@ async function action$f({
     }));
   }
 }
-const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$f,
   loader: loader$m
@@ -3858,7 +4290,7 @@ async function action$e({
     }));
   }
 }
-const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$e,
   loader: loader$l
@@ -4345,7 +4777,7 @@ async function action$d({
     }));
   }
 }
-const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$d,
   loader: loader$k
@@ -4853,7 +5285,7 @@ async function action$c({
     }));
   }
 }
-const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$c,
   loader: loader$j
@@ -5375,7 +5807,7 @@ async function action$b({
     }));
   }
 }
-const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$b,
   loader: loader$i
@@ -5933,7 +6365,7 @@ async function action$a({
     }));
   }
 }
-const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$a,
   loader: loader$h
@@ -6831,17 +7263,19 @@ async function action$9({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId: sessionToken.sub
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   try {
@@ -7874,7 +8308,7 @@ async function action$9({
     }));
   }
 }
-const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$9,
   loader: loader$g
@@ -8578,7 +9012,7 @@ async function loader$f({
     });
   }
 }
-const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$f
 }, Symbol.toStringTag, { value: "Module" }));
@@ -9312,7 +9746,7 @@ async function action$8({
     }));
   }
 }
-const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$8,
   loader: loader$e
@@ -9636,17 +10070,19 @@ async function action$7({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   const ownerRes = await admin.graphql(`#graphql
@@ -9902,7 +10338,7 @@ async function action$7({
     }));
   }
 }
-const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$7,
   loader: loader$d
@@ -10012,17 +10448,19 @@ async function action$6({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   if (!["shipping", "billing"].includes(addressType)) {
@@ -10209,7 +10647,7 @@ async function action$6({
     }));
   }
 }
-const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$6,
   loader: loader$c
@@ -10311,17 +10749,19 @@ async function action$5({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   const emailStr = typeof email === "string" ? email.trim() : "";
@@ -10457,7 +10897,7 @@ async function action$5({
     }));
   }
 }
-const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$5,
   loader: loader$b
@@ -10561,7 +11001,7 @@ const action$4 = async ({
     }));
   }
 };
-const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$4,
   loader: loader$a
@@ -10616,17 +11056,19 @@ async function action$3({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId: sessionToken.sub
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   try {
@@ -10672,7 +11114,7 @@ async function action$3({
     }));
   }
 }
-const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$3,
   loader: loader$9
@@ -10757,17 +11199,19 @@ async function action$2({
       status: 400
     }));
   }
-  const editLimitCheck = await checkOrderEditLimit({
+  const guard = await validateOrderEditable({
+    admin,
     shop: storeDomain,
-    orderId
+    orderId,
+    customerAccountId
   });
-  if (editLimitCheck.isLimitReached) {
+  if (!guard.allowed) {
     return cors(Response.json({
       userErrors: [{
-        message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`
+        message: guard.message
       }]
     }, {
-      status: 422
+      status: guard.status
     }));
   }
   const ownerRes = await admin.graphql(`#graphql
@@ -10859,7 +11303,7 @@ async function action$2({
     }));
   }
 }
-const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$2,
   loader: loader$8
@@ -10919,7 +11363,7 @@ const route$1 = UNSAFE_withComponentProps(function Auth() {
     })
   });
 });
-const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$1,
   default: route$1,
@@ -11932,7 +12376,7 @@ const route = UNSAFE_withComponentProps(function App2() {
     })]
   });
 });
-const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: route,
   loader: loader$6,
@@ -11947,7 +12391,7 @@ const loader$5 = async ({
 const headers$4 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   headers: headers$4,
   loader: loader$5
@@ -11987,7 +12431,7 @@ const ErrorBoundary = UNSAFE_withErrorBoundaryProps(function ErrorBoundary2() {
 const headers$3 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   ErrorBoundary,
   default: app,
@@ -13446,7 +13890,7 @@ function ProductTagsSection({
     })
   });
 }
-const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action,
   default: app_activeServices,
@@ -13488,7 +13932,7 @@ const app_additional = UNSAFE_withComponentProps(function AdditionalPage() {
     })]
   });
 });
-const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_additional
 }, Symbol.toStringTag, { value: "Module" }));
@@ -14150,7 +14594,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
     })]
   });
 });
-const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route35 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_insights,
   headers: headers$1,
@@ -14172,7 +14616,7 @@ const app__index = UNSAFE_withComponentProps(function Index() {
   }, [navigate, location.search]);
   return null;
 });
-const route35 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app__index,
   loader: loader$1
@@ -15094,13 +15538,13 @@ const app_help = UNSAFE_withComponentProps(function HelpPage() {
     })]
   });
 });
-const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route37 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_help,
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-D_SMyjUh.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-BnzjYjt2.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.update-quantity": { "id": "routes/api.order-edit.update-quantity", "parentId": "root", "path": "api/order-edit/update-quantity", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.update-quantity-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.change-variant": { "id": "routes/api.order-edit.change-variant", "parentId": "root", "path": "api/order-edit/change-variant", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.change-variant-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.variant-stock": { "id": "routes/api.order-edit.variant-stock", "parentId": "root", "path": "api/order-edit/variant-stock", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.variant-stock-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.add-product": { "id": "routes/api.order-edit.add-product", "parentId": "root", "path": "api/order-edit/add-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.add-product-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.bulk-update": { "id": "routes/api.order-edit.bulk-update", "parentId": "root", "path": "api/order-edit/bulk-update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.bulk-update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.sample-csv": { "id": "routes/api.order-edit.sample-csv", "parentId": "root", "path": "api/order-edit/sample-csv", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.sample-csv-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.location-suggestions": { "id": "routes/api.location-suggestions", "parentId": "root", "path": "api/location-suggestions", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.location-suggestions-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.get-order": { "id": "routes/api.order-edit.get-order", "parentId": "root", "path": "api/order-edit/get-order", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.get-order-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.upsell-tags": { "id": "routes/api.order.upsell-tags", "parentId": "root", "path": "api/order/upsell-tags", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.upsell-tags-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.service-settings": { "id": "routes/api.service-settings", "parentId": "root", "path": "api/service-settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.service-settings-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount2": { "id": "routes/api.order.discount2", "parentId": "root", "path": "api/order/discount2", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount2-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount3": { "id": "routes/api.order.discount3", "parentId": "root", "path": "api/order/discount3", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount3-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount4": { "id": "routes/api.order.discount4", "parentId": "root", "path": "api/order/discount4", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount4-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount5": { "id": "routes/api.order.discount5", "parentId": "root", "path": "api/order/discount5", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount5-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount6": { "id": "routes/api.order.discount6", "parentId": "root", "path": "api/order/discount6", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount6-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount7": { "id": "routes/api.order.discount7", "parentId": "root", "path": "api/order/discount7", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount7-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount8": { "id": "routes/api.order.discount8", "parentId": "root", "path": "api/order/discount8", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount8-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/public.invoice-link": { "id": "routes/public.invoice-link", "parentId": "root", "path": "public/invoice-link", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/public.invoice-link-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount": { "id": "routes/api.order.discount", "parentId": "root", "path": "api/order/discount", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.shipping": { "id": "routes/api.order.shipping", "parentId": "root", "path": "api/order/shipping", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.shipping-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.address": { "id": "routes/api.order.address", "parentId": "root", "path": "api/order/address", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.address-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.contact": { "id": "routes/api.order.contact", "parentId": "root", "path": "api/order/contact", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.contact-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.invoice": { "id": "routes/api.order.invoice", "parentId": "root", "path": "api/order/invoice", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.invoice-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.cancel": { "id": "routes/api.order.cancel", "parentId": "root", "path": "api/order/cancel", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.cancel-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.note": { "id": "routes/api.order.note", "parentId": "root", "path": "api/order/note", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.note-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.login": { "id": "routes/auth.login", "parentId": "root", "path": "auth/login", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DZ80wcFk.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index": { "id": "routes/_index", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DOL2-fDy.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": ["/assets/route-BuT_mVdb.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-ClWiU-Mw.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.active-services": { "id": "routes/app.active-services", "parentId": "routes/app", "path": "active-services", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.active-services-DTGvZ6rj.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.additional": { "id": "routes/app.additional", "parentId": "routes/app", "path": "additional", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.additional-C26EtW3I.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.insights": { "id": "routes/app.insights", "parentId": "routes/app", "path": "insights", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.insights-D7NAzqqn.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-D51Vph1h.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.help": { "id": "routes/app.help", "parentId": "routes/app", "path": "help", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.help-DNBJRTX2.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-d5fb12b5.js", "version": "d5fb12b5", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-D_SMyjUh.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-BnzjYjt2.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.update-quantity": { "id": "routes/api.order-edit.update-quantity", "parentId": "root", "path": "api/order-edit/update-quantity", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.update-quantity-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.change-variant": { "id": "routes/api.order-edit.change-variant", "parentId": "root", "path": "api/order-edit/change-variant", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.change-variant-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.variant-stock": { "id": "routes/api.order-edit.variant-stock", "parentId": "root", "path": "api/order-edit/variant-stock", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.variant-stock-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.add-product": { "id": "routes/api.order-edit.add-product", "parentId": "root", "path": "api/order-edit/add-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.add-product-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.bulk-update": { "id": "routes/api.order-edit.bulk-update", "parentId": "root", "path": "api/order-edit/bulk-update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.bulk-update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.sample-csv": { "id": "routes/api.order-edit.sample-csv", "parentId": "root", "path": "api/order-edit/sample-csv", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.sample-csv-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.location-suggestions": { "id": "routes/api.location-suggestions", "parentId": "root", "path": "api/location-suggestions", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.location-suggestions-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.get-order": { "id": "routes/api.order-edit.get-order", "parentId": "root", "path": "api/order-edit/get-order", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.get-order-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.upsell-tags": { "id": "routes/api.order.upsell-tags", "parentId": "root", "path": "api/order/upsell-tags", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.upsell-tags-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.service-settings": { "id": "routes/api.service-settings", "parentId": "root", "path": "api/service-settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.service-settings-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.paid": { "id": "routes/webhooks.orders.paid", "parentId": "root", "path": "webhooks/orders/paid", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.paid-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount2": { "id": "routes/api.order.discount2", "parentId": "root", "path": "api/order/discount2", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount2-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount3": { "id": "routes/api.order.discount3", "parentId": "root", "path": "api/order/discount3", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount3-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount4": { "id": "routes/api.order.discount4", "parentId": "root", "path": "api/order/discount4", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount4-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount5": { "id": "routes/api.order.discount5", "parentId": "root", "path": "api/order/discount5", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount5-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount6": { "id": "routes/api.order.discount6", "parentId": "root", "path": "api/order/discount6", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount6-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount7": { "id": "routes/api.order.discount7", "parentId": "root", "path": "api/order/discount7", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount7-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount8": { "id": "routes/api.order.discount8", "parentId": "root", "path": "api/order/discount8", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount8-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/public.invoice-link": { "id": "routes/public.invoice-link", "parentId": "root", "path": "public/invoice-link", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/public.invoice-link-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount": { "id": "routes/api.order.discount", "parentId": "root", "path": "api/order/discount", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.shipping": { "id": "routes/api.order.shipping", "parentId": "root", "path": "api/order/shipping", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.shipping-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.address": { "id": "routes/api.order.address", "parentId": "root", "path": "api/order/address", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.address-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.contact": { "id": "routes/api.order.contact", "parentId": "root", "path": "api/order/contact", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.contact-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.invoice": { "id": "routes/api.order.invoice", "parentId": "root", "path": "api/order/invoice", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.invoice-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.cancel": { "id": "routes/api.order.cancel", "parentId": "root", "path": "api/order/cancel", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.cancel-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.note": { "id": "routes/api.order.note", "parentId": "root", "path": "api/order/note", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.note-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.login": { "id": "routes/auth.login", "parentId": "root", "path": "auth/login", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DZ80wcFk.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index": { "id": "routes/_index", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DOL2-fDy.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": ["/assets/route-BuT_mVdb.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-ClWiU-Mw.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.active-services": { "id": "routes/app.active-services", "parentId": "routes/app", "path": "active-services", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.active-services-DTGvZ6rj.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.additional": { "id": "routes/app.additional", "parentId": "routes/app", "path": "additional", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.additional-C26EtW3I.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.insights": { "id": "routes/app.insights", "parentId": "routes/app", "path": "insights", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.insights-D7NAzqqn.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-D51Vph1h.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.help": { "id": "routes/app.help", "parentId": "routes/app", "path": "help", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.help-DNBJRTX2.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-0ecb3c68.js", "version": "0ecb3c68", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
@@ -15215,13 +15659,21 @@ const routes = {
     caseSensitive: void 0,
     module: route12
   },
+  "routes/webhooks.orders.paid": {
+    id: "routes/webhooks.orders.paid",
+    parentId: "root",
+    path: "webhooks/orders/paid",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route13
+  },
   "routes/api.order.discount2": {
     id: "routes/api.order.discount2",
     parentId: "root",
     path: "api/order/discount2",
     index: void 0,
     caseSensitive: void 0,
-    module: route13
+    module: route14
   },
   "routes/api.order.discount3": {
     id: "routes/api.order.discount3",
@@ -15229,7 +15681,7 @@ const routes = {
     path: "api/order/discount3",
     index: void 0,
     caseSensitive: void 0,
-    module: route14
+    module: route15
   },
   "routes/api.order.discount4": {
     id: "routes/api.order.discount4",
@@ -15237,7 +15689,7 @@ const routes = {
     path: "api/order/discount4",
     index: void 0,
     caseSensitive: void 0,
-    module: route15
+    module: route16
   },
   "routes/api.order.discount5": {
     id: "routes/api.order.discount5",
@@ -15245,7 +15697,7 @@ const routes = {
     path: "api/order/discount5",
     index: void 0,
     caseSensitive: void 0,
-    module: route16
+    module: route17
   },
   "routes/api.order.discount6": {
     id: "routes/api.order.discount6",
@@ -15253,7 +15705,7 @@ const routes = {
     path: "api/order/discount6",
     index: void 0,
     caseSensitive: void 0,
-    module: route17
+    module: route18
   },
   "routes/api.order.discount7": {
     id: "routes/api.order.discount7",
@@ -15261,7 +15713,7 @@ const routes = {
     path: "api/order/discount7",
     index: void 0,
     caseSensitive: void 0,
-    module: route18
+    module: route19
   },
   "routes/api.order.discount8": {
     id: "routes/api.order.discount8",
@@ -15269,7 +15721,7 @@ const routes = {
     path: "api/order/discount8",
     index: void 0,
     caseSensitive: void 0,
-    module: route19
+    module: route20
   },
   "routes/public.invoice-link": {
     id: "routes/public.invoice-link",
@@ -15277,7 +15729,7 @@ const routes = {
     path: "public/invoice-link",
     index: void 0,
     caseSensitive: void 0,
-    module: route20
+    module: route21
   },
   "routes/api.order.discount": {
     id: "routes/api.order.discount",
@@ -15285,7 +15737,7 @@ const routes = {
     path: "api/order/discount",
     index: void 0,
     caseSensitive: void 0,
-    module: route21
+    module: route22
   },
   "routes/api.order.shipping": {
     id: "routes/api.order.shipping",
@@ -15293,7 +15745,7 @@ const routes = {
     path: "api/order/shipping",
     index: void 0,
     caseSensitive: void 0,
-    module: route22
+    module: route23
   },
   "routes/api.order.address": {
     id: "routes/api.order.address",
@@ -15301,7 +15753,7 @@ const routes = {
     path: "api/order/address",
     index: void 0,
     caseSensitive: void 0,
-    module: route23
+    module: route24
   },
   "routes/api.order.contact": {
     id: "routes/api.order.contact",
@@ -15309,7 +15761,7 @@ const routes = {
     path: "api/order/contact",
     index: void 0,
     caseSensitive: void 0,
-    module: route24
+    module: route25
   },
   "routes/api.order.invoice": {
     id: "routes/api.order.invoice",
@@ -15317,7 +15769,7 @@ const routes = {
     path: "api/order/invoice",
     index: void 0,
     caseSensitive: void 0,
-    module: route25
+    module: route26
   },
   "routes/api.order.cancel": {
     id: "routes/api.order.cancel",
@@ -15325,7 +15777,7 @@ const routes = {
     path: "api/order/cancel",
     index: void 0,
     caseSensitive: void 0,
-    module: route26
+    module: route27
   },
   "routes/api.order.note": {
     id: "routes/api.order.note",
@@ -15333,7 +15785,7 @@ const routes = {
     path: "api/order/note",
     index: void 0,
     caseSensitive: void 0,
-    module: route27
+    module: route28
   },
   "routes/auth.login": {
     id: "routes/auth.login",
@@ -15341,7 +15793,7 @@ const routes = {
     path: "auth/login",
     index: void 0,
     caseSensitive: void 0,
-    module: route28
+    module: route29
   },
   "routes/_index": {
     id: "routes/_index",
@@ -15349,7 +15801,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route29
+    module: route30
   },
   "routes/auth.$": {
     id: "routes/auth.$",
@@ -15357,7 +15809,7 @@ const routes = {
     path: "auth/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route30
+    module: route31
   },
   "routes/app": {
     id: "routes/app",
@@ -15365,7 +15817,7 @@ const routes = {
     path: "app",
     index: void 0,
     caseSensitive: void 0,
-    module: route31
+    module: route32
   },
   "routes/app.active-services": {
     id: "routes/app.active-services",
@@ -15373,7 +15825,7 @@ const routes = {
     path: "active-services",
     index: void 0,
     caseSensitive: void 0,
-    module: route32
+    module: route33
   },
   "routes/app.additional": {
     id: "routes/app.additional",
@@ -15381,7 +15833,7 @@ const routes = {
     path: "additional",
     index: void 0,
     caseSensitive: void 0,
-    module: route33
+    module: route34
   },
   "routes/app.insights": {
     id: "routes/app.insights",
@@ -15389,7 +15841,7 @@ const routes = {
     path: "insights",
     index: void 0,
     caseSensitive: void 0,
-    module: route34
+    module: route35
   },
   "routes/app._index": {
     id: "routes/app._index",
@@ -15397,7 +15849,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route35
+    module: route36
   },
   "routes/app.help": {
     id: "routes/app.help",
@@ -15405,7 +15857,7 @@ const routes = {
     path: "help",
     index: void 0,
     caseSensitive: void 0,
-    module: route36
+    module: route37
   }
 };
 const allowedActionOrigins = false;

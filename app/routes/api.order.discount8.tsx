@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
+import { validateOrderEditable } from "../utils/orderGuard.server";
 import {
   TAG_PREFIX,
   round2,
@@ -878,19 +878,19 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  // Check edit limit guard
-  const editLimitCheck = await checkOrderEditLimit({ shop: storeDomain, orderId });
-  if (editLimitCheck.isLimitReached) {
+  // Centralized security guard (Ownership, Cancellation, Fulfillment, Time Limit, Max Edits)
+  const guard = await validateOrderEditable({
+    admin,
+    shop: storeDomain,
+    orderId,
+    customerAccountId: sessionToken.sub,
+  });
+
+  if (!guard.allowed) {
     return cors(
       Response.json(
-        {
-          userErrors: [
-            {
-              message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`,
-            },
-          ],
-        },
-        { status: 422 },
+        { userErrors: [{ message: guard.message }] },
+        { status: guard.status },
       ),
     );
   }

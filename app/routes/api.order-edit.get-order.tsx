@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
+import { releasePaymentPendingHold } from "../utils/fulfillmentHoldHelper.server";
 
 const GET_ORDER_DETAILS_QUERY = `#graphql
   query GetOrderLineItems($id: ID!) {
@@ -10,6 +11,14 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
       cancelledAt
       cancelReason
       currencyCode
+      customer { id }
+      tags
+      displayFinancialStatus
+      displayFulfillmentStatus
+      totalOutstandingSet {
+        shopMoney { amount currencyCode }
+        presentmentMoney { amount currencyCode }
+      }
       currentSubtotalPriceSet {
         shopMoney { amount currencyCode }
       }
@@ -98,6 +107,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return cors(Response.json({ error: json.errors[0].message }, { status: 400 }));
     }
 
+    const orderData = json.data?.order;
+    if (!orderData) {
+      return cors(Response.json({ error: "Order not found" }, { status: 404 }));
+    }
+
+    const numericId = (gidOrId?: string | null) => gidOrId?.match(/\d+$/)?.[0];
+    if (
+      !orderData.customer?.id ||
+      numericId(orderData.customer.id) !== numericId(sessionToken.sub)
+    ) {
+      return cors(Response.json({ error: "Unauthorized access to order." }, { status: 403 }));
+    }
+
     const rawEdges = json.data?.order?.lineItems?.edges ?? [];
 
     // Explicitly filter for items with currentQuantity > 0 (excluding soft-deleted items)
@@ -149,7 +171,41 @@ export async function loader({ request }: LoaderFunctionArgs) {
         };
       });
 
-    return cors(Response.json({ order: json.data?.order ?? null, lineItems }));
+    let orderTags = (json.data?.order?.tags as string[]) ?? [];
+    const totalOutstanding =
+      json.data?.order?.totalOutstandingSet?.presentmentMoney ??
+      json.data?.order?.totalOutstandingSet?.shopMoney ??
+      null;
+    const isPaid =
+      json.data?.order?.displayFinancialStatus === "PAID" &&
+      (!totalOutstanding || parseFloat(totalOutstanding.amount) <= 0);
+
+    // If order has been fully paid, auto-release hold and remove Payment-Pending tag
+    if (isPaid && orderTags.some((t) => t.toLowerCase() === "payment-pending")) {
+      try {
+        await releasePaymentPendingHold(admin, orderId);
+        orderTags = orderTags.filter((t) => t.toLowerCase() !== "payment-pending");
+      } catch (e) {
+        console.warn("[get-order] Failed to auto-release hold on paid order:", e);
+      }
+    }
+
+    const hasPaymentPending =
+      !isPaid &&
+      (orderTags.some((t) => t.toLowerCase() === "payment-pending") ||
+        (totalOutstanding ? parseFloat(totalOutstanding.amount) > 0 : false));
+
+    return cors(
+      Response.json({
+        order: {
+          ...(json.data?.order ?? {}),
+          tags: orderTags,
+          hasPaymentPending: Boolean(hasPaymentPending),
+          totalOutstanding,
+        },
+        lineItems,
+      }),
+    );
   } catch (err: unknown) {
     console.error("[get-order] Unexpected error:", err);
     return cors(Response.json({ error: "Internal error" }, { status: 500 }));

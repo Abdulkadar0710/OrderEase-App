@@ -1,8 +1,9 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
+import { applyPaymentPendingHold } from "../utils/fulfillmentHoldHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
+import { validateOrderEditable } from "../utils/orderGuard.server";
 
 /**
  * Adds a product variant to an existing order, called from the
@@ -93,19 +94,19 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  // Check edit limit guard
-  const editLimitCheck = await checkOrderEditLimit({ shop: storeDomain, orderId });
-  if (editLimitCheck.isLimitReached) {
+  // Centralized security guard (Ownership, Cancellation, Fulfillment, Time Limit, Max Edits)
+  const guard = await validateOrderEditable({
+    admin,
+    shop: storeDomain,
+    orderId,
+    customerAccountId: sessionToken.sub,
+  });
+
+  if (!guard.allowed) {
     return cors(
       Response.json(
-        {
-          userErrors: [
-            {
-              message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`,
-            },
-          ],
-        },
-        { status: 422 },
+        { userErrors: [{ message: guard.message }] },
+        { status: guard.status },
       ),
     );
   }
@@ -232,10 +233,15 @@ export async function action({ request }: ActionFunctionArgs) {
       order?.totalOutstandingSet?.shopMoney ??
       null;
 
-    // Determine if the merchant owes the customer a refund
-    // (negative outstanding balance after edit).
+    // Determine if the merchant owes the customer a refund or if payment is pending
     const owesRefund = balanceDue ? parseFloat(balanceDue.amount) < 0 : false;
-    await addOrderTags(admin, orderId, owesRefund);
+    const hasBalanceDue = balanceDue ? parseFloat(balanceDue.amount) > 0 : false;
+
+    if (hasBalanceDue) {
+      await applyPaymentPendingHold(admin, orderId);
+    } else {
+      await addOrderTags(admin, orderId, owesRefund);
+    }
 
     // Track order edit and feature usage
     await trackOrderEdit({

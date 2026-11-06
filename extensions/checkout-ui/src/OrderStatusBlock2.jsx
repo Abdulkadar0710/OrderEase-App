@@ -156,6 +156,7 @@ export default function OrderStatusBlock2() {
   const [remainingTime, setRemainingTime] = useState("--:--:--");
   const [createdAtStr, setCreatedAtStr] = useState(null);
   const [isCancelled, setIsCancelled] = useState(false);
+  const [isPaymentPending, setIsPaymentPending] = useState(false);
 
   // Helper: returns true only when the service is explicitly enabled.
   const isEnabled = (serviceId) => serviceSettings !== null && serviceSettings[serviceId] === true;
@@ -188,6 +189,27 @@ export default function OrderStatusBlock2() {
       .then((data) => {
         if (data?.order?.cancelledAt) {
           setIsCancelled(true);
+        }
+        const isPaid =
+          data?.order?.displayFinancialStatus === "PAID" &&
+          (!data?.order?.totalOutstanding ||
+            parseFloat(data.order.totalOutstanding.amount || "0") <= 0);
+
+        if (
+          !isPaid &&
+          (data?.order?.hasPaymentPending ||
+            (data?.order?.tags &&
+              (Array.isArray(data.order.tags)
+                ? data.order.tags.some(
+                    (t) => String(t).toLowerCase() === "payment-pending",
+                  )
+                : String(data.order.tags).toLowerCase().includes("payment-pending"))) ||
+            (data?.order?.totalOutstanding &&
+              parseFloat(data.order.totalOutstanding.amount || "0") > 0))
+        ) {
+          setIsPaymentPending(true);
+        } else {
+          setIsPaymentPending(false);
         }
         if (data?.createdAt) {
           setCreatedAtStr(data.createdAt);
@@ -268,6 +290,12 @@ export default function OrderStatusBlock2() {
             <s-text type="strong">{remainingTime}</s-text>
           </s-stack>
         </s-box>
+      )}
+
+      {isPaymentPending && !isCancelled && (
+        <s-banner tone="warning" title="Order on Hold">
+          Your order is on hold until the pending balance is paid. Please complete payment via the invoice link sent to your email.
+        </s-banner>
       )}
 
       {/* ── Standalone Upsell Feature Outside Manage Order ── */}
