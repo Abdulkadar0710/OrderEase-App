@@ -241,7 +241,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       customUnit: timeLimitRecord.customUnit ?? "hours",
       maxEdits: timeLimitRecord.maxEdits ?? null,
     },
-    googleApiKey: googleConfig?.apiKey || "",
+    hasGoogleApiKey: Boolean(
+      googleConfig?.apiKey && googleConfig.apiKey.trim().length > 0,
+    ),
     initialProducts,
   };
 };
@@ -336,11 +338,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const apiKeyRaw = formData.get("googleApiKey") as string;
     const apiKey = apiKeyRaw ? apiKeyRaw.trim() : null;
 
+    if (!apiKey) {
+      return {
+        ok: false,
+        type: "googleApiKey",
+        error: "Enter a Google Places API key to save, or use Delete Key to remove the saved key.",
+      };
+    }
+
     console.log(
       `[ActiveServices Action] Saving Google Places API Key: shop=${shop}, hasKey=${Boolean(apiKey)}`,
     );
 
-    const result = await db.googlePlacesConfig.upsert({
+    await db.googlePlacesConfig.upsert({
       where: { shop },
       create: {
         shop,
@@ -351,7 +361,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       },
     });
 
-    return { ok: true, type: "googleApiKey", action: "saved", result };
+    return {
+      ok: true,
+      type: "googleApiKey",
+      action: "saved",
+      hasGoogleApiKey: true,
+    };
   }
 
   if (intent === "deleteGoogleApiKey") {
@@ -459,7 +474,7 @@ export const headers: HeadersFunction = (headersArgs) => {
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export default function ActiveServicesPage(): JSX.Element {
-  const { services, timeLimitSettings, googleApiKey, initialProducts } =
+  const { services, timeLimitSettings, hasGoogleApiKey, initialProducts } =
     useLoaderData<typeof loader>();
 
   return (
@@ -476,7 +491,7 @@ export default function ActiveServicesPage(): JSX.Element {
       <ProductTagsSection initialProducts={initialProducts} />
 
       {/* ── Google Location Autocomplete Key Section ── */}
-      <GoogleApiKeySection initialApiKey={googleApiKey} />
+      <GoogleApiKeySection initialHasKey={hasGoogleApiKey} />
 
       {/* ── Max Edits Limit Configuration Box ── */}
       <MaxEditsSection initialMaxEdits={timeLimitSettings.maxEdits} />
@@ -1050,14 +1065,15 @@ function ServiceRow({
 // ─── GoogleApiKeySection Component ───────────────────────────────────────────
 
 interface GoogleApiKeySectionProps {
-  initialApiKey: string;
+  initialHasKey: boolean;
 }
 
 function GoogleApiKeySection({
-  initialApiKey,
+  initialHasKey,
 }: GoogleApiKeySectionProps): JSX.Element {
   const fetcher = useFetcher();
-  const [apiKey, setApiKey] = useEffectState(initialApiKey || "");
+  const [hasKey, setHasKey] = useState(initialHasKey);
+  const [apiKey, setApiKey] = useEffectState("");
   const [showKey, setShowKey] = useState(false);
   const [isSaved, setIsSaved] = useEffectState(false);
   const [actionMessage, setActionMessage] = useState("");
@@ -1066,8 +1082,8 @@ function GoogleApiKeySection({
   );
 
   useEffect(() => {
-    setApiKey(initialApiKey || "");
-  }, [initialApiKey]);
+    setHasKey(initialHasKey);
+  }, [initialHasKey]);
 
   useEffect(() => {
     if (
@@ -1078,15 +1094,14 @@ function GoogleApiKeySection({
       setIsSaved(true);
       const isDeleted = fetcher.data?.action === "deleted";
       setLastAction(isDeleted ? "deleted" : "saved");
+      setHasKey(!isDeleted);
+      // Clear input after save/delete so stored secrets remain write-only in the browser.
+      setApiKey("");
 
       const msg = isDeleted
         ? "Google Places API key deleted successfully!"
         : "Google Places API key saved successfully!";
       setActionMessage(msg);
-
-      if (isDeleted) {
-        setApiKey("");
-      }
 
       if (typeof window !== "undefined" && (window as any).shopify?.toast) {
         (window as any).shopify.toast.show(msg);
@@ -1100,6 +1115,7 @@ function GoogleApiKeySection({
   }, [fetcher.state, fetcher.data]);
 
   const handleSave = () => {
+    if (!apiKey.trim()) return;
     fetcher.submit(
       {
         intent: "saveGoogleApiKey",
@@ -1121,9 +1137,7 @@ function GoogleApiKeySection({
   const isDeleting =
     fetcher.state !== "idle" &&
     fetcher.formData?.get("intent") === "deleteGoogleApiKey";
-  const isConfigured = Boolean(
-    (apiKey && apiKey.trim().length > 0) || isDeleting,
-  );
+  const isConfigured = hasKey || isDeleting;
   const showDeleteButton =
     isConfigured || isDeleting || (isSaved && lastAction === "deleted");
 
@@ -1183,7 +1197,11 @@ function GoogleApiKeySection({
                       type={showKey ? "text" : "password"}
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="e.g. AIzaSyD..."
+                      placeholder={
+                        hasKey
+                          ? "API key saved — enter a new key to replace"
+                          : "e.g. AIzaSyD..."
+                      }
                       style={{
                         padding: "8px 50px 8px 12px",
                         borderRadius: "6px",
@@ -1221,6 +1239,7 @@ function GoogleApiKeySection({
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={!apiKey.trim()}
                   style={{
                     padding: "9px 20px",
                     borderRadius: "6px",
@@ -1228,7 +1247,8 @@ function GoogleApiKeySection({
                     backgroundColor: "#008060",
                     color: "#ffffff",
                     fontWeight: "600",
-                    cursor: "pointer",
+                    cursor: apiKey.trim() ? "pointer" : "not-allowed",
+                    opacity: apiKey.trim() ? 1 : 0.6,
                     whiteSpace: "nowrap",
                     height: "36px",
                     flexShrink: 0,
