@@ -4,3 +4,6 @@ node_modules
 /.react-router
 /.shopify
 .env
+*.sqlite
+*.sqlite-*
+prisma/*.db*
