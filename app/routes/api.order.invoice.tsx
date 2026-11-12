@@ -2,6 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { buildSignedInvoiceUrl } from "../utils/invoice-link.server";
 import { trackFeatureUsage } from "../utils/analyticsHelper.server";
+import { isServiceEnabled } from "../utils/orderGuard.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { cors } = await authenticate.public.customerAccount(request);
@@ -26,6 +27,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!(await isServiceEnabled(storeDomain, "download-invoice"))) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
+  }
   const customerAccountId = sessionToken.sub;
   const body = await request.json();
   const orderId = body.orderId;

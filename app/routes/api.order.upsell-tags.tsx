@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
-import { isCustomerAuthorized } from "../utils/orderGuard.server";
+import { isCustomerAuthorized, isServiceEnabled } from "../utils/orderGuard.server";
 
 /**
  * GET /api/order/upsell-tags?orderId=gid://...
@@ -41,6 +41,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!(await isServiceEnabled(storeDomain, "product-upsell"))) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
+  }
   const { admin } = await unauthenticated.admin(storeDomain);
 
   try {

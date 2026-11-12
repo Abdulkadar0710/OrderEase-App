@@ -100,6 +100,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId: sessionToken.sub,
+    requiredServiceId: ["add-product", "product-upsell"],
   });
 
   if (!guard.allowed) {

@@ -50,6 +50,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId: sessionToken.sub,
+    requiredServiceId: "edit-quantity",
   });
 
   if (!guard.allowed) {

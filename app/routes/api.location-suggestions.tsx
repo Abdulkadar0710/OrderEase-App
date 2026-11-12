@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { isServiceEnabled } from "../utils/orderGuard.server";
 
 interface SuggestionItem {
   id: string;
@@ -30,6 +31,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!storeDomain) {
     return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
   }
+  if (!(await isServiceEnabled(storeDomain, "change-address"))) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
+  }
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim() || "";
@@ -47,6 +51,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const { storeDomain, cors } = await requireAuthenticatedShop(request);
   if (!storeDomain) {
     return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
+  }
+  if (!(await isServiceEnabled(storeDomain, "change-address"))) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
   }
 
   try {

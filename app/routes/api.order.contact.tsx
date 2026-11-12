@@ -106,6 +106,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId,
+    requiredServiceId: "contact-info",
   });
 
   if (!guard.allowed) {

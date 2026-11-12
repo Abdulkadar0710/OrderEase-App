@@ -46,6 +46,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId: sessionToken.sub,
+    requiredServiceId: "cancel-order",
   });
 
   if (!guard.allowed) {

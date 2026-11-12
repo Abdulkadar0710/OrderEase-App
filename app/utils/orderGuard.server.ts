@@ -17,6 +17,35 @@ export interface ValidateOrderOptions {
   checkCancellation?: boolean; // defaults to true
   checkTimeLimit?: boolean; // defaults to true
   checkEditLimit?: boolean; // defaults to true
+  requiredServiceId?: string | string[]; // optional ServiceSettings feature toggle(s) required
+}
+
+/**
+ * Checks whether at least one of the specified merchant ServiceSettings features
+ * is enabled for the shop.
+ */
+export async function isServiceEnabled(
+  shop: string,
+  serviceId: string | string[],
+): Promise<boolean> {
+  const ids = Array.isArray(serviceId) ? serviceId : [serviceId];
+  if (ids.length === 0) return false;
+  const normalizedShop = shop
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase()
+    .trim();
+  if (!normalizedShop) return false;
+
+  const row = await db.serviceSettings.findFirst({
+    where: {
+      shop: normalizedShop,
+      id: { in: ids },
+      enabled: true,
+    },
+    select: { id: true },
+  });
+  return Boolean(row);
 }
 
 export interface GuardedOrder {
@@ -120,9 +149,21 @@ export async function validateOrderEditable({
   checkCancellation = true,
   checkTimeLimit = true,
   checkEditLimit = true,
+  requiredServiceId,
 }: ValidateOrderOptions): Promise<OrderGuardResult> {
   if (!orderId) {
     return { allowed: false, status: 400, message: "Missing order ID." };
+  }
+
+  if (requiredServiceId) {
+    const enabled = await isServiceEnabled(shop, requiredServiceId);
+    if (!enabled) {
+      return {
+        allowed: false,
+        status: 403,
+        message: "This feature is not enabled by the merchant.",
+      };
+    }
   }
 
   const normalizedOrderId = orderId.includes("gid://shopify/Order/")

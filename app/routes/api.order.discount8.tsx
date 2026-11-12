@@ -884,6 +884,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId: sessionToken.sub,
+    requiredServiceId: "apply-discount",
   });
 
   if (!guard.allowed) {

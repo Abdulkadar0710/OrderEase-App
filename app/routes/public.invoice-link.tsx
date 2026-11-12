@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { unauthenticated } from "../shopify.server";
 import { verifySignedInvoiceUrl } from "../utils/invoice-link.server";
 import { generateInvoicePdf, ORDER_INVOICE_QUERY, type InvoiceOrder } from "../utils/invoice.server";
+import { isServiceEnabled } from "../utils/orderGuard.server";
 
 /**
  * Public (no session-token) endpoint that streams a real invoice PDF.
@@ -23,6 +24,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const { shop, orderId, customerId } = verified;
+
+  if (!(await isServiceEnabled(shop, "download-invoice"))) {
+    return new Response("Invoice download is not enabled by the merchant.", {
+      status: 403,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
 
   try {
     const { admin } = await unauthenticated.admin(shop);

@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { isCustomerAuthorized, validateOrderEditable } from "../utils/orderGuard.server";
+import { isCustomerAuthorized, isServiceEnabled, validateOrderEditable } from "../utils/orderGuard.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
@@ -15,6 +15,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!(await isServiceEnabled(storeDomain, "change-address"))) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
+  }
   const { admin } = await unauthenticated.admin(storeDomain);
 
   try {
@@ -97,6 +100,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId,
+    requiredServiceId: "change-address",
   });
 
   if (!guard.allowed) {

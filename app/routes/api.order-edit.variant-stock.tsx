@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
+import { isServiceEnabled } from "../utils/orderGuard.server";
 
 /**
  * GET /api/order-edit/variant-stock?variantId=gid://shopify/ProductVariant/...
@@ -21,6 +22,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (
+    !(await isServiceEnabled(storeDomain, [
+      "add-product",
+      "product-upsell",
+      "edit-quantity",
+      "swap-variant",
+      "bulk-update",
+    ]))
+  ) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
+  }
   const { admin } = await unauthenticated.admin(storeDomain);
 
   try {

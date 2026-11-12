@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { isCustomerAuthorized, validateOrderEditable } from "../utils/orderGuard.server";
+import { isCustomerAuthorized, isServiceEnabled, validateOrderEditable } from "../utils/orderGuard.server";
 import { detectActiveFreeShipping, persistFreeShippingCode } from "../utils/freeShippingHelper.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -16,6 +16,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!(await isServiceEnabled(storeDomain, "change-shipping-method"))) {
+    return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
+  }
   const { admin, session } = await unauthenticated.admin(storeDomain);
 
   try {
@@ -353,6 +356,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId,
+    requiredServiceId: "change-shipping-method",
   });
 
   if (!guard.allowed) {

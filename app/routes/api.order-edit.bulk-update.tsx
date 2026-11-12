@@ -195,6 +195,7 @@ export async function action({ request }: ActionFunctionArgs) {
     shop: storeDomain,
     orderId,
     customerAccountId,
+    requiredServiceId: "bulk-update",
   });
 
   if (!guard.allowed) {
