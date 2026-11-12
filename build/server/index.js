@@ -2612,25 +2612,10 @@ const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   __proto__: null,
   loader: loader$k
 }, Symbol.toStringTag, { value: "Module" }));
-async function requireAuthenticatedShop(request) {
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  const storeDomain = (sessionToken.dest ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
-  return {
-    storeDomain,
-    cors
-  };
+function normalizeShopDomain(dest) {
+  return (dest ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
 }
-async function loader$j({
-  request
-}) {
-  var _a2, _b;
-  const {
-    storeDomain,
-    cors
-  } = await requireAuthenticatedShop(request);
+async function handleLocationSuggestions(storeDomain, cors, q, countryCode) {
   if (!storeDomain) {
     return cors(Response.json({
       error: "Unauthorized"
@@ -2645,9 +2630,6 @@ async function loader$j({
       status: 403
     }));
   }
-  const url = new URL(request.url);
-  const q = ((_a2 = url.searchParams.get("q")) == null ? void 0 : _a2.trim()) || "";
-  const countryCode = ((_b = url.searchParams.get("countryCode")) == null ? void 0 : _b.trim()) || "";
   if (!q || q.length < 2) {
     return cors(Response.json({
       suggestions: []
@@ -2658,40 +2640,33 @@ async function loader$j({
     suggestions
   }));
 }
+async function loader$j({
+  request
+}) {
+  var _a2, _b;
+  const {
+    sessionToken,
+    cors
+  } = await authenticate.public.customerAccount(request);
+  const storeDomain = normalizeShopDomain(sessionToken.dest);
+  const url = new URL(request.url);
+  const q = ((_a2 = url.searchParams.get("q")) == null ? void 0 : _a2.trim()) || "";
+  const countryCode = ((_b = url.searchParams.get("countryCode")) == null ? void 0 : _b.trim()) || "";
+  return handleLocationSuggestions(storeDomain, cors, q, countryCode);
+}
 async function action$f({
   request
 }) {
   const {
-    storeDomain,
+    sessionToken,
     cors
-  } = await requireAuthenticatedShop(request);
-  if (!storeDomain) {
-    return cors(Response.json({
-      error: "Unauthorized"
-    }, {
-      status: 401
-    }));
-  }
-  if (!await isServiceEnabled(storeDomain, "change-address")) {
-    return cors(Response.json({
-      error: "This feature is not enabled by the merchant."
-    }, {
-      status: 403
-    }));
-  }
+  } = await authenticate.public.customerAccount(request);
+  const storeDomain = normalizeShopDomain(sessionToken.dest);
   try {
     const body = await request.json().catch(() => ({}));
     const q = (body.q || "").trim();
     const countryCode = (body.countryCode || "").trim();
-    if (!q || q.length < 2) {
-      return cors(Response.json({
-        suggestions: []
-      }));
-    }
-    const suggestions = await fetchLocationSuggestions(q, storeDomain, countryCode);
-    return cors(Response.json({
-      suggestions
-    }));
+    return handleLocationSuggestions(storeDomain, cors, q, countryCode);
   } catch (err) {
     return cors(Response.json({
       suggestions: []
