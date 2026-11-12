@@ -15,35 +15,25 @@ interface SuggestionItem {
   country: string;
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  let cors = (res: Response) => res;
-  let storeDomain = "";
+async function requireAuthenticatedShop(request: Request) {
+  const { sessionToken, cors } = await authenticate.public.customerAccount(request);
+  const storeDomain = (sessionToken.dest ?? "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase()
+    .trim();
+  return { storeDomain, cors };
+}
 
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-    if (authResult.sessionToken?.dest) {
-      storeDomain = authResult.sessionToken.dest.replace(/^https?:\/\//, "");
-    }
-  } catch (e) {
-    cors = (res: Response) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders,
-      });
-    };
+export async function loader({ request }: LoaderFunctionArgs) {
+  const { storeDomain, cors } = await requireAuthenticatedShop(request);
+  if (!storeDomain) {
+    return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim() || "";
   const countryCode = url.searchParams.get("countryCode")?.trim() || "";
-  const shopParam = url.searchParams.get("shop")?.trim();
-  if (shopParam) storeDomain = shopParam;
 
   if (!q || q.length < 2) {
     return cors(Response.json({ suggestions: [] }));
@@ -54,38 +44,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  let cors = (res: Response) => res;
-  let storeDomain = "";
-
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-    if (authResult.sessionToken?.dest) {
-      storeDomain = authResult.sessionToken.dest.replace(/^https?:\/\//, "");
-    }
-  } catch (e) {
-    cors = (res: Response) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders,
-      });
-    };
-  }
-
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, { status: 200 }));
+  const { storeDomain, cors } = await requireAuthenticatedShop(request);
+  if (!storeDomain) {
+    return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
   try {
     const body = await request.json().catch(() => ({}));
     const q = (body.q || "").trim();
     const countryCode = (body.countryCode || "").trim();
-    if (body.shop) storeDomain = String(body.shop).trim();
 
     if (!q || q.length < 2) {
       return cors(Response.json({ suggestions: [] }));

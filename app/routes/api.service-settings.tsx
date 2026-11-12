@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
@@ -11,70 +11,41 @@ import { checkOrderEditLimit } from "../utils/editLimitHelper.server";
  * Google Places API key is configured.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  // if (request.method === "OPTIONS") {
-  //   return new Response(null, {
-  //     status: 204,
-  //     headers: {
-  //       "Access-Control-Allow-Origin": "*",
-  //       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  //       "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  //       "Access-Control-Max-Age": "7200",
-  //     },
-  //   });
-  // }
+  const { sessionToken, cors } = await authenticate.public.customerAccount(request);
 
-  let cors = (res: Response) => res;
-  let storeDomain = "";
+  const storeDomain = (sessionToken.dest ?? "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase()
+    .trim();
 
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-    if (authResult.sessionToken?.dest) {
-      storeDomain = authResult.sessionToken.dest.replace(/^https?:\/\//, "");
-    }
-  } catch (e) {
-    cors = (res: Response) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders,
-      });
-    };
+  if (!storeDomain) {
+    return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
   const url = new URL(request.url);
   const orderId = url.searchParams.get("orderId");
-  const shopParam = url.searchParams.get("shop");
-
-  if (shopParam) storeDomain = shopParam;
-  storeDomain = storeDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
 
   // Fetch service settings rows for this shop
-  const rows = storeDomain
-    ? await db.serviceSettings.findMany({
-        where: { shop: storeDomain },
-        select: { id: true, enabled: true },
-      })
-    : [];
+  const rows = await db.serviceSettings.findMany({
+    where: { shop: storeDomain },
+    select: { id: true, enabled: true },
+  });
 
   // Fetch order edit time limit setting for this shop
-  const timeLimitRecord = storeDomain
-    ? await db.orderEditTimeLimit.findUnique({ where: { shop: storeDomain } })
-    : null;
+  const timeLimitRecord = await db.orderEditTimeLimit.findUnique({
+    where: { shop: storeDomain },
+  });
 
   // Fetch Google Places API Key configuration for this specific shop
-  const googleConfig = storeDomain
-    ? await db.googlePlacesConfig.findUnique({ where: { shop: storeDomain } })
-    : null;
+  const googleConfig = await db.googlePlacesConfig.findUnique({
+    where: { shop: storeDomain },
+  });
 
   const hasGooglePlacesKey = Boolean(googleConfig?.apiKey && googleConfig.apiKey.trim().length > 0);
 
   // Check order edit limit if orderId is provided
-  const editLimitInfo = orderId && storeDomain
+  const editLimitInfo = orderId
     ? await checkOrderEditLimit({ shop: storeDomain, orderId })
     : { isLimitReached: false, currentEditCount: 0, maxEdits: timeLimitRecord ? timeLimitRecord.maxEdits : 3 };
 
@@ -103,34 +74,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   );
 }
 
-export async function action({ request }: LoaderFunctionArgs) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Max-Age": "7200",
-      },
-    });
-  }
-  let cors = (res: Response) => res;
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-  } catch {
-    cors = (res: Response) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders,
-      });
-    };
-  }
+export async function action({ request }: ActionFunctionArgs) {
+  const { cors } = await authenticate.public.customerAccount(request);
   return cors(Response.json({ error: "Method not allowed" }, { status: 405 }));
 }
