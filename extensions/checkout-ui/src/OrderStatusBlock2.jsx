@@ -198,12 +198,6 @@ export default function OrderStatusBlock2() {
         if (
           !isPaid &&
           (data?.order?.hasPaymentPending ||
-            (data?.order?.tags &&
-              (Array.isArray(data.order.tags)
-                ? data.order.tags.some(
-                    (t) => String(t).toLowerCase() === "payment-pending",
-                  )
-                : String(data.order.tags).toLowerCase().includes("payment-pending"))) ||
             (data?.order?.totalOutstanding &&
               parseFloat(data.order.totalOutstanding.amount || "0") > 0))
         ) {

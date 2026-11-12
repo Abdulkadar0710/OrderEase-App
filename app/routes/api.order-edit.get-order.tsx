@@ -198,8 +198,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return cors(
       Response.json({
         order: {
-          ...(json.data?.order ?? {}),
-          tags: orderTags,
+          id: orderData.id,
+          name: orderData.name,
+          createdAt: orderData.createdAt,
+          cancelledAt: orderData.cancelledAt ?? null,
+          cancelReason: orderData.cancelReason ?? null,
+          currencyCode: orderData.currencyCode,
+          displayFinancialStatus: orderData.displayFinancialStatus,
+          displayFulfillmentStatus: orderData.displayFulfillmentStatus,
+          currentSubtotalPriceSet: orderData.currentSubtotalPriceSet ?? null,
+          currentTotalPriceSet: orderData.currentTotalPriceSet ?? null,
           hasPaymentPending: Boolean(hasPaymentPending),
           totalOutstanding,
         },

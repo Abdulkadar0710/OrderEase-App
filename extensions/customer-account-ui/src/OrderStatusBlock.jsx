@@ -171,12 +171,6 @@ function Extension() {
     !isOrderPaid &&
     Boolean(
       order?.hasPaymentPending ||
-        (order?.tags &&
-          (Array.isArray(order.tags)
-            ? order.tags.some(
-                (t) => String(t).toLowerCase() === "payment-pending",
-              )
-            : String(order.tags).toLowerCase().includes("payment-pending"))) ||
         (order?.totalOutstanding &&
           parseFloat(order.totalOutstanding.amount || "0") > 0),
     );
