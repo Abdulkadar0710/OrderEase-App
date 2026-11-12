@@ -467,6 +467,21 @@ async function checkOrderEditLimit({
     maxEdits
   };
 }
+async function isServiceEnabled(shop, serviceId) {
+  const ids = Array.isArray(serviceId) ? serviceId : [serviceId];
+  if (ids.length === 0) return false;
+  const normalizedShop = shop.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
+  if (!normalizedShop) return false;
+  const row = await prisma.serviceSettings.findFirst({
+    where: {
+      shop: normalizedShop,
+      id: { in: ids },
+      enabled: true
+    },
+    select: { id: true }
+  });
+  return Boolean(row);
+}
 function extractNumericId(id) {
   if (!id) return null;
   const match = id.match(/\d+$/);
@@ -520,11 +535,22 @@ async function validateOrderEditable({
   checkFulfillment = true,
   checkCancellation = true,
   checkTimeLimit = true,
-  checkEditLimit = true
+  checkEditLimit = true,
+  requiredServiceId
 }) {
   var _a2, _b;
   if (!orderId) {
     return { allowed: false, status: 400, message: "Missing order ID." };
+  }
+  if (requiredServiceId) {
+    const enabled = await isServiceEnabled(shop, requiredServiceId);
+    if (!enabled) {
+      return {
+        allowed: false,
+        status: 403,
+        message: "This feature is not enabled by the merchant."
+      };
+    }
   }
   const normalizedOrderId = orderId.includes("gid://shopify/Order/") ? orderId : `gid://shopify/Order/${orderId}`;
   try {
@@ -596,13 +622,13 @@ async function validateOrderEditable({
     };
   }
 }
-const TAG_PREFIX$3 = "@d2:";
-function round2$3(n) {
+const TAG_PREFIX = "@d2:";
+function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
-function decodeTag$3(description) {
-  if (!description || !description.startsWith(TAG_PREFIX$3)) return null;
-  const rest = description.slice(TAG_PREFIX$3.length).trim();
+function decodeTag(description) {
+  if (!description || !description.startsWith(TAG_PREFIX)) return null;
+  const rest = description.slice(TAG_PREFIX.length).trim();
   if (!rest.startsWith("{")) return null;
   let depth = 0;
   let endIdx = -1;
@@ -801,12 +827,12 @@ async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
         const app2 = alloc.discountApplication;
         if (!app2) continue;
         let code = "";
-        const decoded = decodeTag$3(app2.description);
+        const decoded = decodeTag(app2.description);
         if ((_c = decoded == null ? void 0 : decoded.bxgy) == null ? void 0 : _c.code) {
           code = decoded.bxgy.code;
         } else {
           const potentialCode = (app2.description || "").trim();
-          if (potentialCode && !potentialCode.startsWith(TAG_PREFIX$3)) {
+          if (potentialCode && !potentialCode.startsWith(TAG_PREFIX)) {
             code = potentialCode;
           }
         }
@@ -892,7 +918,7 @@ async function checkAndRemoveInvalidBxgyDiscounts(admin, calculatedOrderId) {
     return { removedCount: 0, removedProducts: [] };
   }
 }
-async function loader$w({
+async function loader$p({
   request
 }) {
   const {
@@ -907,7 +933,7 @@ async function loader$w({
     }
   }));
 }
-async function action$r({
+async function action$l({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
@@ -947,7 +973,8 @@ async function action$r({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId: sessionToken.sub
+    customerAccountId: sessionToken.sub,
+    requiredServiceId: "edit-quantity"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -1126,10 +1153,10 @@ async function action$r({
 }
 const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$r,
-  loader: loader$w
+  action: action$l,
+  loader: loader$p
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$v({
+async function loader$o({
   request
 }) {
   const {
@@ -1144,7 +1171,7 @@ async function loader$v({
     }
   }));
 }
-async function action$q({
+async function action$k({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
@@ -1185,7 +1212,8 @@ async function action$q({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId: sessionToken.sub
+    customerAccountId: sessionToken.sub,
+    requiredServiceId: "swap-variant"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -1361,10 +1389,10 @@ async function action$q({
 }
 const route2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$q,
-  loader: loader$v
+  action: action$k,
+  loader: loader$o
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$u({
+async function loader$n({
   request
 }) {
   var _a2, _b;
@@ -1387,6 +1415,13 @@ async function loader$u({
     }));
   }
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!await isServiceEnabled(storeDomain, ["add-product", "product-upsell", "edit-quantity", "swap-variant", "bulk-update"])) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
+  }
   const {
     admin
   } = await unauthenticated.admin(storeDomain);
@@ -1435,19 +1470,19 @@ async function loader$u({
     }));
   }
 }
-async function action$p({
+async function action$j({
   request
 }) {
-  return loader$u({
+  return loader$n({
     request
   });
 }
 const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$p,
-  loader: loader$u
+  action: action$j,
+  loader: loader$n
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$t({
+async function loader$m({
   request
 }) {
   var _a2, _b;
@@ -1505,7 +1540,7 @@ async function loader$t({
     }));
   }
 }
-async function action$o({
+async function action$i({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
@@ -1546,7 +1581,8 @@ async function action$o({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId: sessionToken.sub
+    customerAccountId: sessionToken.sub,
+    requiredServiceId: ["add-product", "product-upsell"]
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -1710,10 +1746,10 @@ async function action$o({
 }
 const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$o,
-  loader: loader$t
+  action: action$i,
+  loader: loader$m
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$s({
+async function loader$l({
   request
 }) {
   const {
@@ -1794,7 +1830,7 @@ function parseCsvContent(rawCsv) {
   }
   return rows;
 }
-async function action$n({
+async function action$h({
   request
 }) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
@@ -1864,7 +1900,8 @@ async function action$n({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId
+    customerAccountId,
+    requiredServiceId: "bulk-update"
   });
   if (!guard.allowed) {
     const issue = guard.message;
@@ -2523,10 +2560,10 @@ async function action$n({
 }
 const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$n,
-  loader: loader$s
+  action: action$h,
+  loader: loader$l
 }, Symbol.toStringTag, { value: "Module" }));
-const action$m = async ({
+const action$g = async ({
   request
 }) => {
   const {
@@ -2551,7 +2588,7 @@ const action$m = async ({
 };
 const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$m
+  action: action$g
 }, Symbol.toStringTag, { value: "Module" }));
 const SAMPLE_CSV = `Product name,sku,replace with sku,quantity
 Classic Cotton T-Shirt,TSHIRT-BLK-M,,2
@@ -2559,7 +2596,7 @@ Denim Jacket,JKT-BLU-L,JKT-BLU-XL,1
 Running Shoes,SHOE-WHT-10,,3
 Baseball Cap,CAP-RED-OS,CAP-BLK-OS,1
 `;
-async function loader$r({
+async function loader$k({
   request
 }) {
   return new Response(SAMPLE_CSV, {
@@ -2573,38 +2610,44 @@ async function loader$r({
 }
 const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  loader: loader$r
+  loader: loader$k
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$q({
+async function requireAuthenticatedShop(request) {
+  const {
+    sessionToken,
+    cors
+  } = await authenticate.public.customerAccount(request);
+  const storeDomain = (sessionToken.dest ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
+  return {
+    storeDomain,
+    cors
+  };
+}
+async function loader$j({
   request
 }) {
-  var _a2, _b, _c, _d;
-  let cors = (res) => res;
-  let storeDomain = "";
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-    if ((_a2 = authResult.sessionToken) == null ? void 0 : _a2.dest) {
-      storeDomain = authResult.sessionToken.dest.replace(/^https?:\/\//, "");
-    }
-  } catch (e) {
-    cors = (res) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders
-      });
-    };
+  var _a2, _b;
+  const {
+    storeDomain,
+    cors
+  } = await requireAuthenticatedShop(request);
+  if (!storeDomain) {
+    return cors(Response.json({
+      error: "Unauthorized"
+    }, {
+      status: 401
+    }));
+  }
+  if (!await isServiceEnabled(storeDomain, "change-address")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
   }
   const url = new URL(request.url);
-  const q = ((_b = url.searchParams.get("q")) == null ? void 0 : _b.trim()) || "";
-  const countryCode = ((_c = url.searchParams.get("countryCode")) == null ? void 0 : _c.trim()) || "";
-  const shopParam = (_d = url.searchParams.get("shop")) == null ? void 0 : _d.trim();
-  if (shopParam) storeDomain = shopParam;
+  const q = ((_a2 = url.searchParams.get("q")) == null ? void 0 : _a2.trim()) || "";
+  const countryCode = ((_b = url.searchParams.get("countryCode")) == null ? void 0 : _b.trim()) || "";
   if (!q || q.length < 2) {
     return cors(Response.json({
       suggestions: []
@@ -2615,41 +2658,31 @@ async function loader$q({
     suggestions
   }));
 }
-async function action$l({
+async function action$f({
   request
 }) {
-  var _a2;
-  let cors = (res) => res;
-  let storeDomain = "";
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-    if ((_a2 = authResult.sessionToken) == null ? void 0 : _a2.dest) {
-      storeDomain = authResult.sessionToken.dest.replace(/^https?:\/\//, "");
-    }
-  } catch (e) {
-    cors = (res) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders
-      });
-    };
+  const {
+    storeDomain,
+    cors
+  } = await requireAuthenticatedShop(request);
+  if (!storeDomain) {
+    return cors(Response.json({
+      error: "Unauthorized"
+    }, {
+      status: 401
+    }));
   }
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200
+  if (!await isServiceEnabled(storeDomain, "change-address")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
     }));
   }
   try {
     const body = await request.json().catch(() => ({}));
     const q = (body.q || "").trim();
     const countryCode = (body.countryCode || "").trim();
-    if (body.shop) storeDomain = String(body.shop).trim();
     if (!q || q.length < 2) {
       return cors(Response.json({
         suggestions: []
@@ -2731,12 +2764,12 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
                 const detailData = await detailRes.json();
                 const comps = detailData.addressComponents || [];
                 let streetNum = "";
-                let route38 = "";
+                let route32 = "";
                 let neighborhood = "";
                 for (const c of comps) {
                   const types = c.types || [];
                   if (types.includes("street_number")) streetNum = c.longText || c.shortText;
-                  if (types.includes("route")) route38 = c.longText || c.shortText;
+                  if (types.includes("route")) route32 = c.longText || c.shortText;
                   if (types.includes("sublocality") || types.includes("neighborhood") || types.includes("sublocality_level_1")) {
                     neighborhood = c.longText || c.shortText;
                   }
@@ -2754,7 +2787,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
                   }
                 }
                 if (!city) city = neighborhood || mainText;
-                address1 = [streetNum, route38].filter(Boolean).join(" ") || neighborhood || mainText;
+                address1 = [streetNum, route32].filter(Boolean).join(" ") || neighborhood || mainText;
               }
             } catch (e) {
             }
@@ -2795,7 +2828,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
         if (detailData.status === "OK" && detailData.result) {
           const comps = detailData.result.address_components || [];
           let streetNum = "";
-          let route38 = "";
+          let route32 = "";
           let neighborhood = "";
           let city = "";
           let province = "";
@@ -2805,7 +2838,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
           for (const c of comps) {
             const types = c.types || [];
             if (types.includes("street_number")) streetNum = c.long_name;
-            if (types.includes("route")) route38 = c.long_name;
+            if (types.includes("route")) route32 = c.long_name;
             if (types.includes("sublocality") || types.includes("neighborhood") || types.includes("sublocality_level_1")) {
               neighborhood = c.long_name;
             }
@@ -2825,7 +2858,7 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
           if (!city) {
             city = neighborhood || (((_f = pred.structured_formatting) == null ? void 0 : _f.main_text) || "").replace(/\d+/g, "").trim();
           }
-          const address1 = [streetNum, route38].filter(Boolean).join(" ") || neighborhood || ((_g = pred.structured_formatting) == null ? void 0 : _g.main_text) || "";
+          const address1 = [streetNum, route32].filter(Boolean).join(" ") || neighborhood || ((_g = pred.structured_formatting) == null ? void 0 : _g.main_text) || "";
           googleItems.push({
             id: pred.place_id,
             description: detailData.result.formatted_address || pred.description,
@@ -2853,8 +2886,8 @@ async function fetchLocationSuggestions(query, storeDomain, countryCode) {
 }
 const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$l,
-  loader: loader$q
+  action: action$f,
+  loader: loader$j
 }, Symbol.toStringTag, { value: "Module" }));
 const GET_ORDER_DETAILS_QUERY = `#graphql
   query GetOrderLineItems($id: ID!) {
@@ -2925,10 +2958,10 @@ const GET_ORDER_DETAILS_QUERY = `#graphql
     }
   }
 `;
-async function loader$p({
+async function loader$i({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
   const {
     sessionToken,
     cors
@@ -2981,7 +3014,7 @@ async function loader$p({
     }
     const rawEdges = ((_f = (_e = (_d = json.data) == null ? void 0 : _d.order) == null ? void 0 : _e.lineItems) == null ? void 0 : _f.edges) ?? [];
     const lineItems = rawEdges.filter((edge) => edge.node && edge.node.currentQuantity > 0).map((edge) => {
-      var _a3, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q2, _r;
+      var _a3, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p2, _q, _r;
       const node = edge.node;
       const unitPrice = Number(((_b2 = (_a3 = node.originalUnitPriceSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) || 0);
       const currencyCode = ((_d2 = (_c2 = node.originalUnitPriceSet) == null ? void 0 : _c2.shopMoney) == null ? void 0 : _d2.currencyCode) || "USD";
@@ -3001,7 +3034,7 @@ async function loader$p({
         product: {
           id: ((_n2 = (_m2 = node.variant) == null ? void 0 : _m2.product) == null ? void 0 : _n2.id) || "",
           title: ((_p2 = (_o2 = node.variant) == null ? void 0 : _o2.product) == null ? void 0 : _p2.title) || node.title || node.name || "",
-          vendor: ((_r = (_q2 = node.variant) == null ? void 0 : _q2.product) == null ? void 0 : _r.vendor) || ""
+          vendor: ((_r = (_q = node.variant) == null ? void 0 : _q.product) == null ? void 0 : _r.vendor) || ""
         }
       };
       const cost = {
@@ -3036,8 +3069,16 @@ async function loader$p({
     const hasPaymentPending = !isPaid && (orderTags.some((t) => t.toLowerCase() === "payment-pending") || (totalOutstanding ? parseFloat(totalOutstanding.amount) > 0 : false));
     return cors(Response.json({
       order: {
-        ...((_q = json.data) == null ? void 0 : _q.order) ?? {},
-        tags: orderTags,
+        id: orderData.id,
+        name: orderData.name,
+        createdAt: orderData.createdAt,
+        cancelledAt: orderData.cancelledAt ?? null,
+        cancelReason: orderData.cancelReason ?? null,
+        currencyCode: orderData.currencyCode,
+        displayFinancialStatus: orderData.displayFinancialStatus,
+        displayFulfillmentStatus: orderData.displayFulfillmentStatus,
+        currentSubtotalPriceSet: orderData.currentSubtotalPriceSet ?? null,
+        currentTotalPriceSet: orderData.currentTotalPriceSet ?? null,
         hasPaymentPending: Boolean(hasPaymentPending),
         totalOutstanding
       },
@@ -3052,7 +3093,7 @@ async function loader$p({
     }));
   }
 }
-async function action$k({
+async function action$e({
   request
 }) {
   if (request.method === "OPTIONS") {
@@ -3077,10 +3118,10 @@ async function action$k({
 }
 const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$k,
-  loader: loader$p
+  action: action$e,
+  loader: loader$i
 }, Symbol.toStringTag, { value: "Module" }));
-const action$j = async ({
+const action$d = async ({
   request
 }) => {
   const {
@@ -3100,11 +3141,14 @@ const action$j = async ({
 };
 const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$j
+  action: action$d
 }, Symbol.toStringTag, { value: "Module" }));
 const ORDER_TAGS_QUERY = `#graphql
   query GetOrderLineItemTags($id: ID!) {
     order(id: $id) {
+      customer {
+        id
+      }
       lineItems(first: 50) {
         edges {
           node {
@@ -3118,7 +3162,7 @@ const ORDER_TAGS_QUERY = `#graphql
     }
   }
 `;
-async function loader$o({
+async function loader$h({
   request
 }) {
   var _a2, _b, _c, _d, _e;
@@ -3136,6 +3180,13 @@ async function loader$o({
     }));
   }
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!await isServiceEnabled(storeDomain, "product-upsell")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
+  }
   const {
     admin
   } = await unauthenticated.admin(storeDomain);
@@ -3153,7 +3204,22 @@ async function loader$o({
         status: 400
       }));
     }
-    const edges = ((_d = (_c = (_b = json.data) == null ? void 0 : _b.order) == null ? void 0 : _c.lineItems) == null ? void 0 : _d.edges) ?? [];
+    const order = (_b = json.data) == null ? void 0 : _b.order;
+    if (!order) {
+      return cors(Response.json({
+        error: "Order not found"
+      }, {
+        status: 404
+      }));
+    }
+    if (!isCustomerAuthorized((_c = order.customer) == null ? void 0 : _c.id, sessionToken.sub)) {
+      return cors(Response.json({
+        error: "Unauthorized access to order."
+      }, {
+        status: 403
+      }));
+    }
+    const edges = ((_d = order.lineItems) == null ? void 0 : _d.edges) ?? [];
     const upsellTags = /* @__PURE__ */ new Set();
     for (const {
       node
@@ -3176,7 +3242,7 @@ async function loader$o({
     }));
   }
 }
-async function action$i({
+async function action$c({
   request
 }) {
   const {
@@ -3198,40 +3264,27 @@ async function action$i({
 }
 const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$i,
-  loader: loader$o
+  action: action$c,
+  loader: loader$h
 }, Symbol.toStringTag, { value: "Module" }));
-async function loader$n({
+async function loader$g({
   request
 }) {
-  var _a2;
-  let cors = (res) => res;
-  let storeDomain = "";
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-    if ((_a2 = authResult.sessionToken) == null ? void 0 : _a2.dest) {
-      storeDomain = authResult.sessionToken.dest.replace(/^https?:\/\//, "");
-    }
-  } catch (e) {
-    cors = (res) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders
-      });
-    };
+  const {
+    sessionToken,
+    cors
+  } = await authenticate.public.customerAccount(request);
+  const storeDomain = (sessionToken.dest ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
+  if (!storeDomain) {
+    return cors(Response.json({
+      error: "Unauthorized"
+    }, {
+      status: 401
+    }));
   }
   const url = new URL(request.url);
   const orderId = url.searchParams.get("orderId");
-  const shopParam = url.searchParams.get("shop");
-  if (shopParam) storeDomain = shopParam;
-  storeDomain = storeDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase().trim();
-  const rows = storeDomain ? await prisma.serviceSettings.findMany({
+  const rows = await prisma.serviceSettings.findMany({
     where: {
       shop: storeDomain
     },
@@ -3239,19 +3292,19 @@ async function loader$n({
       id: true,
       enabled: true
     }
-  }) : [];
-  const timeLimitRecord = storeDomain ? await prisma.orderEditTimeLimit.findUnique({
+  });
+  const timeLimitRecord = await prisma.orderEditTimeLimit.findUnique({
     where: {
       shop: storeDomain
     }
-  }) : null;
-  const googleConfig = storeDomain ? await prisma.googlePlacesConfig.findUnique({
+  });
+  const googleConfig = await prisma.googlePlacesConfig.findUnique({
     where: {
       shop: storeDomain
     }
-  }) : null;
+  });
   const hasGooglePlacesKey = Boolean((googleConfig == null ? void 0 : googleConfig.apiKey) && googleConfig.apiKey.trim().length > 0);
-  const editLimitInfo = orderId && storeDomain ? await checkOrderEditLimit({
+  const editLimitInfo = orderId ? await checkOrderEditLimit({
     shop: storeDomain,
     orderId
   }) : {
@@ -3282,37 +3335,12 @@ async function loader$n({
     }
   }));
 }
-async function action$h({
+async function action$b({
   request
 }) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Max-Age": "7200"
-      }
-    });
-  }
-  let cors = (res) => res;
-  try {
-    const authResult = await authenticate.public.customerAccount(request);
-    cors = authResult.cors;
-  } catch {
-    cors = (res) => {
-      const newHeaders = new Headers(res.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: newHeaders
-      });
-    };
-  }
+  const {
+    cors
+  } = await authenticate.public.customerAccount(request);
   return cors(Response.json({
     error: "Method not allowed"
   }, {
@@ -3321,10 +3349,10 @@ async function action$h({
 }
 const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$h,
-  loader: loader$n
+  action: action$b,
+  loader: loader$g
 }, Symbol.toStringTag, { value: "Module" }));
-const action$g = async ({
+const action$a = async ({
   request
 }) => {
   const {
@@ -3351,3024 +3379,7 @@ const action$g = async ({
 };
 const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$g
-}, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX$2 = "@d2:";
-const CHECKOUT_ORIGIN_TYPENAMES = /* @__PURE__ */ new Set(["DiscountCodeApplication", "AutomaticDiscountApplication", "ScriptDiscountApplication"]);
-const APP_ORIGIN_TYPENAME$3 = "ManualDiscountApplication";
-function decodeTag$2(description) {
-  if (!description || !description.startsWith(TAG_PREFIX$2)) return null;
-  const rest = description.slice(TAG_PREFIX$2.length);
-  const closeIdx = rest.indexOf("}");
-  if (closeIdx === -1) return null;
-  const raw = rest.slice(0, closeIdx + 1);
-  const label = rest.slice(closeIdx + 1).trim();
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      checkoutAmount: parsed.c ?? 0,
-      productAmount: parsed.p ?? 0,
-      orderAmount: parsed.o ?? 0,
-      label
-    };
-  } catch {
-    return null;
-  }
-}
-function encodeTag$2(tag) {
-  const raw = JSON.stringify({
-    c: round2$2(tag.checkoutAmount),
-    p: round2$2(tag.productAmount),
-    o: round2$2(tag.orderAmount)
-  });
-  return `${TAG_PREFIX$2}${raw} ${tag.label}`.trim();
-}
-function round2$2(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-function readLineItemDiscountState$3(item) {
-  var _a2, _b, _c, _d, _e, _f;
-  const allocations = item.calculatedDiscountAllocations ?? [];
-  const currencyCode = ((_b = (_a2 = item.originalUnitPriceSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.currencyCode) ?? "";
-  if (allocations.length === 0) {
-    return {
-      currencyCode,
-      existingApplicationId: null,
-      isCheckoutOrigin: false,
-      tag: {
-        checkoutAmount: 0,
-        productAmount: 0,
-        orderAmount: 0,
-        label: ""
-      }
-    };
-  }
-  let existingApplicationId = null;
-  let isCheckoutOrigin = false;
-  let tag = {
-    checkoutAmount: 0,
-    productAmount: 0,
-    orderAmount: 0,
-    label: ""
-  };
-  let resolvedCurrency = currencyCode;
-  for (const allocation of allocations) {
-    const app2 = allocation.discountApplication;
-    if (!app2) continue;
-    existingApplicationId = app2.id;
-    const allocatedAmount = parseFloat(((_d = (_c = allocation.allocatedAmountSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.amount) ?? "0");
-    if ((_f = (_e = allocation.allocatedAmountSet) == null ? void 0 : _e.shopMoney) == null ? void 0 : _f.currencyCode) {
-      resolvedCurrency = allocation.allocatedAmountSet.shopMoney.currencyCode;
-    }
-    if (app2.__typename === APP_ORIGIN_TYPENAME$3) {
-      const decoded = decodeTag$2(app2.description);
-      if (decoded) {
-        tag = decoded;
-      } else {
-        tag = {
-          checkoutAmount: 0,
-          productAmount: allocatedAmount,
-          orderAmount: 0,
-          label: app2.description ?? ""
-        };
-      }
-    } else if (CHECKOUT_ORIGIN_TYPENAMES.has(app2.__typename)) {
-      isCheckoutOrigin = true;
-      tag = {
-        checkoutAmount: allocatedAmount,
-        productAmount: 0,
-        orderAmount: 0,
-        label: app2.description ?? "Checkout discount"
-      };
-    }
-  }
-  return {
-    currencyCode: resolvedCurrency,
-    existingApplicationId,
-    isCheckoutOrigin,
-    tag
-  };
-}
-async function resolveDiscountCode$3(admin, code) {
-  var _a2, _b, _c;
-  const res = await admin.graphql(`#graphql
-    query LookupDiscountCode($code: String!) {
-      codeDiscountNodeByCode(code: $code) {
-        codeDiscount {
-          __typename
-          ... on DiscountCodeBasic {
-            status
-            title
-            customerGets {
-              value {
-                ... on DiscountPercentage { percentage }
-                ... on DiscountAmount { amount { amount currencyCode } }
-              }
-            }
-          }
-        }
-      }
-    }`, {
-    variables: {
-      code: code.trim().toUpperCase()
-    }
-  });
-  const json = await res.json();
-  const node = (_a2 = json.data) == null ? void 0 : _a2.codeDiscountNodeByCode;
-  if (!node) {
-    return {
-      ok: false,
-      message: `Discount code "${code}" was not found.`
-    };
-  }
-  const codeDiscount = node.codeDiscount;
-  if ((codeDiscount == null ? void 0 : codeDiscount.__typename) !== "DiscountCodeBasic") {
-    return {
-      ok: false,
-      message: `Discount code "${code}" is not a supported type.`
-    };
-  }
-  if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
-    return {
-      ok: false,
-      message: `Discount code "${code}" is ${String(codeDiscount.status).toLowerCase()}.`
-    };
-  }
-  const value = (_b = codeDiscount.customerGets) == null ? void 0 : _b.value;
-  const label = codeDiscount.title || code.trim().toUpperCase();
-  if ((value == null ? void 0 : value.percentage) != null) {
-    return {
-      ok: true,
-      kind: "percentage",
-      percentage: value.percentage * 100,
-      label
-    };
-  }
-  if ((_c = value == null ? void 0 : value.amount) == null ? void 0 : _c.amount) {
-    return {
-      ok: true,
-      kind: "fixed",
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode,
-      label
-    };
-  }
-  return {
-    ok: false,
-    message: `Discount code "${code}" does not have a supported percentage or fixed value.`
-  };
-}
-function discountAmountAgainst$3(resolved, base) {
-  if (resolved.kind === "percentage") {
-    return Math.max(base * (resolved.percentage / 100), 0);
-  }
-  return Math.min(Math.max(parseFloat(resolved.amount) || 0, 0), base);
-}
-async function loader$m({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$f({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode,
-    variantId
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  const isProductLevel = typeof variantId === "string" && variantId.length > 0;
-  try {
-    const resolved = await resolveDiscountCode$3(admin, discountCode);
-    if (!resolved.ok) {
-      return cors(Response.json({
-        userErrors: [{
-          message: resolved.message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation BeginEdit($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 100) {
-              nodes {
-                id
-                quantity
-                variant { id }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
-                  discountApplication {
-                    id
-                    __typename
-                    description
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_b = (_a2 = beginJson.data) == null ? void 0 : _a2.orderEditBegin) == null ? void 0 : _b.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrder = beginJson.data.orderEditBegin.calculatedOrder;
-    const calculatedOrderId = calculatedOrder.id;
-    const allLineItems = ((_c = calculatedOrder.lineItems) == null ? void 0 : _c.nodes) ?? [];
-    if (allLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order has no line items to discount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const targetLineItems = isProductLevel ? allLineItems.filter((item) => {
-      var _a3;
-      return ((_a3 = item.variant) == null ? void 0 : _a3.id) === variantId;
-    }) : allLineItems;
-    if (isProductLevel && targetLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "That product could not be found on this order."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const warnings = [];
-    const skippedApplicationIds = [];
-    let appliedCount = 0;
-    for (const item of targetLineItems) {
-      const state = readLineItemDiscountState$3(item);
-      const originalUnit = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.shopMoney) == null ? void 0 : _e.amount) ?? "0");
-      const originalLineTotal = originalUnit * item.quantity;
-      const currencyCode = state.currencyCode || ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.currencyCode) || "USD";
-      if (isProductLevel) {
-        if (state.isCheckoutOrigin) {
-          warnings.push("This product already has a discount applied during checkout. Checkout discounts cannot be modified.");
-          continue;
-        }
-        const newProductAmount = discountAmountAgainst$3(resolved.kind === "percentage" ? {
-          kind: "percentage",
-          percentage: resolved.percentage
-        } : {
-          kind: "fixed",
-          amount: resolved.amount
-        }, originalLineTotal);
-        if (state.tag.productAmount > 0 && newProductAmount <= state.tag.productAmount) {
-          warnings.push(`The existing product discount on this item is already greater than or equal to "${discountCode}". It was not replaced.`);
-          continue;
-        }
-        if (state.existingApplicationId) {
-          skippedApplicationIds.push(state.existingApplicationId);
-          const removeRes = await admin.graphql(`#graphql
-            mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
-              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-                userErrors { field message }
-              }
-            }`, {
-            variables: {
-              id: calculatedOrderId,
-              discountApplicationId: state.existingApplicationId
-            }
-          });
-          const removeJson = await removeRes.json();
-          const removeErrors = ((_i = (_h = removeJson.data) == null ? void 0 : _h.orderEditRemoveDiscount) == null ? void 0 : _i.userErrors) ?? [];
-          if (((_j = removeJson.errors) == null ? void 0 : _j.length) || removeErrors.length) {
-            warnings.push(`Could not update the discount on this product: ${((_k = removeErrors[0]) == null ? void 0 : _k.message) ?? "unknown error"}.`);
-            continue;
-          }
-        }
-        const newTag = {
-          checkoutAmount: 0,
-          productAmount: newProductAmount,
-          orderAmount: state.tag.orderAmount,
-          label: resolved.label
-        };
-        const combinedAmount = newProductAmount + state.tag.orderAmount;
-        const applyRes = await admin.graphql(`#graphql
-          mutation ApplyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-            orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-              calculatedLineItem { id }
-              userErrors { field message }
-            }
-          }`, {
-          variables: {
-            id: calculatedOrderId,
-            lineItemId: item.id,
-            discount: {
-              fixedValue: {
-                amount: combinedAmount.toFixed(2),
-                currencyCode
-              },
-              description: encodeTag$2(newTag)
-            }
-          }
-        });
-        const applyJson = await applyRes.json();
-        const applyErrors = ((_m = (_l = applyJson.data) == null ? void 0 : _l.orderEditAddLineItemDiscount) == null ? void 0 : _m.userErrors) ?? [];
-        if (((_n = applyJson.errors) == null ? void 0 : _n.length) || applyErrors.length) {
-          warnings.push(`Could not apply the product discount: ${((_p = (_o = applyJson.errors) == null ? void 0 : _o[0]) == null ? void 0 : _p.message) ?? ((_q = applyErrors[0]) == null ? void 0 : _q.message) ?? "unknown error"}.`);
-          continue;
-        }
-        appliedCount += 1;
-      } else {
-        const baseAfterProductLevel = Math.max(originalLineTotal - state.tag.checkoutAmount - state.tag.productAmount, 0);
-        const additionalOrderAmount = discountAmountAgainst$3(resolved.kind === "percentage" ? {
-          kind: "percentage",
-          percentage: resolved.percentage
-        } : {
-          kind: "fixed",
-          amount: resolved.amount
-        }, baseAfterProductLevel);
-        if (additionalOrderAmount <= 0) {
-          continue;
-        }
-        const newOrderAmount = state.tag.orderAmount + additionalOrderAmount;
-        const newTag = {
-          checkoutAmount: state.tag.checkoutAmount,
-          productAmount: state.tag.productAmount,
-          orderAmount: newOrderAmount,
-          label: state.tag.label ? `${state.tag.label} + ${resolved.label}` : resolved.label
-        };
-        const combinedAmount = state.tag.checkoutAmount + state.tag.productAmount + newOrderAmount;
-        if (state.existingApplicationId) {
-          skippedApplicationIds.push(state.existingApplicationId);
-          const removeRes = await admin.graphql(`#graphql
-            mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
-              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-                userErrors { field message }
-              }
-            }`, {
-            variables: {
-              id: calculatedOrderId,
-              discountApplicationId: state.existingApplicationId
-            }
-          });
-          const removeJson = await removeRes.json();
-          const removeErrors = ((_s = (_r = removeJson.data) == null ? void 0 : _r.orderEditRemoveDiscount) == null ? void 0 : _s.userErrors) ?? [];
-          if (((_t = removeJson.errors) == null ? void 0 : _t.length) || removeErrors.length) {
-            warnings.push(`Could not update the order discount on one item: ${((_u = removeErrors[0]) == null ? void 0 : _u.message) ?? "unknown error"}.`);
-            continue;
-          }
-        }
-        const applyRes = await admin.graphql(`#graphql
-          mutation ApplyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-            orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-              calculatedLineItem { id }
-              userErrors { field message }
-            }
-          }`, {
-          variables: {
-            id: calculatedOrderId,
-            lineItemId: item.id,
-            discount: {
-              fixedValue: {
-                amount: combinedAmount.toFixed(2),
-                currencyCode
-              },
-              description: encodeTag$2(newTag)
-            }
-          }
-        });
-        const applyJson = await applyRes.json();
-        const applyErrors = ((_w = (_v = applyJson.data) == null ? void 0 : _v.orderEditAddLineItemDiscount) == null ? void 0 : _w.userErrors) ?? [];
-        if (((_x = applyJson.errors) == null ? void 0 : _x.length) || applyErrors.length) {
-          warnings.push(`Could not apply the order discount to one item: ${((_z = (_y = applyJson.errors) == null ? void 0 : _y[0]) == null ? void 0 : _z.message) ?? ((_A = applyErrors[0]) == null ? void 0 : _A.message) ?? "unknown error"}.`);
-          continue;
-        }
-        appliedCount += 1;
-      }
-    }
-    if (appliedCount === 0) {
-      return cors(Response.json({
-        success: false,
-        applied: false,
-        warnings: warnings.length ? warnings : ["Nothing was eligible to be discounted."],
-        userErrors: []
-      }));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation CommitEdit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: isProductLevel ? `Product discount "${discountCode}" applied via customer account` : `Order discount "${discountCode}" applied via customer account`
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_C = (_B = commitJson.data) == null ? void 0 : _B.orderEditCommit) == null ? void 0 : _C.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    return cors(Response.json({
-      success: true,
-      applied: true,
-      order: commitJson.data.orderEditCommit.order,
-      appliedCount,
-      warnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount2] Unexpected error:", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return cors(Response.json({
-      userErrors: [{
-        message
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$f,
-  loader: loader$m
-}, Symbol.toStringTag, { value: "Module" }));
-function isOrderLevelApplication$2(app2) {
-  return !!app2 && app2.targetSelection === "ALL";
-}
-function isProductLevelApplication$2(app2) {
-  return !!app2 && app2.targetSelection != null && app2.targetSelection !== "ALL";
-}
-function money$2(amount) {
-  return Math.max(amount, 0).toFixed(2);
-}
-async function loader$l({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$e({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode,
-    variantIds
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  const requestedVariantIds = Array.isArray(variantIds) && variantIds.length > 0 ? variantIds : null;
-  const normalizedCode = String(discountCode).trim().toUpperCase();
-  try {
-    let hasCheckoutProductLevelDiscount = function(item) {
-      return (item.calculatedDiscountAllocations ?? []).some((a) => isProductLevelApplication$2(a.discountApplication));
-    };
-    const codeRes = await admin.graphql(`#graphql
-      query lookupDiscountCode($code: String!) {
-        codeDiscountNodeByCode(code: $code) {
-          codeDiscount {
-            __typename
-            ... on DiscountCodeBasic {
-              status
-              shortSummary
-              customerGets {
-                value {
-                  ... on DiscountPercentage { percentage }
-                  ... on DiscountAmount { amount { amount currencyCode } }
-                }
-                items {
-                  __typename
-                  ... on AllDiscountItems { allItems }
-                  ... on DiscountProducts {
-                    products(first: 250) { nodes { id } }
-                    productVariants(first: 250) { nodes { id } }
-                  }
-                  ... on DiscountCollections {
-                    collections(first: 50) { nodes { id } }
-                  }
-                }
-              }
-            }
-            ... on DiscountCodeBxgy { status }
-            ... on DiscountCodeFreeShipping { status }
-          }
-        }
-      }`, {
-      variables: {
-        code: normalizedCode
-      }
-    });
-    const codeJson = await codeRes.json();
-    const codeDiscount = (_b = (_a2 = codeJson.data) == null ? void 0 : _a2.codeDiscountNodeByCode) == null ? void 0 : _b.codeDiscount;
-    if (!codeDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" was not found.`
-        }]
-      }, {
-        status: 404
-      }));
-    }
-    if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" is ${String(codeDiscount.status).toLowerCase()}.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (codeDiscount.__typename !== "DiscountCodeBasic") {
-      return cors(Response.json({
-        userErrors: [{
-          message: "Only percentage and fixed-amount discount codes are supported."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const value = (_c = codeDiscount.customerGets) == null ? void 0 : _c.value;
-    const percentValue = (value == null ? void 0 : value.percentage) != null ? value.percentage * 100 : null;
-    const fixedValue = ((_d = value == null ? void 0 : value.amount) == null ? void 0 : _d.amount) ? {
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode
-    } : null;
-    if (percentValue == null && fixedValue == null) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This discount has no usable percentage or fixed amount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const items = (_e = codeDiscount.customerGets) == null ? void 0 : _e.items;
-    const isOrderLevelCode = !items || items.__typename === "AllDiscountItems";
-    let eligibleProductIds = /* @__PURE__ */ new Set();
-    let eligibleVariantIds = /* @__PURE__ */ new Set();
-    if (!isOrderLevelCode) {
-      if ((items == null ? void 0 : items.__typename) === "DiscountProducts") {
-        eligibleProductIds = new Set((((_f = items.products) == null ? void 0 : _f.nodes) ?? []).map((p) => p.id));
-        eligibleVariantIds = new Set((((_g = items.productVariants) == null ? void 0 : _g.nodes) ?? []).map((v) => v.id));
-      } else if ((items == null ? void 0 : items.__typename) === "DiscountCollections") {
-        const collectionIds = (((_h = items.collections) == null ? void 0 : _h.nodes) ?? []).map((c) => c.id);
-        for (const collectionId of collectionIds) {
-          const collRes = await admin.graphql(`#graphql
-            query collectionProducts($id: ID!) {
-              collection(id: $id) {
-                products(first: 250) { nodes { id } }
-              }
-            }`, {
-            variables: {
-              id: collectionId
-            }
-          });
-          const collJson = await collRes.json();
-          for (const p of ((_k = (_j = (_i = collJson.data) == null ? void 0 : _i.collection) == null ? void 0 : _j.products) == null ? void 0 : _k.nodes) ?? []) {
-            eligibleProductIds.add(p.id);
-          }
-        }
-      }
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation beginEdit($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 50) {
-              nodes {
-                id
-                quantity
-                variant { id product { id title } }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
-                  discountApplication {
-                    __typename
-                    targetSelection
-                    targetType
-                    allocationMethod
-                    value {
-                      ... on PricingPercentageValue { percentage }
-                      ... on MoneyV2 { amount currencyCode }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_m = (_l = beginJson.data) == null ? void 0 : _l.orderEditBegin) == null ? void 0 : _m.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrderId = beginJson.data.orderEditBegin.calculatedOrder.id;
-    const lineItems = ((_n = beginJson.data.orderEditBegin.calculatedOrder.lineItems) == null ? void 0 : _n.nodes) ?? [];
-    if (lineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order has no line items to discount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    let checkoutOrderLevelApp = null;
-    const checkoutOrderLevelAmountByLineItem = /* @__PURE__ */ new Map();
-    for (const item of lineItems) {
-      for (const alloc of item.calculatedDiscountAllocations ?? []) {
-        if (isOrderLevelApplication$2(alloc.discountApplication)) {
-          checkoutOrderLevelApp = alloc.discountApplication;
-          checkoutOrderLevelAmountByLineItem.set(item.id, parseFloat(((_p = (_o = alloc.allocatedAmountSet) == null ? void 0 : _o.shopMoney) == null ? void 0 : _p.amount) ?? "0") || 0);
-        }
-      }
-    }
-    const hasCheckoutOrderLevelDiscount = checkoutOrderLevelApp !== null;
-    const applyResults = [];
-    const warnings = [];
-    let currencyCode = (fixedValue == null ? void 0 : fixedValue.currencyCode) ?? ((_s = (_r = (_q = lineItems[0]) == null ? void 0 : _q.originalUnitPriceSet) == null ? void 0 : _r.shopMoney) == null ? void 0 : _s.currencyCode) ?? "USD";
-    if (isOrderLevelCode) {
-      if (hasCheckoutOrderLevelDiscount) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "This order already has an order-level discount applied at checkout. Another order-level discount code cannot be applied."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-      for (const item of lineItems) {
-        const unitPrice = parseFloat(((_u = (_t = item.originalUnitPriceSet) == null ? void 0 : _t.shopMoney) == null ? void 0 : _u.amount) ?? "0") || 0;
-        const lineTotal = unitPrice * item.quantity;
-        if (lineTotal <= 0) continue;
-        let discountAmount = 0;
-        if (percentValue != null) {
-          discountAmount = lineTotal * (percentValue / 100);
-        } else if (fixedValue) {
-          const orderTotal = lineItems.reduce((sum, li) => {
-            var _a3, _b2;
-            return sum + (parseFloat(((_b2 = (_a3 = li.originalUnitPriceSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b2.amount) ?? "0") || 0) * li.quantity;
-          }, 0);
-          const share = orderTotal > 0 ? lineTotal / orderTotal : 0;
-          discountAmount = Math.min(parseFloat(fixedValue.amount) * share, lineTotal);
-        }
-        if (discountAmount <= 0) continue;
-        applyResults.push({
-          lineItemId: item.id,
-          discount: {
-            fixedValue: {
-              amount: money$2(discountAmount),
-              currencyCode
-            },
-            description: codeDiscount.shortSummary || normalizedCode
-          }
-        });
-      }
-      if (applyResults.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "Could not apply the order-level discount to any line item."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    } else {
-      const requestedVariantSet = requestedVariantIds ? new Set(requestedVariantIds) : null;
-      const candidateItems = lineItems.filter((item) => {
-        var _a3, _b2, _c2;
-        const variantId = (_a3 = item.variant) == null ? void 0 : _a3.id;
-        const productId = (_c2 = (_b2 = item.variant) == null ? void 0 : _b2.product) == null ? void 0 : _c2.id;
-        const matchesEligibility = variantId && eligibleVariantIds.has(variantId) || productId && eligibleProductIds.has(productId);
-        if (!matchesEligibility) return false;
-        if (requestedVariantSet) return !!variantId && requestedVariantSet.has(variantId);
-        return true;
-      });
-      if (candidateItems.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: `Discount code "${discountCode}" is not valid for the selected product(s).`
-          }]
-        }, {
-          status: 422
-        }));
-      }
-      for (const item of candidateItems) {
-        const productTitle = ((_w = (_v = item.variant) == null ? void 0 : _v.product) == null ? void 0 : _w.title) ?? "This product";
-        if (hasCheckoutProductLevelDiscount(item)) {
-          warnings.push(`${productTitle} already has a product-level discount from checkout — the new discount was not applied to it.`);
-          continue;
-        }
-        const unitPrice = parseFloat(((_y = (_x = item.originalUnitPriceSet) == null ? void 0 : _x.shopMoney) == null ? void 0 : _y.amount) ?? "0") || 0;
-        const lineTotal = unitPrice * item.quantity;
-        if (lineTotal <= 0) continue;
-        let productDiscountAmount = 0;
-        if (percentValue != null) {
-          productDiscountAmount = lineTotal * (percentValue / 100);
-        } else if (fixedValue) {
-          productDiscountAmount = Math.min(parseFloat(fixedValue.amount), lineTotal);
-        }
-        productDiscountAmount = Math.min(productDiscountAmount, lineTotal);
-        const priceAfterProductDiscount = lineTotal - productDiscountAmount;
-        let totalDesiredDiscount = productDiscountAmount;
-        if (hasCheckoutOrderLevelDiscount && checkoutOrderLevelApp) {
-          const alreadyAllocated = checkoutOrderLevelAmountByLineItem.get(item.id) ?? 0;
-          let recomputedOrderLevelAmount = alreadyAllocated;
-          if (((_z = checkoutOrderLevelApp.value) == null ? void 0 : _z.percentage) != null) {
-            recomputedOrderLevelAmount = priceAfterProductDiscount * checkoutOrderLevelApp.value.percentage;
-          }
-          recomputedOrderLevelAmount = Math.min(recomputedOrderLevelAmount, priceAfterProductDiscount);
-          totalDesiredDiscount = productDiscountAmount + recomputedOrderLevelAmount;
-          const incrementalAmount = totalDesiredDiscount - alreadyAllocated;
-          totalDesiredDiscount = Math.max(incrementalAmount, 0);
-        }
-        if (totalDesiredDiscount <= 0) continue;
-        applyResults.push({
-          lineItemId: item.id,
-          discount: {
-            fixedValue: {
-              amount: money$2(totalDesiredDiscount),
-              currencyCode: (fixedValue == null ? void 0 : fixedValue.currencyCode) ?? ((_B = (_A = item.originalUnitPriceSet) == null ? void 0 : _A.shopMoney) == null ? void 0 : _B.currencyCode) ?? currencyCode
-            },
-            description: codeDiscount.shortSummary || normalizedCode
-          }
-        });
-      }
-      if (applyResults.length === 0) {
-        const message = warnings[0] ?? "Could not apply the product-level discount to any eligible product.";
-        return cors(Response.json({
-          userErrors: [{
-            message
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    }
-    let appliedCount = 0;
-    const applyFailures = [];
-    for (const {
-      lineItemId,
-      discount
-    } of applyResults) {
-      const applyRes = await admin.graphql(`#graphql
-        mutation applyLineItemDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-            calculatedLineItem { id }
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          lineItemId,
-          discount
-        }
-      });
-      const applyJson = await applyRes.json();
-      const topLevelErrors = applyJson.errors ?? [];
-      const userErrors = ((_D = (_C = applyJson.data) == null ? void 0 : _C.orderEditAddLineItemDiscount) == null ? void 0 : _D.userErrors) ?? [];
-      const staged = (_F = (_E = applyJson.data) == null ? void 0 : _E.orderEditAddLineItemDiscount) == null ? void 0 : _F.calculatedLineItem;
-      if (topLevelErrors.length || userErrors.length || !staged) {
-        applyFailures.push(((_G = topLevelErrors[0]) == null ? void 0 : _G.message) ?? ((_H = userErrors[0]) == null ? void 0 : _H.message) ?? "Unknown error applying discount.");
-        continue;
-      }
-      appliedCount += 1;
-    }
-    if (appliedCount === 0) {
-      const message = applyFailures[0] ? `Could not apply the discount: ${applyFailures[0]}` : "Could not apply the discount.";
-      return cors(Response.json({
-        userErrors: [{
-          message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation commitEdit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: isOrderLevelCode ? `Order-level discount code "${normalizedCode}" applied via customer account` : `Product-level discount code "${normalizedCode}" applied to ${appliedCount} product(s) via customer account`
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_J = (_I = commitJson.data) == null ? void 0 : _I.orderEditCommit) == null ? void 0 : _J.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    return cors(Response.json({
-      order: commitJson.data.orderEditCommit.order,
-      summary: codeDiscount.shortSummary ?? normalizedCode,
-      appliedCount,
-      warnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount3] Unexpected error:", err);
-    return cors(Response.json({
-      userErrors: [{
-        message: err instanceof Error ? err.message : "Internal error"
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$e,
-  loader: loader$l
-}, Symbol.toStringTag, { value: "Module" }));
-function isOrderLevelApplication$1(app2) {
-  return !!app2 && app2.targetSelection === "ALL";
-}
-function isProductLevelApplication$1(app2) {
-  return !!app2 && app2.targetSelection != null && app2.targetSelection !== "ALL";
-}
-function money$1(amount) {
-  return Math.max(amount, 0).toFixed(2);
-}
-function existingAllocationsFor$1(item) {
-  var _a2, _b;
-  const out = [];
-  for (const alloc of item.calculatedDiscountAllocations ?? []) {
-    const app2 = alloc.discountApplication;
-    if (!(app2 == null ? void 0 : app2.id)) continue;
-    out.push({
-      id: app2.id,
-      amount: parseFloat(((_b = (_a2 = alloc.allocatedAmountSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.amount) ?? "0") || 0,
-      isOrderLevel: isOrderLevelApplication$1(app2),
-      isProductLevel: isProductLevelApplication$1(app2),
-      app: app2
-    });
-  }
-  return out;
-}
-async function loader$k({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$d({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode,
-    variantIds
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  const requestedVariantIds = Array.isArray(variantIds) && variantIds.length > 0 ? variantIds : null;
-  const normalizedCode = String(discountCode).trim().toUpperCase();
-  try {
-    const codeRes = await admin.graphql(`#graphql
-      query lookupDiscountCode($code: String!) {
-        codeDiscountNodeByCode(code: $code) {
-          codeDiscount {
-            __typename
-            ... on DiscountCodeBasic {
-              status
-              shortSummary
-              customerGets {
-                value {
-                  ... on DiscountPercentage { percentage }
-                  ... on DiscountAmount { amount { amount currencyCode } }
-                }
-                items {
-                  __typename
-                  ... on AllDiscountItems { allItems }
-                  ... on DiscountProducts {
-                    products(first: 250) { nodes { id } }
-                    productVariants(first: 250) { nodes { id } }
-                  }
-                  ... on DiscountCollections {
-                    collections(first: 50) { nodes { id } }
-                  }
-                }
-              }
-            }
-            ... on DiscountCodeBxgy { status }
-            ... on DiscountCodeFreeShipping { status }
-          }
-        }
-      }`, {
-      variables: {
-        code: normalizedCode
-      }
-    });
-    const codeJson = await codeRes.json();
-    const codeDiscount = (_b = (_a2 = codeJson.data) == null ? void 0 : _a2.codeDiscountNodeByCode) == null ? void 0 : _b.codeDiscount;
-    if (!codeDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" was not found.`
-        }]
-      }, {
-        status: 404
-      }));
-    }
-    if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" is ${String(codeDiscount.status).toLowerCase()}.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (codeDiscount.__typename !== "DiscountCodeBasic") {
-      return cors(Response.json({
-        userErrors: [{
-          message: "Only percentage and fixed-amount discount codes are supported."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const value = (_c = codeDiscount.customerGets) == null ? void 0 : _c.value;
-    const percentValue = (value == null ? void 0 : value.percentage) != null ? value.percentage * 100 : null;
-    const fixedValue = ((_d = value == null ? void 0 : value.amount) == null ? void 0 : _d.amount) ? {
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode
-    } : null;
-    if (percentValue == null && fixedValue == null) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This discount has no usable percentage or fixed amount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const items = (_e = codeDiscount.customerGets) == null ? void 0 : _e.items;
-    const isOrderLevelCode = !items || items.__typename === "AllDiscountItems";
-    let eligibleProductIds = /* @__PURE__ */ new Set();
-    let eligibleVariantIds = /* @__PURE__ */ new Set();
-    if (!isOrderLevelCode) {
-      if ((items == null ? void 0 : items.__typename) === "DiscountProducts") {
-        eligibleProductIds = new Set((((_f = items.products) == null ? void 0 : _f.nodes) ?? []).map((p) => p.id));
-        eligibleVariantIds = new Set((((_g = items.productVariants) == null ? void 0 : _g.nodes) ?? []).map((v) => v.id));
-      } else if ((items == null ? void 0 : items.__typename) === "DiscountCollections") {
-        const collectionIds = (((_h = items.collections) == null ? void 0 : _h.nodes) ?? []).map((c) => c.id);
-        for (const collectionId of collectionIds) {
-          const collRes = await admin.graphql(`#graphql
-            query collectionProducts($id: ID!) {
-              collection(id: $id) {
-                products(first: 250) { nodes { id } }
-              }
-            }`, {
-            variables: {
-              id: collectionId
-            }
-          });
-          const collJson = await collRes.json();
-          for (const p of ((_k = (_j = (_i = collJson.data) == null ? void 0 : _i.collection) == null ? void 0 : _j.products) == null ? void 0 : _k.nodes) ?? []) {
-            eligibleProductIds.add(p.id);
-          }
-        }
-      }
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation beginEdit($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 50) {
-              nodes {
-                id
-                quantity
-                variant { id product { id title } }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
-                  discountApplication {
-                    id
-                    __typename
-                    targetSelection
-                    targetType
-                    allocationMethod
-                    value {
-                      ... on PricingPercentageValue { percentage }
-                      ... on MoneyV2 { amount currencyCode }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_m = (_l = beginJson.data) == null ? void 0 : _l.orderEditBegin) == null ? void 0 : _m.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrderId = beginJson.data.orderEditBegin.calculatedOrder.id;
-    const lineItems = ((_n = beginJson.data.orderEditBegin.calculatedOrder.lineItems) == null ? void 0 : _n.nodes) ?? [];
-    if (lineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order has no line items to discount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const allAllocations = lineItems.flatMap((item) => existingAllocationsFor$1(item));
-    const hasExistingOrderLevelDiscount = allAllocations.some((a) => a.isOrderLevel);
-    const hasExistingProductLevelDiscount = allAllocations.some((a) => a.isProductLevel);
-    if (isOrderLevelCode && hasExistingOrderLevelDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order already has an order-level discount applied. Only one order-level discount code is allowed per order."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (!isOrderLevelCode && hasExistingProductLevelDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order already has a product-level discount applied. Only one product-level discount code is allowed per order."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const applyResults = [];
-    const warnings = [];
-    const defaultCurrencyCode = (fixedValue == null ? void 0 : fixedValue.currencyCode) ?? ((_q = (_p = (_o = lineItems[0]) == null ? void 0 : _o.originalUnitPriceSet) == null ? void 0 : _p.shopMoney) == null ? void 0 : _q.currencyCode) ?? "USD";
-    if (isOrderLevelCode) {
-      const remainingBaseByLineItem = /* @__PURE__ */ new Map();
-      let remainingOrderTotal = 0;
-      for (const item of lineItems) {
-        const unitPrice = parseFloat(((_s = (_r = item.originalUnitPriceSet) == null ? void 0 : _r.shopMoney) == null ? void 0 : _s.amount) ?? "0") || 0;
-        const lineTotal = unitPrice * item.quantity;
-        const existingTotal = existingAllocationsFor$1(item).reduce((sum, a) => sum + a.amount, 0);
-        const remainingBase = Math.max(lineTotal - existingTotal, 0);
-        remainingBaseByLineItem.set(item.id, remainingBase);
-        remainingOrderTotal += remainingBase;
-      }
-      for (const item of lineItems) {
-        const remainingBase = remainingBaseByLineItem.get(item.id) ?? 0;
-        if (remainingBase <= 0) continue;
-        let newOrderLevelAmount = 0;
-        if (percentValue != null) {
-          newOrderLevelAmount = remainingBase * (percentValue / 100);
-        } else if (fixedValue) {
-          const share = remainingOrderTotal > 0 ? remainingBase / remainingOrderTotal : 0;
-          newOrderLevelAmount = Math.min(parseFloat(fixedValue.amount) * share, remainingBase);
-        }
-        if (newOrderLevelAmount <= 0) continue;
-        const existing = existingAllocationsFor$1(item);
-        const existingTotal = existing.reduce((sum, a) => sum + a.amount, 0);
-        const desiredTotal = existingTotal + newOrderLevelAmount;
-        applyResults.push({
-          lineItemId: item.id,
-          removeIds: existing.map((a) => a.id),
-          discount: {
-            fixedValue: {
-              amount: money$1(desiredTotal),
-              currencyCode: defaultCurrencyCode
-            },
-            description: codeDiscount.shortSummary || normalizedCode
-          }
-        });
-      }
-      if (applyResults.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "Could not apply the order-level discount to any line item."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    } else {
-      const requestedVariantSet = requestedVariantIds ? new Set(requestedVariantIds) : null;
-      const candidateItems = lineItems.filter((item) => {
-        var _a3, _b2, _c2;
-        const variantId = (_a3 = item.variant) == null ? void 0 : _a3.id;
-        const productId = (_c2 = (_b2 = item.variant) == null ? void 0 : _b2.product) == null ? void 0 : _c2.id;
-        const matchesEligibility = variantId && eligibleVariantIds.has(variantId) || productId && eligibleProductIds.has(productId);
-        if (!matchesEligibility) return false;
-        if (requestedVariantSet) return !!variantId && requestedVariantSet.has(variantId);
-        return true;
-      });
-      if (candidateItems.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: `Discount code "${discountCode}" is not valid for any product on this order.`
-          }]
-        }, {
-          status: 422
-        }));
-      }
-      for (const item of candidateItems) {
-        const unitPrice = parseFloat(((_u = (_t = item.originalUnitPriceSet) == null ? void 0 : _t.shopMoney) == null ? void 0 : _u.amount) ?? "0") || 0;
-        const lineTotal = unitPrice * item.quantity;
-        if (lineTotal <= 0) continue;
-        let productDiscountAmount = 0;
-        if (percentValue != null) {
-          productDiscountAmount = lineTotal * (percentValue / 100);
-        } else if (fixedValue) {
-          productDiscountAmount = Math.min(parseFloat(fixedValue.amount), lineTotal);
-        }
-        productDiscountAmount = Math.min(productDiscountAmount, lineTotal);
-        const priceAfterProductDiscount = lineTotal - productDiscountAmount;
-        const existing = existingAllocationsFor$1(item);
-        const existingOrderLevel = existing.filter((a) => a.isOrderLevel);
-        let recomputedOrderLevelAmount = existingOrderLevel.reduce((sum, a) => sum + a.amount, 0);
-        const orderLevelPercentage = (_w = (_v = existingOrderLevel[0]) == null ? void 0 : _v.app.value) == null ? void 0 : _w.percentage;
-        if (existingOrderLevel.length > 0 && orderLevelPercentage != null) {
-          recomputedOrderLevelAmount = priceAfterProductDiscount * orderLevelPercentage;
-        }
-        recomputedOrderLevelAmount = Math.min(recomputedOrderLevelAmount, priceAfterProductDiscount);
-        const desiredTotal = productDiscountAmount + recomputedOrderLevelAmount;
-        if (desiredTotal <= 0) continue;
-        applyResults.push({
-          lineItemId: item.id,
-          removeIds: existingOrderLevel.map((a) => a.id),
-          discount: {
-            fixedValue: {
-              amount: money$1(desiredTotal),
-              currencyCode: (fixedValue == null ? void 0 : fixedValue.currencyCode) ?? ((_y = (_x = item.originalUnitPriceSet) == null ? void 0 : _x.shopMoney) == null ? void 0 : _y.currencyCode) ?? defaultCurrencyCode
-            },
-            description: codeDiscount.shortSummary || normalizedCode
-          }
-        });
-      }
-      if (applyResults.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "Could not apply the product-level discount to any eligible product."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    }
-    const removeIds = /* @__PURE__ */ new Set();
-    for (const {
-      removeIds: ids
-    } of applyResults) {
-      for (const id of ids) removeIds.add(id);
-    }
-    for (const discountApplicationId of removeIds) {
-      const removeRes = await admin.graphql(`#graphql
-        mutation removeDiscount($id: ID!, $discountApplicationId: ID!) {
-          orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          discountApplicationId
-        }
-      });
-      const removeJson = await removeRes.json();
-      const removeErrors = ((_A = (_z = removeJson.data) == null ? void 0 : _z.orderEditRemoveDiscount) == null ? void 0 : _A.userErrors) ?? [];
-      if (((_B = removeJson.errors) == null ? void 0 : _B.length) || removeErrors.length) {
-        console.warn(`[order-discount4] Could not remove discount ${discountApplicationId}:`, removeJson.errors ?? removeErrors);
-      }
-    }
-    let appliedCount = 0;
-    const applyFailures = [];
-    for (const {
-      lineItemId,
-      discount
-    } of applyResults) {
-      const applyRes = await admin.graphql(`#graphql
-        mutation applyLineItemDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-            calculatedLineItem { id }
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          lineItemId,
-          discount
-        }
-      });
-      const applyJson = await applyRes.json();
-      const topLevelErrors = applyJson.errors ?? [];
-      const userErrors = ((_D = (_C = applyJson.data) == null ? void 0 : _C.orderEditAddLineItemDiscount) == null ? void 0 : _D.userErrors) ?? [];
-      const staged = (_F = (_E = applyJson.data) == null ? void 0 : _E.orderEditAddLineItemDiscount) == null ? void 0 : _F.calculatedLineItem;
-      if (topLevelErrors.length || userErrors.length || !staged) {
-        applyFailures.push(((_G = topLevelErrors[0]) == null ? void 0 : _G.message) ?? ((_H = userErrors[0]) == null ? void 0 : _H.message) ?? "Unknown error applying discount.");
-        continue;
-      }
-      appliedCount += 1;
-    }
-    if (appliedCount === 0) {
-      const message = applyFailures[0] ? `Could not apply the discount: ${applyFailures[0]}` : "Could not apply the discount.";
-      return cors(Response.json({
-        userErrors: [{
-          message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (applyFailures.length > 0) {
-      warnings.push(...applyFailures.map((m) => `A product could not be updated: ${m}`));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation commitEdit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: isOrderLevelCode ? `Order-level discount code "${normalizedCode}" applied via customer account` : `Product-level discount code "${normalizedCode}" applied to ${appliedCount} product(s) via customer account`
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_J = (_I = commitJson.data) == null ? void 0 : _I.orderEditCommit) == null ? void 0 : _J.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    return cors(Response.json({
-      order: commitJson.data.orderEditCommit.order,
-      summary: codeDiscount.shortSummary ?? normalizedCode,
-      appliedCount,
-      warnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount4] Unexpected error:", err);
-    return cors(Response.json({
-      userErrors: [{
-        message: err instanceof Error ? err.message : "Internal error"
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$d,
-  loader: loader$k
-}, Symbol.toStringTag, { value: "Module" }));
-function isOrderLevelApplication(app2) {
-  return !!app2 && app2.targetSelection === "ALL";
-}
-function isProductLevelApplication(app2) {
-  return !!app2 && app2.targetSelection != null && app2.targetSelection !== "ALL";
-}
-function money(amount) {
-  return Math.max(amount, 0).toFixed(2);
-}
-function labelFor(app2) {
-  return app2.description || app2.code || "Discount";
-}
-function combineLabels(labels) {
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  for (const l of labels) {
-    if (!l) continue;
-    if (seen.has(l)) continue;
-    seen.add(l);
-    out.push(l);
-  }
-  return out.join(" + ");
-}
-function existingAllocationsFor(item) {
-  var _a2, _b;
-  const out = [];
-  for (const alloc of item.calculatedDiscountAllocations ?? []) {
-    const app2 = alloc.discountApplication;
-    if (!(app2 == null ? void 0 : app2.id)) continue;
-    out.push({
-      id: app2.id,
-      amount: parseFloat(((_b = (_a2 = alloc.allocatedAmountSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.amount) ?? "0") || 0,
-      isOrderLevel: isOrderLevelApplication(app2),
-      isProductLevel: isProductLevelApplication(app2),
-      label: labelFor(app2),
-      app: app2
-    });
-  }
-  return out;
-}
-async function loader$j({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$c({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode,
-    variantIds
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  const requestedVariantIds = Array.isArray(variantIds) && variantIds.length > 0 ? variantIds : null;
-  const normalizedCode = String(discountCode).trim().toUpperCase();
-  try {
-    const codeRes = await admin.graphql(`#graphql
-      query lookupDiscountCode($code: String!) {
-        codeDiscountNodeByCode(code: $code) {
-          codeDiscount {
-            __typename
-            ... on DiscountCodeBasic {
-              status
-              shortSummary
-              customerGets {
-                value {
-                  ... on DiscountPercentage { percentage }
-                  ... on DiscountAmount { amount { amount currencyCode } }
-                }
-                items {
-                  __typename
-                  ... on AllDiscountItems { allItems }
-                  ... on DiscountProducts {
-                    products(first: 250) { nodes { id } }
-                    productVariants(first: 250) { nodes { id } }
-                  }
-                  ... on DiscountCollections {
-                    collections(first: 50) { nodes { id } }
-                  }
-                }
-              }
-            }
-            ... on DiscountCodeBxgy { status }
-            ... on DiscountCodeFreeShipping { status }
-          }
-        }
-      }`, {
-      variables: {
-        code: normalizedCode
-      }
-    });
-    const codeJson = await codeRes.json();
-    const codeDiscount = (_b = (_a2 = codeJson.data) == null ? void 0 : _a2.codeDiscountNodeByCode) == null ? void 0 : _b.codeDiscount;
-    if (!codeDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" was not found.`
-        }]
-      }, {
-        status: 404
-      }));
-    }
-    if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" is ${String(codeDiscount.status).toLowerCase()}.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (codeDiscount.__typename !== "DiscountCodeBasic") {
-      return cors(Response.json({
-        userErrors: [{
-          message: "Only percentage and fixed-amount discount codes are supported."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const value = (_c = codeDiscount.customerGets) == null ? void 0 : _c.value;
-    const percentValue = (value == null ? void 0 : value.percentage) != null ? value.percentage * 100 : null;
-    const fixedValue = ((_d = value == null ? void 0 : value.amount) == null ? void 0 : _d.amount) ? {
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode
-    } : null;
-    if (percentValue == null && fixedValue == null) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This discount has no usable percentage or fixed amount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const items = (_e = codeDiscount.customerGets) == null ? void 0 : _e.items;
-    const isOrderLevelCode = !items || items.__typename === "AllDiscountItems";
-    let eligibleProductIds = /* @__PURE__ */ new Set();
-    let eligibleVariantIds = /* @__PURE__ */ new Set();
-    if (!isOrderLevelCode) {
-      if ((items == null ? void 0 : items.__typename) === "DiscountProducts") {
-        eligibleProductIds = new Set((((_f = items.products) == null ? void 0 : _f.nodes) ?? []).map((p) => p.id));
-        eligibleVariantIds = new Set((((_g = items.productVariants) == null ? void 0 : _g.nodes) ?? []).map((v) => v.id));
-      } else if ((items == null ? void 0 : items.__typename) === "DiscountCollections") {
-        const collectionIds = (((_h = items.collections) == null ? void 0 : _h.nodes) ?? []).map((c) => c.id);
-        for (const collectionId of collectionIds) {
-          const collRes = await admin.graphql(`#graphql
-            query collectionProducts($id: ID!) {
-              collection(id: $id) {
-                products(first: 250) { nodes { id } }
-              }
-            }`, {
-            variables: {
-              id: collectionId
-            }
-          });
-          const collJson = await collRes.json();
-          for (const p of ((_k = (_j = (_i = collJson.data) == null ? void 0 : _i.collection) == null ? void 0 : _j.products) == null ? void 0 : _k.nodes) ?? []) {
-            eligibleProductIds.add(p.id);
-          }
-        }
-      }
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation beginEdit($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 50) {
-              nodes {
-                id
-                quantity
-                variant { id product { id title } }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
-                  discountApplication {
-                    id
-                    __typename
-                    targetSelection
-                    targetType
-                    allocationMethod
-                    value {
-                      ... on PricingPercentageValue { percentage }
-                      ... on MoneyV2 { amount currencyCode }
-                    }
-                    ... on CalculatedDiscountCodeApplication { code }
-                    ... on CalculatedManualDiscountApplication { description }
-                    ... on CalculatedScriptDiscountApplication { description }
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_m = (_l = beginJson.data) == null ? void 0 : _l.orderEditBegin) == null ? void 0 : _m.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrderId = beginJson.data.orderEditBegin.calculatedOrder.id;
-    const lineItems = ((_n = beginJson.data.orderEditBegin.calculatedOrder.lineItems) == null ? void 0 : _n.nodes) ?? [];
-    if (lineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order has no line items to discount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const allAllocations = lineItems.flatMap((item) => existingAllocationsFor(item));
-    const hasExistingOrderLevelDiscount = allAllocations.some((a) => a.isOrderLevel);
-    const hasExistingProductLevelDiscount = allAllocations.some((a) => a.isProductLevel);
-    if (isOrderLevelCode && hasExistingOrderLevelDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order already has an order-level discount applied. Only one order-level discount code is allowed per order."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (!isOrderLevelCode && hasExistingProductLevelDiscount) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order already has a product-level discount applied. Only one product-level discount code is allowed per order."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const applyResults = [];
-    const warnings = [];
-    const defaultCurrencyCode = (fixedValue == null ? void 0 : fixedValue.currencyCode) ?? ((_q = (_p = (_o = lineItems[0]) == null ? void 0 : _o.originalUnitPriceSet) == null ? void 0 : _p.shopMoney) == null ? void 0 : _q.currencyCode) ?? "USD";
-    const newCodeLabel = codeDiscount.shortSummary || normalizedCode;
-    if (isOrderLevelCode) {
-      const remainingBaseByLineItem = /* @__PURE__ */ new Map();
-      let remainingOrderTotal = 0;
-      for (const item of lineItems) {
-        const unitPrice = parseFloat(((_s = (_r = item.originalUnitPriceSet) == null ? void 0 : _r.shopMoney) == null ? void 0 : _s.amount) ?? "0") || 0;
-        const lineTotal = unitPrice * item.quantity;
-        const existingTotal = existingAllocationsFor(item).reduce((sum, a) => sum + a.amount, 0);
-        const remainingBase = Math.max(lineTotal - existingTotal, 0);
-        remainingBaseByLineItem.set(item.id, remainingBase);
-        remainingOrderTotal += remainingBase;
-      }
-      for (const item of lineItems) {
-        const remainingBase = remainingBaseByLineItem.get(item.id) ?? 0;
-        if (remainingBase <= 0) continue;
-        let newOrderLevelAmount = 0;
-        if (percentValue != null) {
-          newOrderLevelAmount = remainingBase * (percentValue / 100);
-        } else if (fixedValue) {
-          const share = remainingOrderTotal > 0 ? remainingBase / remainingOrderTotal : 0;
-          newOrderLevelAmount = Math.min(parseFloat(fixedValue.amount) * share, remainingBase);
-        }
-        if (newOrderLevelAmount <= 0) continue;
-        const existing = existingAllocationsFor(item);
-        const existingTotal = existing.reduce((sum, a) => sum + a.amount, 0);
-        const desiredTotal = existingTotal + newOrderLevelAmount;
-        const combinedDescription = combineLabels([...existing.map((a) => a.label), newCodeLabel]);
-        applyResults.push({
-          lineItemId: item.id,
-          removeIds: existing.map((a) => a.id),
-          discount: {
-            fixedValue: {
-              amount: money(desiredTotal),
-              currencyCode: defaultCurrencyCode
-            },
-            description: combinedDescription
-          }
-        });
-      }
-      if (applyResults.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "Could not apply the order-level discount to any line item."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    } else {
-      const requestedVariantSet = requestedVariantIds ? new Set(requestedVariantIds) : null;
-      const candidateItems = lineItems.filter((item) => {
-        var _a3, _b2, _c2;
-        const variantId = (_a3 = item.variant) == null ? void 0 : _a3.id;
-        const productId = (_c2 = (_b2 = item.variant) == null ? void 0 : _b2.product) == null ? void 0 : _c2.id;
-        const matchesEligibility = variantId && eligibleVariantIds.has(variantId) || productId && eligibleProductIds.has(productId);
-        if (!matchesEligibility) return false;
-        if (requestedVariantSet) return !!variantId && requestedVariantSet.has(variantId);
-        return true;
-      });
-      if (candidateItems.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: `Discount code "${discountCode}" is not valid for any product on this order.`
-          }]
-        }, {
-          status: 422
-        }));
-      }
-      for (const item of candidateItems) {
-        const unitPrice = parseFloat(((_u = (_t = item.originalUnitPriceSet) == null ? void 0 : _t.shopMoney) == null ? void 0 : _u.amount) ?? "0") || 0;
-        const lineTotal = unitPrice * item.quantity;
-        if (lineTotal <= 0) continue;
-        let productDiscountAmount = 0;
-        if (percentValue != null) {
-          productDiscountAmount = lineTotal * (percentValue / 100);
-        } else if (fixedValue) {
-          productDiscountAmount = Math.min(parseFloat(fixedValue.amount), lineTotal);
-        }
-        productDiscountAmount = Math.min(productDiscountAmount, lineTotal);
-        const priceAfterProductDiscount = lineTotal - productDiscountAmount;
-        const existing = existingAllocationsFor(item);
-        const existingOrderLevel = existing.filter((a) => a.isOrderLevel);
-        let recomputedOrderLevelAmount = existingOrderLevel.reduce((sum, a) => sum + a.amount, 0);
-        const orderLevelPercentage = (_w = (_v = existingOrderLevel[0]) == null ? void 0 : _v.app.value) == null ? void 0 : _w.percentage;
-        if (existingOrderLevel.length > 0 && orderLevelPercentage != null) {
-          recomputedOrderLevelAmount = priceAfterProductDiscount * orderLevelPercentage;
-        }
-        recomputedOrderLevelAmount = Math.min(recomputedOrderLevelAmount, priceAfterProductDiscount);
-        const desiredTotal = productDiscountAmount + recomputedOrderLevelAmount;
-        if (desiredTotal <= 0) continue;
-        const combinedDescription = combineLabels([newCodeLabel, ...existingOrderLevel.map((a) => a.label)]);
-        applyResults.push({
-          lineItemId: item.id,
-          removeIds: existingOrderLevel.map((a) => a.id),
-          discount: {
-            fixedValue: {
-              amount: money(desiredTotal),
-              currencyCode: (fixedValue == null ? void 0 : fixedValue.currencyCode) ?? ((_y = (_x = item.originalUnitPriceSet) == null ? void 0 : _x.shopMoney) == null ? void 0 : _y.currencyCode) ?? defaultCurrencyCode
-            },
-            description: combinedDescription
-          }
-        });
-      }
-      if (applyResults.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "Could not apply the product-level discount to any eligible product."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    }
-    const removeIds = /* @__PURE__ */ new Set();
-    for (const {
-      removeIds: ids
-    } of applyResults) {
-      for (const id of ids) removeIds.add(id);
-    }
-    for (const discountApplicationId of removeIds) {
-      const removeRes = await admin.graphql(`#graphql
-        mutation removeDiscount($id: ID!, $discountApplicationId: ID!) {
-          orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          discountApplicationId
-        }
-      });
-      const removeJson = await removeRes.json();
-      const removeErrors = ((_A = (_z = removeJson.data) == null ? void 0 : _z.orderEditRemoveDiscount) == null ? void 0 : _A.userErrors) ?? [];
-      if (((_B = removeJson.errors) == null ? void 0 : _B.length) || removeErrors.length) {
-        console.warn(`[order-discount4] Could not remove discount ${discountApplicationId}:`, removeJson.errors ?? removeErrors);
-      }
-    }
-    let appliedCount = 0;
-    const applyFailures = [];
-    for (const {
-      lineItemId,
-      discount
-    } of applyResults) {
-      const applyRes = await admin.graphql(`#graphql
-        mutation applyLineItemDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-            calculatedLineItem { id }
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          lineItemId,
-          discount
-        }
-      });
-      const applyJson = await applyRes.json();
-      const topLevelErrors = applyJson.errors ?? [];
-      const userErrors = ((_D = (_C = applyJson.data) == null ? void 0 : _C.orderEditAddLineItemDiscount) == null ? void 0 : _D.userErrors) ?? [];
-      const staged = (_F = (_E = applyJson.data) == null ? void 0 : _E.orderEditAddLineItemDiscount) == null ? void 0 : _F.calculatedLineItem;
-      if (topLevelErrors.length || userErrors.length || !staged) {
-        applyFailures.push(((_G = topLevelErrors[0]) == null ? void 0 : _G.message) ?? ((_H = userErrors[0]) == null ? void 0 : _H.message) ?? "Unknown error applying discount.");
-        continue;
-      }
-      appliedCount += 1;
-    }
-    if (appliedCount === 0) {
-      const message = applyFailures[0] ? `Could not apply the discount: ${applyFailures[0]}` : "Could not apply the discount.";
-      return cors(Response.json({
-        userErrors: [{
-          message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (applyFailures.length > 0) {
-      warnings.push(...applyFailures.map((m) => `A product could not be updated: ${m}`));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation commitEdit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: isOrderLevelCode ? `Order-level discount code "${normalizedCode}" applied via customer account` : `Product-level discount code "${normalizedCode}" applied to ${appliedCount} product(s) via customer account`
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_J = (_I = commitJson.data) == null ? void 0 : _I.orderEditCommit) == null ? void 0 : _J.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    return cors(Response.json({
-      order: commitJson.data.orderEditCommit.order,
-      summary: codeDiscount.shortSummary ?? normalizedCode,
-      appliedCount,
-      warnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount4] Unexpected error:", err);
-    return cors(Response.json({
-      userErrors: [{
-        message: err instanceof Error ? err.message : "Internal error"
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$c,
-  loader: loader$j
-}, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX$1 = "@d2:";
-function lineItemDisplayName$2(item) {
-  var _a2, _b, _c;
-  const productTitle = ((_b = (_a2 = item.variant) == null ? void 0 : _a2.product) == null ? void 0 : _b.title) || item.title || "this product";
-  const variantTitle = (_c = item.variant) == null ? void 0 : _c.title;
-  if (variantTitle && variantTitle !== "Default Title") {
-    return `${productTitle} (${variantTitle})`;
-  }
-  return productTitle;
-}
-const APP_ORIGIN_TYPENAME$2 = "ManualDiscountApplication";
-function decodeTag$1(description) {
-  if (!description || !description.startsWith(TAG_PREFIX$1)) return null;
-  const rest = description.slice(TAG_PREFIX$1.length);
-  const closeIdx = rest.indexOf("}");
-  if (closeIdx === -1) return null;
-  const raw = rest.slice(0, closeIdx + 1);
-  const label = rest.slice(closeIdx + 1).trim();
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      checkoutAmount: parsed.c ?? 0,
-      productAmount: parsed.p ?? 0,
-      orderAmount: parsed.o ?? 0,
-      label
-    };
-  } catch {
-    return null;
-  }
-}
-function encodeTag$1(tag) {
-  const raw = JSON.stringify({
-    c: round2$1(tag.checkoutAmount),
-    p: round2$1(tag.productAmount),
-    o: round2$1(tag.orderAmount)
-  });
-  return `${TAG_PREFIX$1}${raw} ${tag.label}`.trim();
-}
-function round2$1(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-function readLineItemDiscountState$2(item) {
-  var _a2, _b, _c, _d, _e, _f;
-  const allocations = item.calculatedDiscountAllocations ?? [];
-  const currencyCode = ((_b = (_a2 = item.originalUnitPriceSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.currencyCode) ?? "";
-  if (allocations.length === 0) {
-    return {
-      currencyCode,
-      existingApplicationId: null,
-      existingIsOurs: false,
-      blocked: false,
-      tag: {
-        checkoutAmount: 0,
-        productAmount: 0,
-        orderAmount: 0,
-        label: ""
-      }
-    };
-  }
-  let existingApplicationId = null;
-  let existingIsOurs = false;
-  let blocked = false;
-  let tag = {
-    checkoutAmount: 0,
-    productAmount: 0,
-    orderAmount: 0,
-    label: ""
-  };
-  let resolvedCurrency = currencyCode;
-  for (const allocation of allocations) {
-    const app2 = allocation.discountApplication;
-    if (!app2) continue;
-    existingApplicationId = app2.id;
-    const allocatedAmount = parseFloat(((_d = (_c = allocation.allocatedAmountSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.amount) ?? "0");
-    if ((_f = (_e = allocation.allocatedAmountSet) == null ? void 0 : _e.shopMoney) == null ? void 0 : _f.currencyCode) {
-      resolvedCurrency = allocation.allocatedAmountSet.shopMoney.currencyCode;
-    }
-    if (app2.__typename === APP_ORIGIN_TYPENAME$2) {
-      existingIsOurs = true;
-      const decoded = decodeTag$1(app2.description);
-      if (decoded) {
-        tag = decoded;
-      } else {
-        tag = {
-          checkoutAmount: 0,
-          productAmount: allocatedAmount,
-          orderAmount: 0,
-          label: app2.description ?? ""
-        };
-      }
-    } else if (app2.targetSelection === "ALL") {
-      existingIsOurs = false;
-      tag = {
-        checkoutAmount: allocatedAmount,
-        productAmount: tag.productAmount,
-        orderAmount: tag.orderAmount,
-        label: app2.description || "Checkout discount"
-      };
-    } else {
-      existingIsOurs = false;
-      blocked = true;
-      tag = {
-        checkoutAmount: allocatedAmount,
-        productAmount: 0,
-        orderAmount: 0,
-        label: app2.description || "Checkout discount"
-      };
-    }
-  }
-  return {
-    currencyCode: resolvedCurrency,
-    existingApplicationId,
-    existingIsOurs,
-    blocked,
-    tag
-  };
-}
-async function resolveDiscountCode$2(admin, code) {
-  var _a2, _b, _c, _d, _e, _f, _g;
-  const res = await admin.graphql(`#graphql
-    query LookupDiscountCode($code: String!) {
-      codeDiscountNodeByCode(code: $code) {
-        codeDiscount {
-          __typename
-          ... on DiscountCodeBasic {
-            status
-            title
-            customerGets {
-              value {
-                ... on DiscountPercentage { percentage }
-                ... on DiscountAmount { amount { amount currencyCode } }
-              }
-              items {
-                __typename
-                ... on AllDiscountItems {
-                  allItems
-                }
-                ... on DiscountProducts {
-                  productVariants(first: 250) { nodes { id } }
-                  products(first: 250) { nodes { id } }
-                }
-                ... on DiscountCollections {
-                  collections(first: 250) { nodes { id } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }`, {
-    variables: {
-      code: code.trim().toUpperCase()
-    }
-  });
-  const json = await res.json();
-  const node = (_a2 = json.data) == null ? void 0 : _a2.codeDiscountNodeByCode;
-  if (!node) {
-    return {
-      ok: false,
-      message: `Discount code "${code}" was not found.`
-    };
-  }
-  const codeDiscount = node.codeDiscount;
-  if ((codeDiscount == null ? void 0 : codeDiscount.__typename) !== "DiscountCodeBasic") {
-    return {
-      ok: false,
-      message: `Discount code "${code}" is not a supported type.`
-    };
-  }
-  if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
-    return {
-      ok: false,
-      message: `Discount code "${code}" is ${String(codeDiscount.status).toLowerCase()}.`
-    };
-  }
-  const items = (_b = codeDiscount.customerGets) == null ? void 0 : _b.items;
-  if (!items || items.__typename === "AllDiscountItems") {
-    return {
-      ok: false,
-      message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
-    };
-  }
-  const variantIds = new Set((((_c = items.productVariants) == null ? void 0 : _c.nodes) ?? []).map((n) => n.id));
-  const productIds = new Set((((_d = items.products) == null ? void 0 : _d.nodes) ?? []).map((n) => n.id));
-  const collectionIds = new Set((((_e = items.collections) == null ? void 0 : _e.nodes) ?? []).map((n) => n.id));
-  if (variantIds.size === 0 && productIds.size === 0 && collectionIds.size === 0) {
-    return {
-      ok: false,
-      message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
-    };
-  }
-  const targeting = {
-    type: "selection",
-    variantIds,
-    productIds,
-    collectionIds
-  };
-  const value = (_f = codeDiscount.customerGets) == null ? void 0 : _f.value;
-  const label = codeDiscount.title || code.trim().toUpperCase();
-  if ((value == null ? void 0 : value.percentage) != null) {
-    return {
-      ok: true,
-      kind: "percentage",
-      percentage: value.percentage * 100,
-      label,
-      targeting
-    };
-  }
-  if ((_g = value == null ? void 0 : value.amount) == null ? void 0 : _g.amount) {
-    return {
-      ok: true,
-      kind: "fixed",
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode,
-      label,
-      targeting
-    };
-  }
-  return {
-    ok: false,
-    message: `Discount code "${code}" does not have a supported percentage or fixed value.`
-  };
-}
-function discountAmountAgainst$2(resolved, base) {
-  if (resolved.kind === "percentage") {
-    return Math.max(base * (resolved.percentage / 100), 0);
-  }
-  return Math.min(Math.max(parseFloat(resolved.amount) || 0, 0), base);
-}
-function lineItemMatchesTargeting$2(item, targeting) {
-  var _a2, _b, _c, _d, _e, _f, _g;
-  if (targeting.type === "order") return true;
-  const variantId = (_a2 = item.variant) == null ? void 0 : _a2.id;
-  const productId = (_c = (_b = item.variant) == null ? void 0 : _b.product) == null ? void 0 : _c.id;
-  const collectionIds = ((_g = (_f = (_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.collections) == null ? void 0 : _f.nodes) == null ? void 0 : _g.map((n) => n.id)) ?? [];
-  if (variantId && targeting.variantIds.has(variantId)) return true;
-  if (productId && targeting.productIds.has(productId)) return true;
-  if (collectionIds.some((id) => targeting.collectionIds.has(id))) return true;
-  return false;
-}
-async function loader$i({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$b({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  try {
-    const resolved = await resolveDiscountCode$2(admin, discountCode);
-    if (!resolved.ok) {
-      return cors(Response.json({
-        userErrors: [{
-          message: resolved.message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation BeginEdit($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 100) {
-              nodes {
-                id
-                quantity
-                title
-                variant {
-                  id
-                  title
-                  product {
-                    id
-                    title
-                    collections(first: 50) { nodes { id } }
-                  }
-                }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
-                  discountApplication {
-                    id
-                    __typename
-                    description
-                    targetSelection
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_b = (_a2 = beginJson.data) == null ? void 0 : _a2.orderEditBegin) == null ? void 0 : _b.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrder = beginJson.data.orderEditBegin.calculatedOrder;
-    const calculatedOrderId = calculatedOrder.id;
-    const allLineItems = ((_c = calculatedOrder.lineItems) == null ? void 0 : _c.nodes) ?? [];
-    if (allLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order has no line items to discount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const targetLineItems = allLineItems.filter((item) => lineItemMatchesTargeting$2(item, resolved.targeting));
-    if (targetLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: `No product eligible for discount code "${discountCode}" was found on this order.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const warnings = [];
-    let appliedCount = 0;
-    let replacedCount = 0;
-    for (const item of targetLineItems) {
-      const state = readLineItemDiscountState$2(item);
-      const originalUnit = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.shopMoney) == null ? void 0 : _e.amount) ?? "0");
-      const originalLineTotal = originalUnit * item.quantity;
-      const currencyCode = state.currencyCode || ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.currencyCode) || "USD";
-      if (state.blocked) {
-        warnings.push(`The product already has a discount applied.`);
-        continue;
-      }
-      const newProductAmount = discountAmountAgainst$2(resolved.kind === "percentage" ? {
-        kind: "percentage",
-        percentage: resolved.percentage
-      } : {
-        kind: "fixed",
-        amount: resolved.amount
-      }, originalLineTotal);
-      if (state.tag.productAmount > 0 && newProductAmount <= state.tag.productAmount) {
-        const existingLabel = state.tag.label ? `"${state.tag.label}"` : "The existing discount";
-        warnings.push(`"${lineItemDisplayName$2(item)}" already has ${existingLabel} applied, worth ${state.tag.productAmount.toFixed(2)} ${currencyCode}. "${discountCode}" would only be worth ${newProductAmount.toFixed(2)} ${currencyCode} on this product, so it was not applied — the existing discount is greater than or equal and was kept as-is.`);
-        continue;
-      }
-      const wasReplacement = state.tag.productAmount > 0;
-      if (state.existingApplicationId && state.existingIsOurs) {
-        const removeRes = await admin.graphql(`#graphql
-          mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
-            orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-              userErrors { field message }
-            }
-          }`, {
-          variables: {
-            id: calculatedOrderId,
-            discountApplicationId: state.existingApplicationId
-          }
-        });
-        const removeJson = await removeRes.json();
-        const removeErrors = ((_i = (_h = removeJson.data) == null ? void 0 : _h.orderEditRemoveDiscount) == null ? void 0 : _i.userErrors) ?? [];
-        if (((_j = removeJson.errors) == null ? void 0 : _j.length) || removeErrors.length) {
-          const rawMessage = ((_k = removeErrors[0]) == null ? void 0 : _k.message) ?? ((_m = (_l = removeJson.errors) == null ? void 0 : _l[0]) == null ? void 0 : _m.message) ?? "unknown error";
-          if (/discount code/i.test(rawMessage) && /can'?t be removed/i.test(rawMessage)) {
-            warnings.push("This product already has a discount applied.");
-          } else {
-            warnings.push(`Could not update the discount on this product: ${rawMessage}.`);
-          }
-          continue;
-        }
-      }
-      const newTag = {
-        // Preserve the informational record of any order-wide checkout
-        // discount amount present — it's not folded into our own
-        // fixedValue, since that discount stays as its own separate
-        // application; we're just tracking that it's there.
-        checkoutAmount: state.tag.checkoutAmount,
-        productAmount: newProductAmount,
-        orderAmount: state.tag.orderAmount,
-        label: resolved.label
-      };
-      const combinedAmount = newProductAmount + state.tag.orderAmount;
-      const applyRes = await admin.graphql(`#graphql
-        mutation ApplyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-            calculatedLineItem { id }
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          lineItemId: item.id,
-          discount: {
-            fixedValue: {
-              amount: combinedAmount.toFixed(2),
-              currencyCode
-            },
-            description: encodeTag$1(newTag)
-          }
-        }
-      });
-      const applyJson = await applyRes.json();
-      const applyErrors = ((_o = (_n = applyJson.data) == null ? void 0 : _n.orderEditAddLineItemDiscount) == null ? void 0 : _o.userErrors) ?? [];
-      if (((_p = applyJson.errors) == null ? void 0 : _p.length) || applyErrors.length) {
-        const rawMessage = ((_r = (_q = applyJson.errors) == null ? void 0 : _q[0]) == null ? void 0 : _r.message) ?? ((_s = applyErrors[0]) == null ? void 0 : _s.message) ?? "unknown error";
-        if (state.tag.checkoutAmount > 0 && /discount/i.test(rawMessage)) {
-          warnings.push("This product already has an order-level discount applied from checkout, and Shopify would not allow an additional discount to be added on top of it here.");
-        } else {
-          warnings.push(`Could not apply the product discount: ${rawMessage}.`);
-        }
-        continue;
-      }
-      appliedCount += 1;
-      if (wasReplacement) replacedCount += 1;
-    }
-    if (appliedCount === 0) {
-      return cors(Response.json({
-        success: false,
-        applied: false,
-        warnings: warnings.length ? warnings : ["Nothing was eligible to be discounted."],
-        userErrors: []
-      }));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation CommitEdit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: `Product discount "${discountCode}" applied via customer account`
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_u = (_t = commitJson.data) == null ? void 0 : _t.orderEditCommit) == null ? void 0 : _u.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    return cors(Response.json({
-      success: true,
-      applied: true,
-      order: commitJson.data.orderEditCommit.order,
-      appliedCount,
-      replacedCount,
-      discountLabel: resolved.label,
-      warnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount2] Unexpected error:", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return cors(Response.json({
-      userErrors: [{
-        message
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$b,
-  loader: loader$i
-}, Symbol.toStringTag, { value: "Module" }));
-const TAG_PREFIX = "@d2:";
-function lineItemDisplayName$1(item) {
-  var _a2, _b, _c;
-  const productTitle = ((_b = (_a2 = item.variant) == null ? void 0 : _a2.product) == null ? void 0 : _b.title) || item.title || "this product";
-  const variantTitle = (_c = item.variant) == null ? void 0 : _c.title;
-  if (variantTitle && variantTitle !== "Default Title") {
-    return `${productTitle} (${variantTitle})`;
-  }
-  return productTitle;
-}
-const APP_ORIGIN_TYPENAME$1 = "ManualDiscountApplication";
-function decodeTag(description) {
-  if (!description || !description.startsWith(TAG_PREFIX)) return null;
-  const rest = description.slice(TAG_PREFIX.length);
-  const closeIdx = rest.indexOf("}");
-  if (closeIdx === -1) return null;
-  const raw = rest.slice(0, closeIdx + 1);
-  const label = rest.slice(closeIdx + 1).trim();
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      checkoutAmount: parsed.c ?? 0,
-      productAmount: parsed.p ?? 0,
-      orderAmount: parsed.o ?? 0,
-      label
-    };
-  } catch {
-    return null;
-  }
-}
-function encodeTag(tag) {
-  const raw = JSON.stringify({
-    c: round2(tag.checkoutAmount),
-    p: round2(tag.productAmount),
-    o: round2(tag.orderAmount)
-  });
-  return `${TAG_PREFIX}${raw} ${tag.label}`.trim();
-}
-function round2(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-function readLineItemDiscountState$1(item) {
-  var _a2, _b, _c, _d, _e, _f;
-  const allocations = item.calculatedDiscountAllocations ?? [];
-  const currencyCode = ((_b = (_a2 = item.originalUnitPriceSet) == null ? void 0 : _a2.shopMoney) == null ? void 0 : _b.currencyCode) ?? "";
-  if (allocations.length === 0) {
-    return {
-      currencyCode,
-      existingApplicationId: null,
-      existingIsOurs: false,
-      blocked: false,
-      tag: {
-        checkoutAmount: 0,
-        productAmount: 0,
-        orderAmount: 0,
-        label: ""
-      }
-    };
-  }
-  let existingApplicationId = null;
-  let existingIsOurs = false;
-  let blocked = false;
-  let tag = {
-    checkoutAmount: 0,
-    productAmount: 0,
-    orderAmount: 0,
-    label: ""
-  };
-  let resolvedCurrency = currencyCode;
-  for (const allocation of allocations) {
-    const app2 = allocation.discountApplication;
-    if (!app2) continue;
-    existingApplicationId = app2.id;
-    const allocatedAmount = parseFloat(((_d = (_c = allocation.allocatedAmountSet) == null ? void 0 : _c.shopMoney) == null ? void 0 : _d.amount) ?? "0");
-    if ((_f = (_e = allocation.allocatedAmountSet) == null ? void 0 : _e.shopMoney) == null ? void 0 : _f.currencyCode) {
-      resolvedCurrency = allocation.allocatedAmountSet.shopMoney.currencyCode;
-    }
-    if (app2.__typename === APP_ORIGIN_TYPENAME$1) {
-      if (!blocked) {
-        existingIsOurs = true;
-      }
-      const decoded = decodeTag(app2.description);
-      if (decoded) {
-        tag = decoded;
-      } else {
-        tag = {
-          checkoutAmount: 0,
-          productAmount: allocatedAmount,
-          orderAmount: 0,
-          label: app2.description ?? ""
-        };
-      }
-    } else if (app2.targetSelection === "ALL") {
-      tag = {
-        checkoutAmount: allocatedAmount,
-        productAmount: tag.productAmount,
-        orderAmount: tag.orderAmount,
-        label: app2.description || "Checkout discount"
-      };
-    } else {
-      existingIsOurs = false;
-      blocked = true;
-      tag = {
-        checkoutAmount: allocatedAmount,
-        productAmount: 0,
-        orderAmount: 0,
-        label: app2.description || "Checkout discount"
-      };
-    }
-  }
-  return {
-    currencyCode: resolvedCurrency,
-    existingApplicationId,
-    existingIsOurs,
-    blocked,
-    tag
-  };
-}
-async function resolveDiscountCode$1(admin, code) {
-  var _a2, _b, _c, _d, _e, _f, _g;
-  const res = await admin.graphql(`#graphql
-    query LookupDiscountCode($code: String!) {
-      codeDiscountNodeByCode(code: $code) {
-        codeDiscount {
-          __typename
-          ... on DiscountCodeBasic {
-            status
-            title
-            customerGets {
-              value {
-                ... on DiscountPercentage { percentage }
-                ... on DiscountAmount { amount { amount currencyCode } }
-              }
-              items {
-                __typename
-                ... on AllDiscountItems {
-                  allItems
-                }
-                ... on DiscountProducts {
-                  productVariants(first: 250) { nodes { id } }
-                  products(first: 250) { nodes { id } }
-                }
-                ... on DiscountCollections {
-                  collections(first: 250) { nodes { id } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }`, {
-    variables: {
-      code: code.trim().toUpperCase()
-    }
-  });
-  const json = await res.json();
-  const node = (_a2 = json.data) == null ? void 0 : _a2.codeDiscountNodeByCode;
-  if (!node) {
-    return {
-      ok: false,
-      message: `Discount code "${code}" was not found.`
-    };
-  }
-  const codeDiscount = node.codeDiscount;
-  if ((codeDiscount == null ? void 0 : codeDiscount.__typename) !== "DiscountCodeBasic") {
-    return {
-      ok: false,
-      message: `Discount code "${code}" is not a supported type.`
-    };
-  }
-  if (codeDiscount.status && codeDiscount.status !== "ACTIVE") {
-    return {
-      ok: false,
-      message: `Discount code "${code}" is ${String(codeDiscount.status).toLowerCase()}.`
-    };
-  }
-  const items = (_b = codeDiscount.customerGets) == null ? void 0 : _b.items;
-  if (!items || items.__typename === "AllDiscountItems") {
-    return {
-      ok: false,
-      message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
-    };
-  }
-  const variantIds = new Set((((_c = items.productVariants) == null ? void 0 : _c.nodes) ?? []).map((n) => n.id));
-  const productIds = new Set((((_d = items.products) == null ? void 0 : _d.nodes) ?? []).map((n) => n.id));
-  const collectionIds = new Set((((_e = items.collections) == null ? void 0 : _e.nodes) ?? []).map((n) => n.id));
-  if (variantIds.size === 0 && productIds.size === 0 && collectionIds.size === 0) {
-    return {
-      ok: false,
-      message: `"${code}" is an order-level discount code. Only product-level discount codes can be applied here.`
-    };
-  }
-  const targeting = {
-    type: "selection",
-    variantIds,
-    productIds,
-    collectionIds
-  };
-  const value = (_f = codeDiscount.customerGets) == null ? void 0 : _f.value;
-  const label = codeDiscount.title || code.trim().toUpperCase();
-  if ((value == null ? void 0 : value.percentage) != null) {
-    return {
-      ok: true,
-      kind: "percentage",
-      percentage: value.percentage * 100,
-      label,
-      targeting
-    };
-  }
-  if ((_g = value == null ? void 0 : value.amount) == null ? void 0 : _g.amount) {
-    return {
-      ok: true,
-      kind: "fixed",
-      amount: value.amount.amount,
-      currencyCode: value.amount.currencyCode,
-      label,
-      targeting
-    };
-  }
-  return {
-    ok: false,
-    message: `Discount code "${code}" does not have a supported percentage or fixed value.`
-  };
-}
-function discountAmountAgainst$1(resolved, base) {
-  if (resolved.kind === "percentage") {
-    return Math.max(base * (resolved.percentage / 100), 0);
-  }
-  return Math.min(Math.max(parseFloat(resolved.amount) || 0, 0), base);
-}
-function lineItemMatchesTargeting$1(item, targeting) {
-  var _a2, _b, _c, _d, _e, _f, _g;
-  if (targeting.type === "order") return true;
-  const variantId = (_a2 = item.variant) == null ? void 0 : _a2.id;
-  const productId = (_c = (_b = item.variant) == null ? void 0 : _b.product) == null ? void 0 : _c.id;
-  const collectionIds = ((_g = (_f = (_e = (_d = item.variant) == null ? void 0 : _d.product) == null ? void 0 : _e.collections) == null ? void 0 : _f.nodes) == null ? void 0 : _g.map((n) => n.id)) ?? [];
-  if (variantId && targeting.variantIds.has(variantId)) return true;
-  if (productId && targeting.productIds.has(productId)) return true;
-  if (collectionIds.some((id) => targeting.collectionIds.has(id))) return true;
-  return false;
-}
-async function loader$h({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$a({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  try {
-    const resolved = await resolveDiscountCode$1(admin, discountCode);
-    if (!resolved.ok) {
-      return cors(Response.json({
-        userErrors: [{
-          message: resolved.message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation BeginEdit($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 100) {
-              nodes {
-                id
-                quantity
-                title
-                variant {
-                  id
-                  title
-                  product {
-                    id
-                    title
-                    collections(first: 50) { nodes { id } }
-                  }
-                }
-                originalUnitPriceSet { shopMoney { amount currencyCode } }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet { shopMoney { amount currencyCode } }
-                  discountApplication {
-                    id
-                    __typename
-                    description
-                    targetSelection
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_b = (_a2 = beginJson.data) == null ? void 0 : _a2.orderEditBegin) == null ? void 0 : _b.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrder = beginJson.data.orderEditBegin.calculatedOrder;
-    const calculatedOrderId = calculatedOrder.id;
-    const allLineItems = ((_c = calculatedOrder.lineItems) == null ? void 0 : _c.nodes) ?? [];
-    if (allLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This order has no line items to discount."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const targetLineItems = allLineItems.filter((item) => lineItemMatchesTargeting$1(item, resolved.targeting));
-    if (targetLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: `No product eligible for discount code "${discountCode}" was found on this order.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const warnings = [];
-    const appliedProducts = [];
-    const skippedProducts = [];
-    let appliedCount = 0;
-    let replacedCount = 0;
-    for (const item of targetLineItems) {
-      const displayName = lineItemDisplayName$1(item);
-      const state = readLineItemDiscountState$1(item);
-      const originalUnit = parseFloat(((_e = (_d = item.originalUnitPriceSet) == null ? void 0 : _d.shopMoney) == null ? void 0 : _e.amount) ?? "0");
-      const originalLineTotal = originalUnit * item.quantity;
-      const currencyCode = state.currencyCode || ((_g = (_f = item.originalUnitPriceSet) == null ? void 0 : _f.shopMoney) == null ? void 0 : _g.currencyCode) || "USD";
-      const newProductAmount = discountAmountAgainst$1(resolved.kind === "percentage" ? {
-        kind: "percentage",
-        percentage: resolved.percentage
-      } : {
-        kind: "fixed",
-        amount: resolved.amount
-      }, originalLineTotal);
-      if (state.blocked) {
-        const existingAmount = state.tag.checkoutAmount;
-        if (newProductAmount <= existingAmount) {
-          warnings.push(`"${displayName}" already has a checkout discount worth ${existingAmount.toFixed(2)} ${currencyCode}. "${discountCode}" would only be worth ${newProductAmount.toFixed(2)} ${currencyCode}, so the existing discount was kept.`);
-          skippedProducts.push(displayName);
-          continue;
-        }
-        if (state.existingApplicationId) {
-          const removeRes = await admin.graphql(`#graphql
-            mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
-              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-                userErrors { field message }
-              }
-            }`, {
-            variables: {
-              id: calculatedOrderId,
-              discountApplicationId: state.existingApplicationId
-            }
-          });
-          const removeJson = await removeRes.json();
-          const removeErrors = ((_i = (_h = removeJson.data) == null ? void 0 : _h.orderEditRemoveDiscount) == null ? void 0 : _i.userErrors) ?? [];
-          if (((_j = removeJson.errors) == null ? void 0 : _j.length) || removeErrors.length) {
-            const rawMessage = ((_k = removeErrors[0]) == null ? void 0 : _k.message) ?? ((_m = (_l = removeJson.errors) == null ? void 0 : _l[0]) == null ? void 0 : _m.message) ?? "unknown error";
-            warnings.push(`"${displayName}" has a checkout discount (${existingAmount.toFixed(2)} ${currencyCode}). Tried to replace with "${discountCode}" (${newProductAmount.toFixed(2)} ${currencyCode}) but removal failed: ${rawMessage}`);
-            skippedProducts.push(displayName);
-            continue;
-          }
-        }
-      } else {
-        if (state.tag.productAmount > 0 && newProductAmount <= state.tag.productAmount) {
-          const existingLabel = state.tag.label ? `"${state.tag.label}"` : "The existing discount";
-          warnings.push(`"${displayName}" already has ${existingLabel} applied, worth ${state.tag.productAmount.toFixed(2)} ${currencyCode}. "${discountCode}" would only be worth ${newProductAmount.toFixed(2)} ${currencyCode} on this product, so the existing discount was kept.`);
-          skippedProducts.push(displayName);
-          continue;
-        }
-        if (state.existingApplicationId && state.existingIsOurs) {
-          const removeRes = await admin.graphql(`#graphql
-            mutation RemoveDiscount($id: ID!, $discountApplicationId: ID!) {
-              orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-                userErrors { field message }
-              }
-            }`, {
-            variables: {
-              id: calculatedOrderId,
-              discountApplicationId: state.existingApplicationId
-            }
-          });
-          const removeJson = await removeRes.json();
-          const removeErrors = ((_o = (_n = removeJson.data) == null ? void 0 : _n.orderEditRemoveDiscount) == null ? void 0 : _o.userErrors) ?? [];
-          if (((_p = removeJson.errors) == null ? void 0 : _p.length) || removeErrors.length) {
-            const rawMessage = ((_q = removeErrors[0]) == null ? void 0 : _q.message) ?? ((_s = (_r = removeJson.errors) == null ? void 0 : _r[0]) == null ? void 0 : _s.message) ?? "unknown error";
-            if (/discount code/i.test(rawMessage) && /can'?t be removed/i.test(rawMessage)) {
-              warnings.push(`"${displayName}" already has a discount applied — skipped.`);
-            } else {
-              warnings.push(`Could not update the discount on "${displayName}": ${rawMessage}.`);
-            }
-            skippedProducts.push(displayName);
-            continue;
-          }
-        }
-      }
-      const wasReplacement = state.blocked || state.tag.productAmount > 0;
-      const newTag = {
-        checkoutAmount: state.blocked ? 0 : state.tag.checkoutAmount,
-        productAmount: newProductAmount,
-        orderAmount: state.tag.orderAmount,
-        label: resolved.label
-      };
-      const combinedAmount = newProductAmount + state.tag.orderAmount;
-      const applyRes = await admin.graphql(`#graphql
-        mutation ApplyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-            calculatedLineItem { id }
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          lineItemId: item.id,
-          discount: {
-            fixedValue: {
-              amount: combinedAmount.toFixed(2),
-              currencyCode
-            },
-            description: encodeTag(newTag)
-          }
-        }
-      });
-      const applyJson = await applyRes.json();
-      const applyErrors = ((_u = (_t = applyJson.data) == null ? void 0 : _t.orderEditAddLineItemDiscount) == null ? void 0 : _u.userErrors) ?? [];
-      if (((_v = applyJson.errors) == null ? void 0 : _v.length) || applyErrors.length) {
-        const rawMessage = ((_x = (_w = applyJson.errors) == null ? void 0 : _w[0]) == null ? void 0 : _x.message) ?? ((_y = applyErrors[0]) == null ? void 0 : _y.message) ?? "unknown error";
-        if (state.tag.checkoutAmount > 0 && /discount/i.test(rawMessage)) {
-          warnings.push(`"${displayName}" already has an order-level discount from checkout — could not add another discount on top.`);
-        } else {
-          warnings.push(`Could not apply the discount to "${displayName}": ${rawMessage}.`);
-        }
-        skippedProducts.push(displayName);
-        continue;
-      }
-      appliedCount += 1;
-      appliedProducts.push(displayName);
-      if (wasReplacement) replacedCount += 1;
-    }
-    if (appliedCount === 0) {
-      return cors(Response.json({
-        success: false,
-        applied: false,
-        appliedCount: 0,
-        appliedProducts: [],
-        skippedProducts,
-        discountLabel: resolved.label,
-        warnings: warnings.length ? warnings : ["No eligible products found for this discount code."],
-        userErrors: []
-      }));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation CommitEdit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: `Product discount "${discountCode}" applied via customer account`
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_A = (_z = commitJson.data) == null ? void 0 : _z.orderEditCommit) == null ? void 0 : _A.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    return cors(Response.json({
-      success: true,
-      applied: true,
-      order: commitJson.data.orderEditCommit.order,
-      appliedCount,
-      appliedProducts,
-      replacedCount,
-      skippedProducts,
-      discountLabel: resolved.label,
-      warnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount2] Unexpected error:", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return cors(Response.json({
-      userErrors: [{
-        message
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$a,
-  loader: loader$h
+  action: action$a
 }, Symbol.toStringTag, { value: "Module" }));
 async function persistFreeShippingCode(admin, orderId, code) {
   if (!orderId || !code) return;
@@ -6661,7 +3672,7 @@ function readLineItemDiscountState(item) {
       if (!blocked) {
         existingIsOurs = true;
       }
-      const decoded = decodeTag$3(app2.description);
+      const decoded = decodeTag(app2.description);
       if (decoded) {
         tag = decoded;
       } else {
@@ -6712,7 +3723,7 @@ function collectExistingDiscounts(allLineItems) {
       if (app2.code) {
         codeOrLabel = app2.code;
       } else if (app2.description) {
-        const decoded = decodeTag$3(app2.description);
+        const decoded = decodeTag(app2.description);
         codeOrLabel = (((_i = decoded == null ? void 0 : decoded.bxgy) == null ? void 0 : _i.code) || (decoded == null ? void 0 : decoded.label) || app2.description).trim();
       }
       const appliedTo = app2.appliedTo === "ORDER" || app2.targetSelection === "ALL" ? "ORDER" : "LINE";
@@ -6730,7 +3741,7 @@ function collectExistingDiscounts(allLineItems) {
         });
       } else {
         const existing = map.get(app2.id);
-        existing.totalAmount = round2$3(existing.totalAmount + amount);
+        existing.totalAmount = round2(existing.totalAmount + amount);
         if (!existing.lineItemIds.includes(item.id)) {
           existing.lineItemIds.push(item.id);
         }
@@ -7213,7 +4224,7 @@ function lineItemMatchesTargeting(item, targeting) {
   if (collectionIds.some((id) => targeting.collectionIds.has(id))) return true;
   return false;
 }
-async function loader$g({
+async function loader$f({
   request
 }) {
   const {
@@ -7267,7 +4278,8 @@ async function action$9({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId: sessionToken.sub
+    customerAccountId: sessionToken.sub,
+    requiredServiceId: "apply-discount"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -7500,7 +4512,7 @@ async function action$9({
         }
       }
       if (incompatibleDiscounts2.length > 0) {
-        const totalIncompatibleAmount = round2$3(incompatibleDiscounts2.reduce((sum, d) => sum + d.totalAmount, 0));
+        const totalIncompatibleAmount = round2(incompatibleDiscounts2.reduce((sum, d) => sum + d.totalAmount, 0));
         if (totalIncompatibleAmount >= existingShippingAmount) {
           const incompNames = incompatibleDiscounts2.map((d) => d.codeOrLabel || "existing discount").join(", ");
           return cors(Response.json({
@@ -7726,10 +4738,10 @@ async function action$9({
       let calculatedDiscount = 0;
       if (resolved.getRule.kind === "percentage") {
         const pct = resolved.getRule.percentage ?? 100;
-        calculatedDiscount = round2$3(targetUnit * (pct / 100) * discountQty);
+        calculatedDiscount = round2(targetUnit * (pct / 100) * discountQty);
       } else {
         const fixedVal = parseFloat(resolved.getRule.amount ?? "0");
-        calculatedDiscount = round2$3(Math.min(fixedVal * discountQty, targetUnit * discountQty));
+        calculatedDiscount = round2(Math.min(fixedVal * discountQty, targetUnit * discountQty));
       }
       const state = readLineItemDiscountState(targetItem);
       const existingDiscounts2 = collectExistingDiscounts(allLineItems);
@@ -7751,7 +4763,7 @@ async function action$9({
         }
       }
       if (incompatibleDiscounts2.length > 0) {
-        const totalIncompatibleAmount = round2$3(incompatibleDiscounts2.reduce((sum, d) => sum + d.totalAmount, 0));
+        const totalIncompatibleAmount = round2(incompatibleDiscounts2.reduce((sum, d) => sum + d.totalAmount, 0));
         if (totalIncompatibleAmount >= calculatedDiscount) {
           const incompNames = incompatibleDiscounts2.map((d) => d.codeOrLabel || "existing discount").join(", ");
           return cors(Response.json({
@@ -8028,7 +5040,7 @@ async function action$9({
         kind: "fixed",
         amount: resolved.amount
       }, originalLineTotal);
-      totalNewDiscount = round2$3(totalNewDiscount + amount);
+      totalNewDiscount = round2(totalNewDiscount + amount);
     }
     const targetItemIds = new Set(targetLineItems.map((i) => i.id));
     const existingDiscounts = collectExistingDiscounts(allLineItems);
@@ -8051,7 +5063,7 @@ async function action$9({
       }
     }
     if (incompatibleDiscounts.length > 0) {
-      const totalIncompatibleAmount = round2$3(incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0));
+      const totalIncompatibleAmount = round2(incompatibleDiscounts.reduce((sum, d) => sum + d.totalAmount, 0));
       const orderCurrency = ((_Ba = (_Aa = calculatedOrder.totalPriceSet) == null ? void 0 : _Aa.presentmentMoney) == null ? void 0 : _Ba.currencyCode) || ((_Ea = (_Da = (_Ca = targetLineItems[0]) == null ? void 0 : _Ca.originalUnitPriceSet) == null ? void 0 : _Da.presentmentMoney) == null ? void 0 : _Ea.currencyCode) || ((_Ha = (_Ga = (_Fa = targetLineItems[0]) == null ? void 0 : _Fa.originalUnitPriceSet) == null ? void 0 : _Ga.shopMoney) == null ? void 0 : _Ha.currencyCode) || "USD";
       if (totalIncompatibleAmount >= totalNewDiscount) {
         const incompNames = incompatibleDiscounts.map((d) => d.codeOrLabel || "existing discount").join(", ");
@@ -8308,10 +5320,10 @@ async function action$9({
     }));
   }
 }
-const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$9,
-  loader: loader$g
+  loader: loader$f
 }, Symbol.toStringTag, { value: "Module" }));
 const LINK_TTL_MS = 5 * 60 * 1e3;
 function getSecret() {
@@ -8599,10 +5611,10 @@ function getMoney(set, fallbackCurrency = "USD") {
     currencyCode: m.currencyCode || fallbackCurrency
   };
 }
-function formatMoney(money2, fallbackCurrency) {
-  if (!money2) return "";
-  const amount = Number(money2.amount || 0).toFixed(2);
-  return `${amount} ${money2.currencyCode || fallbackCurrency}`.trim();
+function formatMoney(money, fallbackCurrency) {
+  if (!money) return "";
+  const amount = Number(money.amount || 0).toFixed(2);
+  return `${amount} ${money.currencyCode || fallbackCurrency}`.trim();
 }
 function cleanDiscountTitle(raw) {
   if (!raw) return "";
@@ -8939,7 +5951,7 @@ function generateInvoicePdf(order) {
     }
   });
 }
-async function loader$f({
+async function loader$e({
   request
 }) {
   var _a2, _b;
@@ -8958,6 +5970,14 @@ async function loader$f({
     orderId,
     customerId
   } = verified;
+  if (!await isServiceEnabled(shop, "download-invoice")) {
+    return new Response("Invoice download is not enabled by the merchant.", {
+      status: 403,
+      headers: {
+        "Content-Type": "text/plain"
+      }
+    });
+  }
   try {
     const {
       admin
@@ -9012,749 +6032,49 @@ async function loader$f({
     });
   }
 }
-const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  loader: loader$f
-}, Symbol.toStringTag, { value: "Module" }));
-async function loader$e({
-  request
-}) {
-  const {
-    cors
-  } = await authenticate.public.customerAccount(request);
-  return cors(new Response(JSON.stringify({
-    success: true
-  }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }));
-}
-async function action$8({
-  request
-}) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L, _M, _N, _O, _P, _Q;
-  const {
-    sessionToken,
-    cors
-  } = await authenticate.public.customerAccount(request);
-  if (request.method === "OPTIONS") {
-    return cors(new Response(null, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }));
-  }
-  const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
-  const {
-    admin
-  } = await unauthenticated.admin(storeDomain);
-  const {
-    orderId,
-    discountCode,
-    variantIds
-  } = await request.json();
-  if (!orderId || !discountCode) {
-    return cors(Response.json({
-      userErrors: [{
-        message: "Missing orderId or discountCode."
-      }]
-    }, {
-      status: 400
-    }));
-  }
-  const targetVariantIds = Array.isArray(variantIds) && variantIds.length > 0 ? variantIds : null;
-  try {
-    let encodeInvisiblePayload = function(payload) {
-      const bytes = Array.from(new TextEncoder().encode(payload));
-      const chars = [];
-      for (const b of bytes) {
-        chars.push(ZW_B4[b >> 6 & 3]);
-        chars.push(ZW_B4[b >> 4 & 3]);
-        chars.push(ZW_B4[b >> 2 & 3]);
-        chars.push(ZW_B4[b & 3]);
-      }
-      return `${ZW_MARK_NEW}${chars.join("")}${ZW_MARK_NEW}`;
-    }, decodeBase4 = function(zwChars) {
-      const charArr = Array.from(zwChars);
-      const byteCount = Math.floor(charArr.length / 4);
-      const bytes = new Uint8Array(byteCount);
-      for (let i = 0; i < byteCount; i++) {
-        const a = ZW_B4_MAP[charArr[i * 4]] ?? 0;
-        const b = ZW_B4_MAP[charArr[i * 4 + 1]] ?? 0;
-        const c = ZW_B4_MAP[charArr[i * 4 + 2]] ?? 0;
-        const d = ZW_B4_MAP[charArr[i * 4 + 3]] ?? 0;
-        bytes[i] = a << 6 | b << 4 | c << 2 | d;
-      }
-      try {
-        return new TextDecoder().decode(bytes);
-      } catch {
-        return null;
-      }
-    }, decodeOldBinary = function(zwChars) {
-      const bits = Array.from(zwChars, (ch) => ch === "‌" ? "1" : "0").join("");
-      const byteCount = Math.floor(bits.length / 8);
-      const bytes = new Uint8Array(byteCount);
-      for (let i = 0; i < byteCount; i++) bytes[i] = parseInt(bits.slice(i * 8, i * 8 + 8), 2);
-      try {
-        return new TextDecoder().decode(bytes);
-      } catch {
-        return null;
-      }
-    }, extractInvisiblePayload = function(text) {
-      let start = text.indexOf(ZW_MARK_NEW);
-      if (start !== -1) {
-        const end = text.indexOf(ZW_MARK_NEW, start + 1);
-        if (end !== -1) {
-          const payload = decodeBase4(text.slice(start + 1, end));
-          const visible = text.slice(0, start) + text.slice(end + 1);
-          return {
-            visible,
-            payload
-          };
-        }
-      }
-      start = text.indexOf(ZW_MARK_OLD);
-      if (start !== -1) {
-        const end = text.indexOf(ZW_MARK_OLD, start + 1);
-        if (end !== -1) {
-          const payload = decodeOldBinary(text.slice(start + 1, end));
-          const visible = text.slice(0, start) + text.slice(end + 1);
-          return {
-            visible,
-            payload
-          };
-        }
-      }
-      return {
-        visible: text,
-        payload: null
-      };
-    }, formatPercentForDisplay = function(percent) {
-      return (Math.round(percent * 100) / 100).toString();
-    }, formatEntryForDisplay = function(entry2, currencyCode) {
-      if (typeof entry2.percent === "number") {
-        return `${entry2.code} ${formatPercentForDisplay(entry2.percent)}%`;
-      }
-      return currencyCode ? `${entry2.code} ${entry2.amount.toFixed(2)} ${currencyCode}` : entry2.code;
-    }, parseTaggedDescription = function(description) {
-      if (!description) return {
-        entries: [],
-        label: ""
-      };
-      const {
-        visible,
-        payload
-      } = extractInvisiblePayload(description);
-      if (!payload) return {
-        entries: [],
-        label: visible
-      };
-      const entries = payload.split("|").filter(Boolean).map((part) => {
-        const [code, scope, amount, percent] = part.split(":");
-        const entry2 = {
-          code,
-          scope: scope === "P" ? "P" : "O",
-          amount: parseFloat(amount) || 0
-        };
-        if (percent !== void 0 && percent !== "") {
-          const parsedPercent = parseFloat(percent);
-          if (!Number.isNaN(parsedPercent)) entry2.percent = parsedPercent;
-        }
-        return entry2;
-      });
-      return {
-        entries,
-        label: visible
-      };
-    }, buildTaggedDescription = function(entries, visibleLabel) {
-      const tag = entries.map((e) => `${e.code}:${e.scope}:${e.amount.toFixed(2)}:${e.percent != null ? e.percent.toFixed(2) : ""}`).join("|");
-      const full = `${visibleLabel}${encodeInvisiblePayload(tag)}`;
-      if (full.length > 255) {
-        console.warn(`[order-discount] Tagged description too long (${full.length} chars), falling back to visible label only.`);
-        return visibleLabel.slice(0, 255);
-      }
-      return full;
-    };
-    const discountRes = await admin.graphql(`#graphql
-      query validateDiscount($code: String!) {
-        codeDiscountNodeByCode(code: $code) {
-          id
-          codeDiscount {
-            __typename
-            ... on DiscountCodeBasic {
-              status
-              shortSummary
-              customerGets {
-                value {
-                  ... on DiscountPercentage { percentage }
-                  ... on DiscountAmount { amount { amount currencyCode } }
-                }
-                items {
-                  __typename
-                  ... on AllDiscountItems { allItems }
-                  ... on DiscountProducts {
-                    products(first: 250) { nodes { id } }
-                    productVariants(first: 250) { nodes { id } }
-                  }
-                  ... on DiscountCollections {
-                    collections(first: 50) { nodes { id } }
-                  }
-                }
-              }
-            }
-            ... on DiscountCodeBxgy { status }
-            ... on DiscountCodeFreeShipping { status }
-          }
-        }
-      }`, {
-      variables: {
-        code: discountCode.trim().toUpperCase()
-      }
-    });
-    const discountJson = await discountRes.json();
-    const discountNode = (_a2 = discountJson.data) == null ? void 0 : _a2.codeDiscountNodeByCode;
-    if (!discountNode) {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" not found.`
-        }]
-      }, {
-        status: 404
-      }));
-    }
-    const codeDiscount = discountNode.codeDiscount;
-    if ((codeDiscount == null ? void 0 : codeDiscount.status) && codeDiscount.status !== "ACTIVE") {
-      return cors(Response.json({
-        userErrors: [{
-          message: `Discount code "${discountCode}" is ${codeDiscount.status.toLowerCase()}.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    let discountInput = null;
-    if ((codeDiscount == null ? void 0 : codeDiscount.__typename) === "DiscountCodeBasic") {
-      const value = (_b = codeDiscount.customerGets) == null ? void 0 : _b.value;
-      if ((value == null ? void 0 : value.percentage) != null) {
-        discountInput = {
-          percentValue: value.percentage * 100,
-          // API expects 0-100
-          description: codeDiscount.shortSummary || discountCode.trim().toUpperCase()
-        };
-      } else if ((_c = value == null ? void 0 : value.amount) == null ? void 0 : _c.amount) {
-        discountInput = {
-          fixedValue: {
-            amount: value.amount.amount,
-            currencyCode: value.amount.currencyCode
-          },
-          description: codeDiscount.shortSummary || discountCode.trim().toUpperCase()
-        };
-      }
-    }
-    if (!discountInput) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "This discount type is not supported (only percentage and fixed-amount codes are accepted)."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    let eligibility = {
-      type: "all"
-    };
-    if ((codeDiscount == null ? void 0 : codeDiscount.__typename) === "DiscountCodeBasic") {
-      const items = (_d = codeDiscount.customerGets) == null ? void 0 : _d.items;
-      if ((items == null ? void 0 : items.__typename) === "DiscountProducts") {
-        eligibility = {
-          type: "restricted",
-          productIds: new Set((((_e = items.products) == null ? void 0 : _e.nodes) ?? []).map((p) => p.id)),
-          variantIds: new Set((((_f = items.productVariants) == null ? void 0 : _f.nodes) ?? []).map((v) => v.id))
-        };
-      } else if ((items == null ? void 0 : items.__typename) === "DiscountCollections") {
-        const collectionIds = (((_g = items.collections) == null ? void 0 : _g.nodes) ?? []).map((c) => c.id);
-        const productIds = /* @__PURE__ */ new Set();
-        for (const collectionId of collectionIds) {
-          const collRes = await admin.graphql(`#graphql
-            query collectionProducts($id: ID!) {
-              collection(id: $id) {
-                products(first: 250) { nodes { id } }
-              }
-            }`, {
-            variables: {
-              id: collectionId
-            }
-          });
-          const collJson = await collRes.json();
-          const productNodes = ((_j = (_i = (_h = collJson.data) == null ? void 0 : _h.collection) == null ? void 0 : _i.products) == null ? void 0 : _j.nodes) ?? [];
-          for (const p of productNodes) productIds.add(p.id);
-        }
-        eligibility = {
-          type: "restricted",
-          productIds,
-          variantIds: /* @__PURE__ */ new Set()
-        };
-      }
-    }
-    const beginRes = await admin.graphql(`#graphql
-      mutation orderEditBegin($id: ID!) {
-        orderEditBegin(id: $id) {
-          calculatedOrder {
-            id
-            lineItems(first: 50) {
-              nodes {
-                id
-                quantity
-                editableQuantity
-                variant { id product { id title } }
-                originalUnitPriceSet {
-                  shopMoney { amount currencyCode }
-                }
-                calculatedDiscountAllocations {
-                  allocatedAmountSet {
-                    shopMoney { amount currencyCode }
-                  }
-                  discountApplication {
-                    __typename
-                    id
-                    description
-                    allocationMethod
-                    targetSelection
-                    targetType
-                    value {
-                      ... on PricingPercentageValue {
-                        percentage
-                      }
-                      ... on MoneyV2 {
-                        amount
-                        currencyCode
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: orderId
-      }
-    });
-    const beginJson = await beginRes.json();
-    const beginErrors = ((_l = (_k = beginJson.data) == null ? void 0 : _k.orderEditBegin) == null ? void 0 : _l.userErrors) ?? [];
-    if (beginErrors.length) {
-      return cors(Response.json({
-        userErrors: beginErrors
-      }, {
-        status: 422
-      }));
-    }
-    const calculatedOrder = beginJson.data.orderEditBegin.calculatedOrder;
-    const calculatedOrderId = calculatedOrder.id;
-    const allLineItems = (((_m = calculatedOrder.lineItems) == null ? void 0 : _m.nodes) ?? []).filter((item) => {
-      const qty = item.editableQuantity ?? item.quantity ?? 0;
-      return qty > 0;
-    });
-    if (allLineItems.length === 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: "No line items found to apply the discount to."
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    let lineItems = allLineItems;
-    const ZW_B4 = ["​", "‌", "⁠", "⁢"];
-    const ZW_B4_MAP = {
-      "​": 0,
-      "‌": 1,
-      "⁠": 2,
-      "⁢": 3
-    };
-    const ZW_MARK_NEW = "\uFEFF";
-    const ZW_MARK_OLD = "‍";
-    if (targetVariantIds) {
-      const targetSet = new Set(targetVariantIds);
-      lineItems = allLineItems.filter((item) => {
-        var _a3;
-        return ((_a3 = item.variant) == null ? void 0 : _a3.id) && targetSet.has(item.variant.id);
-      });
-      if (lineItems.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: "The selected product(s) could not be found on this order."
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    }
-    const skipWarnings = [];
-    if (eligibility.type === "restricted") {
-      const eligibleItems = [];
-      const ineligibleItems = [];
-      for (const item of lineItems) {
-        const variantId = (_n = item.variant) == null ? void 0 : _n.id;
-        const productId = (_p = (_o = item.variant) == null ? void 0 : _o.product) == null ? void 0 : _p.id;
-        const isEligible = !!variantId && eligibility.variantIds.has(variantId) || !!productId && eligibility.productIds.has(productId);
-        (isEligible ? eligibleItems : ineligibleItems).push(item);
-      }
-      if (ineligibleItems.length > 0) {
-        const productTitles = Array.from(new Set(ineligibleItems.map((item) => {
-          var _a3, _b2;
-          return ((_b2 = (_a3 = item.variant) == null ? void 0 : _a3.product) == null ? void 0 : _b2.title) || "a selected product";
-        })));
-        skipWarnings.push(`The discount code "${discountCode.trim().toUpperCase()}" is not available for: ${productTitles.join(", ")}.`);
-      }
-      lineItems = eligibleItems;
-      if (lineItems.length === 0) {
-        return cors(Response.json({
-          userErrors: [{
-            message: skipWarnings[0]
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    }
-    const existingDiscountApplicationIds = /* @__PURE__ */ new Set();
-    const discountAppIdsByLineItemId = /* @__PURE__ */ new Map();
-    const combineInfoByLineItemId = /* @__PURE__ */ new Map();
-    const requestScope = targetVariantIds ? "P" : "O";
-    for (const item of lineItems) {
-      const allocations = item.calculatedDiscountAllocations ?? [];
-      const entries = [];
-      let currencyCode = ((_r = (_q = item.originalUnitPriceSet) == null ? void 0 : _q.shopMoney) == null ? void 0 : _r.currencyCode) ?? "";
-      const itemRemovableAppIds = /* @__PURE__ */ new Set();
-      let unremovableCheckoutDiscountTotal = 0;
-      const originalUnit = parseFloat(((_t = (_s = item.originalUnitPriceSet) == null ? void 0 : _s.shopMoney) == null ? void 0 : _t.amount) ?? "0");
-      const originalLineTotal = originalUnit * item.quantity;
-      for (const allocation of allocations) {
-        const app2 = allocation.discountApplication;
-        if (!app2) continue;
-        const allocatedAmount = parseFloat(((_v = (_u = allocation.allocatedAmountSet) == null ? void 0 : _u.shopMoney) == null ? void 0 : _v.amount) ?? "0");
-        if ((_x = (_w = allocation.allocatedAmountSet) == null ? void 0 : _w.shopMoney) == null ? void 0 : _x.currencyCode) {
-          currencyCode = allocation.allocatedAmountSet.shopMoney.currencyCode;
-        }
-        const isRemovable = app2.__typename === "OrderEditAppliedDiscount";
-        if (isRemovable && app2.id) {
-          existingDiscountApplicationIds.add(app2.id);
-          itemRemovableAppIds.add(app2.id);
-        } else {
-          unremovableCheckoutDiscountTotal += allocatedAmount;
-        }
-        const {
-          entries: parsedEntries
-        } = parseTaggedDescription(app2.description);
-        if (parsedEntries.length > 0) {
-          entries.push(...parsedEntries);
-        } else {
-          const code = (app2.description || "CHECKOUT_DISCOUNT").trim().toUpperCase();
-          const scope = app2.targetSelection === "ALL" ? "O" : "P";
-          let percent = void 0;
-          if (((_y = app2.value) == null ? void 0 : _y.percentage) != null) {
-            percent = app2.value.percentage;
-          } else if (originalLineTotal > 0 && allocatedAmount > 0) {
-            percent = Math.round(allocatedAmount / originalLineTotal * 1e4) / 100;
-          }
-          entries.push({
-            code,
-            scope,
-            amount: allocatedAmount,
-            percent,
-            isCheckout: !isRemovable
-          });
-        }
-      }
-      if (itemRemovableAppIds.size > 0) discountAppIdsByLineItemId.set(item.id, itemRemovableAppIds);
-      if (entries.length > 0 || unremovableCheckoutDiscountTotal > 0) {
-        combineInfoByLineItemId.set(item.id, {
-          entries,
-          currencyCode,
-          unremovableCheckoutDiscountTotal
-        });
-      }
-    }
-    const normalizedRequestedCode = discountCode.trim().toUpperCase();
-    const alreadyAppliedItemIds = /* @__PURE__ */ new Set();
-    for (const [itemId, info] of combineInfoByLineItemId) {
-      if (info.entries.some((e) => e.code.trim().toUpperCase() === normalizedRequestedCode)) {
-        alreadyAppliedItemIds.add(itemId);
-      }
-    }
-    if (alreadyAppliedItemIds.size > 0) {
-      return cors(Response.json({
-        userErrors: [{
-          message: targetVariantIds ? `The discount code "${discountCode}" is already applied to the selected product(s).` : `The discount code "${discountCode}" is already applied to this order.`
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    if (requestScope === "P") {
-      const checkoutBlockedProducts = [];
-      for (const item of lineItems) {
-        const combineInfo = combineInfoByLineItemId.get(item.id);
-        if (!combineInfo) continue;
-        const hasCheckoutProductDiscount = combineInfo.entries.some((e) => e.isCheckout && e.scope === "P");
-        if (hasCheckoutProductDiscount) {
-          const productTitle = ((_A = (_z = item.variant) == null ? void 0 : _z.product) == null ? void 0 : _A.title) || "a selected product";
-          checkoutBlockedProducts.push(productTitle);
-        }
-      }
-      if (checkoutBlockedProducts.length > 0) {
-        const uniqueTitles = Array.from(new Set(checkoutBlockedProducts));
-        return cors(Response.json({
-          userErrors: [{
-            message: uniqueTitles.length === 1 ? `"${uniqueTitles[0]}" already has a product discount applied from checkout. This discount cannot be replaced or overridden.` : `The following products already have a product discount applied from checkout and cannot be replaced or overridden: ${uniqueTitles.join(", ")}.`
-          }]
-        }, {
-          status: 422
-        }));
-      }
-    }
-    const skippedItemIds = /* @__PURE__ */ new Set();
-    if (requestScope === "P" && typeof discountInput.percentValue === "number") {
-      for (const item of lineItems) {
-        const combineInfo = combineInfoByLineItemId.get(item.id);
-        if (!combineInfo) continue;
-        const productEntries = combineInfo.entries.filter((e) => e.scope === "P");
-        if (productEntries.length === 0) continue;
-        const allComparable = productEntries.every((e) => typeof e.percent === "number");
-        if (!allComparable) continue;
-        let bestExisting = productEntries[0];
-        for (const entry2 of productEntries) {
-          if (entry2.percent > bestExisting.percent) bestExisting = entry2;
-        }
-        const bestExistingPercent = bestExisting.percent;
-        if (discountInput.percentValue <= bestExistingPercent) {
-          skippedItemIds.add(item.id);
-          skipWarnings.push(`The discount code "${normalizedRequestedCode}" (${discountInput.percentValue}%) is not greater than "${bestExisting.code}" (${bestExistingPercent}%), which is already applied to this product. The existing discount was kept.`);
-        }
-      }
-    }
-    const removableDiscountApplicationIds = /* @__PURE__ */ new Set();
-    for (const item of lineItems) {
-      if (skippedItemIds.has(item.id)) continue;
-      const ids = discountAppIdsByLineItemId.get(item.id);
-      if (ids) for (const id of ids) removableDiscountApplicationIds.add(id);
-    }
-    let replacedDiscount = false;
-    for (const discountApplicationId of removableDiscountApplicationIds) {
-      const removeRes = await admin.graphql(`#graphql
-        mutation removeDiscount($id: ID!, $discountApplicationId: ID!) {
-          orderEditRemoveDiscount(id: $id, discountApplicationId: $discountApplicationId) {
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          discountApplicationId
-        }
-      });
-      const removeJson = await removeRes.json();
-      const removeErrors = ((_C = (_B = removeJson.data) == null ? void 0 : _B.orderEditRemoveDiscount) == null ? void 0 : _C.userErrors) ?? [];
-      if (((_D = removeJson.errors) == null ? void 0 : _D.length) || removeErrors.length) {
-        console.warn(`[order-discount] Could not remove existing discount ${discountApplicationId}:`, removeJson.errors ?? removeErrors);
-        continue;
-      }
-      replacedDiscount = true;
-    }
-    let combinedCount = 0;
-    let appliedCount = 0;
-    let replacedForHigherDiscountCount = 0;
-    const applyFailures = [];
-    for (const item of lineItems) {
-      if (skippedItemIds.has(item.id)) continue;
-      const combineInfo = combineInfoByLineItemId.get(item.id);
-      const originalUnit = parseFloat(((_F = (_E = item.originalUnitPriceSet) == null ? void 0 : _E.shopMoney) == null ? void 0 : _F.amount) ?? "0");
-      const originalLineTotal = originalUnit * item.quantity;
-      const newPercent = typeof discountInput.percentValue === "number" ? discountInput.percentValue : void 0;
-      let itemDiscountInput;
-      const unremovableCheckoutTotal = (combineInfo == null ? void 0 : combineInfo.unremovableCheckoutDiscountTotal) ?? 0;
-      if (combineInfo && combineInfo.entries.length > 0) {
-        const wasReplacingProductDiscount = requestScope === "P" && combineInfo.entries.some((e) => e.scope === "P");
-        const survivingEntries = requestScope === "P" ? combineInfo.entries.filter((e) => e.scope === "O") : combineInfo.entries;
-        const productLevelTotal = survivingEntries.filter((e) => e.scope === "P").reduce((sum, e) => sum + e.amount, 0);
-        const orderLevelTotal = survivingEntries.filter((e) => e.scope === "O").reduce((sum, e) => sum + e.amount, 0);
-        let newDiscountAmount = 0;
-        if (requestScope === "O") {
-          const baseAfterProductLevel = Math.max(originalLineTotal - productLevelTotal, 0);
-          const remainingOrderLevelBudget = Math.max(baseAfterProductLevel - orderLevelTotal, 0);
-          if (typeof discountInput.percentValue === "number") {
-            newDiscountAmount = baseAfterProductLevel * (discountInput.percentValue / 100);
-          } else if (discountInput.fixedValue) {
-            const fixedAmount = parseFloat(discountInput.fixedValue.amount);
-            newDiscountAmount = Math.min(fixedAmount, remainingOrderLevelBudget);
-          }
-          newDiscountAmount = Math.min(newDiscountAmount, remainingOrderLevelBudget);
-        } else {
-          const remainingAfterExisting = Math.max(originalLineTotal - (productLevelTotal + orderLevelTotal), 0);
-          if (typeof discountInput.percentValue === "number") {
-            newDiscountAmount = remainingAfterExisting * (discountInput.percentValue / 100);
-          } else if (discountInput.fixedValue) {
-            const fixedAmount = parseFloat(discountInput.fixedValue.amount);
-            newDiscountAmount = Math.min(fixedAmount, remainingAfterExisting);
-          }
-        }
-        const combinedEntries = [...survivingEntries, {
-          code: normalizedRequestedCode,
-          scope: requestScope,
-          amount: newDiscountAmount,
-          percent: newPercent
-        }];
-        const combinedTotal = combinedEntries.reduce((sum, e) => sum + e.amount, 0);
-        const combinedLabel = combinedEntries.map((e) => formatEntryForDisplay(e, combineInfo.currencyCode)).join(" + ");
-        const additionalDiscountAmount = Math.max(combinedTotal - unremovableCheckoutTotal, 0);
-        if (additionalDiscountAmount <= 0) {
-          if (wasReplacingProductDiscount) {
-            replacedForHigherDiscountCount += 1;
-          } else {
-            combinedCount += 1;
-          }
-          appliedCount += 1;
-          continue;
-        }
-        itemDiscountInput = {
-          fixedValue: {
-            amount: additionalDiscountAmount.toFixed(2),
-            currencyCode: combineInfo.currencyCode
-          },
-          description: buildTaggedDescription(combinedEntries, combinedLabel)
-        };
-        if (wasReplacingProductDiscount) {
-          replacedForHigherDiscountCount += 1;
-        } else {
-          combinedCount += 1;
-        }
-      } else {
-        let newDiscountAmount = 0;
-        if (typeof discountInput.percentValue === "number") {
-          newDiscountAmount = originalLineTotal * (discountInput.percentValue / 100);
-        } else if (discountInput.fixedValue) {
-          const fixedAmount = parseFloat(discountInput.fixedValue.amount);
-          newDiscountAmount = Math.min(fixedAmount, originalLineTotal);
-        }
-        const freshEntry = {
-          code: normalizedRequestedCode,
-          scope: requestScope,
-          amount: newDiscountAmount,
-          percent: newPercent
-        };
-        const freshCurrencyCode = ((_G = discountInput.fixedValue) == null ? void 0 : _G.currencyCode) ?? ((_I = (_H = item.originalUnitPriceSet) == null ? void 0 : _H.shopMoney) == null ? void 0 : _I.currencyCode);
-        const additionalDiscountAmount = Math.max(newDiscountAmount - unremovableCheckoutTotal, 0);
-        if (additionalDiscountAmount <= 0) {
-          appliedCount += 1;
-          continue;
-        }
-        const itemQty2 = item.editableQuantity ?? item.quantity ?? 1;
-        const perUnitAdditionalAmount = Math.min(additionalDiscountAmount / itemQty2, originalUnit);
-        itemDiscountInput = {
-          fixedValue: {
-            amount: perUnitAdditionalAmount.toFixed(2),
-            currencyCode: freshCurrencyCode || "USD"
-          },
-          description: buildTaggedDescription([freshEntry], formatEntryForDisplay(freshEntry, freshCurrencyCode))
-        };
-      }
-      const applyRes = await admin.graphql(`#graphql
-        mutation applyDiscount($id: ID!, $lineItemId: ID!, $discount: OrderEditAppliedDiscountInput!) {
-          orderEditAddLineItemDiscount(id: $id, lineItemId: $lineItemId, discount: $discount) {
-            calculatedLineItem { id }
-            userErrors { field message }
-          }
-        }`, {
-        variables: {
-          id: calculatedOrderId,
-          lineItemId: item.id,
-          discount: itemDiscountInput
-        }
-      });
-      const applyJson = await applyRes.json();
-      const topLevelErrors = applyJson.errors ?? [];
-      const userErrors = ((_K = (_J = applyJson.data) == null ? void 0 : _J.orderEditAddLineItemDiscount) == null ? void 0 : _K.userErrors) ?? [];
-      const stagedLineItem = (_M = (_L = applyJson.data) == null ? void 0 : _L.orderEditAddLineItemDiscount) == null ? void 0 : _M.calculatedLineItem;
-      if (topLevelErrors.length || userErrors.length || !stagedLineItem) {
-        const rawMessage = ((_N = topLevelErrors[0]) == null ? void 0 : _N.message) ?? ((_O = userErrors[0]) == null ? void 0 : _O.message) ?? "Unknown error";
-        console.warn(`[order-discount] Could not apply to line item ${item.id}:`, rawMessage);
-        const message = /discount which prevents applying additional discounts/i.test(rawMessage) ? "This order already has a discount that couldn't be automatically replaced. Please remove the existing discount from the order and try again." : rawMessage;
-        applyFailures.push(message);
-        continue;
-      }
-      appliedCount += 1;
-    }
-    if (appliedCount === 0) {
-      const message = skipWarnings[0] ?? (applyFailures[0] ? `Could not apply the discount: ${applyFailures[0]}` : "Could not apply the discount to any of the selected item(s).");
-      return cors(Response.json({
-        userErrors: [{
-          message
-        }]
-      }, {
-        status: 422
-      }));
-    }
-    const commitRes = await admin.graphql(`#graphql
-      mutation orderEditCommit($id: ID!, $staffNote: String) {
-        orderEditCommit(id: $id, notifyCustomer: true, staffNote: $staffNote) {
-          order {
-            id
-            name
-            totalOutstandingSet { shopMoney { amount currencyCode } }
-          }
-          userErrors { field message }
-        }
-      }`, {
-      variables: {
-        id: calculatedOrderId,
-        staffNote: (targetVariantIds ? `Discount code applied to ${appliedCount} selected product(s) via customer account` : "Discount code applied to entire order via customer account") + (replacedForHigherDiscountCount > 0 ? ` (replaced a lower discount with the new higher one on ${replacedForHigherDiscountCount} item(s))` : "") + (combinedCount > 0 ? ` (combined with an existing discount on ${combinedCount} item(s))` : replacedDiscount ? " (replaced a previously applied discount)" : "") + (skipWarnings.length > 0 ? ` (${skipWarnings.length} item(s) were skipped — see warnings)` : "")
-      }
-    });
-    const commitJson = await commitRes.json();
-    const commitErrors = ((_Q = (_P = commitJson.data) == null ? void 0 : _P.orderEditCommit) == null ? void 0 : _Q.userErrors) ?? [];
-    if (commitErrors.length) {
-      return cors(Response.json({
-        userErrors: commitErrors
-      }, {
-        status: 422
-      }));
-    }
-    const order = commitJson.data.orderEditCommit.order;
-    const summary = (codeDiscount == null ? void 0 : codeDiscount.shortSummary) ?? discountCode;
-    return cors(Response.json({
-      order,
-      summary,
-      replacedDiscount,
-      combinedCount,
-      replacedForHigherDiscountCount,
-      warnings: skipWarnings,
-      userErrors: []
-    }));
-  } catch (err) {
-    console.error("[order-discount] Unexpected error:", err);
-    return cors(Response.json({
-      userErrors: [{
-        message: err instanceof Error ? err.message : "Internal error"
-      }]
-    }, {
-      status: 500
-    }));
-  }
-}
-const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  action: action$8,
   loader: loader$e
+}, Symbol.toStringTag, { value: "Module" }));
+const action$8 = async ({
+  request
+}) => {
+  const {
+    shop,
+    topic
+  } = await authenticate.webhook(request);
+  const normalizedTopic = topic.toUpperCase().replace(/\//g, "_");
+  if (normalizedTopic === "SHOP_REDACT") {
+    const shopVariants = Array.from(/* @__PURE__ */ new Set([shop, shop.toLowerCase().trim()]));
+    const shopFilter = {
+      where: {
+        shop: {
+          in: shopVariants
+        }
+      }
+    };
+    await prisma.$transaction([prisma.session.deleteMany(shopFilter), prisma.serviceSettings.deleteMany(shopFilter), prisma.orderEditTimeLimit.deleteMany(shopFilter), prisma.googlePlacesConfig.deleteMany(shopFilter), prisma.editedOrder.deleteMany(shopFilter), prisma.featureUsage.deleteMany(shopFilter)]);
+    return new Response(null, {
+      status: 200
+    });
+  }
+  if (normalizedTopic === "CUSTOMERS_DATA_REQUEST" || normalizedTopic === "CUSTOMERS_REDACT") {
+    return new Response(null, {
+      status: 200
+    });
+  }
+  return new Response(null, {
+    status: 400
+  });
+};
+const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  action: action$8
 }, Symbol.toStringTag, { value: "Module" }));
 async function loader$d({
   request
 }) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
   const {
     sessionToken,
     cors
@@ -9769,6 +6089,13 @@ async function loader$d({
     }));
   }
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!await isServiceEnabled(storeDomain, "change-shipping-method")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
+  }
   const {
     admin,
     session
@@ -9778,6 +6105,9 @@ async function loader$d({
       query getOrderShippingMethod($id: ID!) {
         order(id: $id) {
           id
+          customer {
+            id
+          }
           currencyCode
           presentmentCurrencyCode
           tags
@@ -9829,17 +6159,31 @@ async function loader$d({
     });
     const json = await res.json();
     const order = (_a2 = json.data) == null ? void 0 : _a2.order;
+    if (!order) {
+      return cors(Response.json({
+        error: "Order not found"
+      }, {
+        status: 404
+      }));
+    }
+    if (!isCustomerAuthorized((_b = order.customer) == null ? void 0 : _b.id, sessionToken.sub)) {
+      return cors(Response.json({
+        error: "Unauthorized access to order."
+      }, {
+        status: 403
+      }));
+    }
     const shippingLine = (order == null ? void 0 : order.shippingLine) ?? null;
     const freeShippingInfo = await detectActiveFreeShipping(admin, order);
-    const activeCurrency = ((_c = (_b = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _b.presentmentMoney) == null ? void 0 : _c.currencyCode) || (order == null ? void 0 : order.presentmentCurrencyCode) || (order == null ? void 0 : order.currencyCode) || "USD";
+    const activeCurrency = ((_d = (_c = shippingLine == null ? void 0 : shippingLine.originalPriceSet) == null ? void 0 : _c.presentmentMoney) == null ? void 0 : _d.currencyCode) || (order == null ? void 0 : order.presentmentCurrencyCode) || (order == null ? void 0 : order.currencyCode) || "USD";
     const currentShipping = shippingLine ? {
       title: shippingLine.title,
       code: shippingLine.code,
-      amount: freeShippingInfo.hasFreeShipping ? "0.00" : ((_e = (_d = shippingLine.discountedPriceSet) == null ? void 0 : _d.presentmentMoney) == null ? void 0 : _e.amount) || ((_g = (_f = shippingLine.originalPriceSet) == null ? void 0 : _f.presentmentMoney) == null ? void 0 : _g.amount) || "0.00",
+      amount: freeShippingInfo.hasFreeShipping ? "0.00" : ((_f = (_e = shippingLine.discountedPriceSet) == null ? void 0 : _e.presentmentMoney) == null ? void 0 : _f.amount) || ((_h = (_g = shippingLine.originalPriceSet) == null ? void 0 : _g.presentmentMoney) == null ? void 0 : _h.amount) || "0.00",
       currencyCode: activeCurrency
     } : null;
     let availableMethods = [];
-    const orderCountry = ((_h = order == null ? void 0 : order.shippingAddress) == null ? void 0 : _h.countryCode) || null;
+    const orderCountry = ((_i = order == null ? void 0 : order.shippingAddress) == null ? void 0 : _i.countryCode) || null;
     const scoredMap = /* @__PURE__ */ new Map();
     try {
       const profilesRes = await admin.graphql(`#graphql
@@ -9891,12 +6235,12 @@ async function loader$d({
           }
         }`);
       const profilesJson = await profilesRes.json();
-      const profiles = ((_j = (_i = profilesJson.data) == null ? void 0 : _i.deliveryProfiles) == null ? void 0 : _j.nodes) || [];
+      const profiles = ((_k = (_j = profilesJson.data) == null ? void 0 : _j.deliveryProfiles) == null ? void 0 : _k.nodes) || [];
       for (const profile of profiles) {
         const isCustomProfile = !profile.default;
         const groups = profile.profileLocationGroups || [];
         for (const group of groups) {
-          const zones = ((_k = group.locationGroupZones) == null ? void 0 : _k.nodes) || [];
+          const zones = ((_l = group.locationGroupZones) == null ? void 0 : _l.nodes) || [];
           for (const zoneNode of zones) {
             const zone = zoneNode.zone;
             const countries = (zone == null ? void 0 : zone.countries) || [];
@@ -9904,11 +6248,11 @@ async function loader$d({
             let isRestOfWorldMatch = false;
             if (orderCountry) {
               for (const c of countries) {
-                if (((_l = c.code) == null ? void 0 : _l.countryCode) === orderCountry) {
+                if (((_m = c.code) == null ? void 0 : _m.countryCode) === orderCountry) {
                   isExactCountryMatch = true;
                   break;
                 }
-                if ((_m = c.code) == null ? void 0 : _m.restOfWorld) {
+                if ((_n = c.code) == null ? void 0 : _n.restOfWorld) {
                   isRestOfWorldMatch = true;
                 }
               }
@@ -9922,14 +6266,14 @@ async function loader$d({
             } else if (isRestOfWorldMatch) {
               score = isCustomProfile ? 20 : 10;
             }
-            const defs = ((_n = zoneNode.methodDefinitions) == null ? void 0 : _n.nodes) || [];
+            const defs = ((_o = zoneNode.methodDefinitions) == null ? void 0 : _o.nodes) || [];
             for (const def of defs) {
               const name = def.name;
               if (!name) continue;
               let price = 0;
-              if (((_o = def.rateProvider) == null ? void 0 : _o.__typename) === "DeliveryRateDefinition" && ((_p = def.rateProvider.price) == null ? void 0 : _p.amount)) {
+              if (((_p = def.rateProvider) == null ? void 0 : _p.__typename) === "DeliveryRateDefinition" && ((_q = def.rateProvider.price) == null ? void 0 : _q.amount)) {
                 price = parseFloat(def.rateProvider.price.amount);
-              } else if (((_q = def.rateProvider) == null ? void 0 : _q.__typename) === "DeliveryParticipant" && ((_r = def.rateProvider.fixedFee) == null ? void 0 : _r.amount)) {
+              } else if (((_r = def.rateProvider) == null ? void 0 : _r.__typename) === "DeliveryParticipant" && ((_s = def.rateProvider.fixedFee) == null ? void 0 : _s.amount)) {
                 price = parseFloat(def.rateProvider.fixedFee.amount);
               }
               const key = name.toLowerCase().trim();
@@ -10074,7 +6418,8 @@ async function action$7({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId
+    customerAccountId,
+    requiredServiceId: "change-shipping-method"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -10338,7 +6683,7 @@ async function action$7({
     }));
   }
 }
-const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$7,
   loader: loader$d
@@ -10346,7 +6691,7 @@ const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
 async function loader$c({
   request
 }) {
-  var _a2, _b, _c, _d;
+  var _a2, _b;
   const {
     sessionToken,
     cors
@@ -10361,6 +6706,13 @@ async function loader$c({
     }));
   }
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!await isServiceEnabled(storeDomain, "change-address")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
+  }
   const {
     admin
   } = await unauthenticated.admin(storeDomain);
@@ -10368,6 +6720,9 @@ async function loader$c({
     const res = await admin.graphql(`#graphql
       query getOrderAddresses($id: ID!) {
         order(id: $id) {
+          customer {
+            id
+          }
           shippingAddress {
             firstName
             lastName
@@ -10399,8 +6754,23 @@ async function loader$c({
       }
     });
     const json = await res.json();
-    const shippingAddress = ((_b = (_a2 = json.data) == null ? void 0 : _a2.order) == null ? void 0 : _b.shippingAddress) ?? null;
-    const billingAddress = ((_d = (_c = json.data) == null ? void 0 : _c.order) == null ? void 0 : _d.billingAddress) ?? null;
+    const order = (_a2 = json.data) == null ? void 0 : _a2.order;
+    if (!order) {
+      return cors(Response.json({
+        error: "Order not found"
+      }, {
+        status: 404
+      }));
+    }
+    if (!isCustomerAuthorized((_b = order.customer) == null ? void 0 : _b.id, sessionToken.sub)) {
+      return cors(Response.json({
+        error: "Unauthorized access to order."
+      }, {
+        status: 403
+      }));
+    }
+    const shippingAddress = order.shippingAddress ?? null;
+    const billingAddress = order.billingAddress ?? null;
     return cors(Response.json({
       shippingAddress,
       billingAddress
@@ -10452,7 +6822,8 @@ async function action$6({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId
+    customerAccountId,
+    requiredServiceId: "change-address"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -10647,7 +7018,7 @@ async function action$6({
     }));
   }
 }
-const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$6,
   loader: loader$c
@@ -10753,7 +7124,8 @@ async function action$5({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId
+    customerAccountId,
+    requiredServiceId: "contact-info"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -10897,7 +7269,7 @@ async function action$5({
     }));
   }
 }
-const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$5,
   loader: loader$b
@@ -10934,6 +7306,13 @@ const action$4 = async ({
     }));
   }
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!await isServiceEnabled(storeDomain, "download-invoice")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
+  }
   const customerAccountId = sessionToken.sub;
   const body = await request.json();
   const orderId = body.orderId;
@@ -11001,7 +7380,7 @@ const action$4 = async ({
     }));
   }
 };
-const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$4,
   loader: loader$a
@@ -11060,7 +7439,8 @@ async function action$3({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId: sessionToken.sub
+    customerAccountId: sessionToken.sub,
+    requiredServiceId: "cancel-order"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -11114,7 +7494,7 @@ async function action$3({
     }));
   }
 }
-const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$3,
   loader: loader$9
@@ -11122,7 +7502,7 @@ const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
 async function loader$8({
   request
 }) {
-  var _a2;
+  var _a2, _b;
   const {
     sessionToken,
     cors
@@ -11137,6 +7517,13 @@ async function loader$8({
     }));
   }
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
+  if (!await isServiceEnabled(storeDomain, "order-note")) {
+    return cors(Response.json({
+      error: "This feature is not enabled by the merchant."
+    }, {
+      status: 403
+    }));
+  }
   const {
     admin
   } = await unauthenticated.admin(storeDomain);
@@ -11145,6 +7532,9 @@ async function loader$8({
       query getOrderNote($id: ID!) {
         order(id: $id) {
           id
+          customer {
+            id
+          }
           note
         }
       }`, {
@@ -11154,8 +7544,22 @@ async function loader$8({
     });
     const json = await res.json();
     const order = (_a2 = json.data) == null ? void 0 : _a2.order;
+    if (!order) {
+      return cors(Response.json({
+        error: "Order not found"
+      }, {
+        status: 404
+      }));
+    }
+    if (!isCustomerAuthorized((_b = order.customer) == null ? void 0 : _b.id, sessionToken.sub)) {
+      return cors(Response.json({
+        error: "Unauthorized access to order."
+      }, {
+        status: 403
+      }));
+    }
     return cors(Response.json({
-      note: (order == null ? void 0 : order.note) || ""
+      note: order.note || ""
     }));
   } catch (err) {
     console.error("[order-note-loader] Error:", err);
@@ -11203,7 +7607,8 @@ async function action$2({
     admin,
     shop: storeDomain,
     orderId,
-    customerAccountId
+    customerAccountId,
+    requiredServiceId: "order-note"
   });
   if (!guard.allowed) {
     return cors(Response.json({
@@ -11303,7 +7708,7 @@ async function action$2({
     }));
   }
 }
-const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$2,
   loader: loader$8
@@ -11363,7 +7768,7 @@ const route$1 = UNSAFE_withComponentProps(function Auth() {
     })
   });
 });
-const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$1,
   default: route$1,
@@ -12376,7 +8781,7 @@ const route = UNSAFE_withComponentProps(function App2() {
     })]
   });
 });
-const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: route,
   loader: loader$6,
@@ -12391,7 +8796,7 @@ const loader$5 = async ({
 const headers$4 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   headers: headers$4,
   loader: loader$5
@@ -12431,7 +8836,7 @@ const ErrorBoundary = UNSAFE_withErrorBoundaryProps(function ErrorBoundary2() {
 const headers$3 = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   ErrorBoundary,
   default: app,
@@ -12616,7 +9021,7 @@ const loader$3 = async ({
       customUnit: timeLimitRecord.customUnit ?? "hours",
       maxEdits: timeLimitRecord.maxEdits ?? null
     },
-    googleApiKey: (googleConfig == null ? void 0 : googleConfig.apiKey) || "",
+    hasGoogleApiKey: Boolean((googleConfig == null ? void 0 : googleConfig.apiKey) && googleConfig.apiKey.trim().length > 0),
     initialProducts
   };
 };
@@ -12725,8 +9130,15 @@ const action = async ({
   if (intent === "saveGoogleApiKey") {
     const apiKeyRaw = formData.get("googleApiKey");
     const apiKey = apiKeyRaw ? apiKeyRaw.trim() : null;
+    if (!apiKey) {
+      return {
+        ok: false,
+        type: "googleApiKey",
+        error: "Enter a Google Places API key to save, or use Delete Key to remove the saved key."
+      };
+    }
     console.log(`[ActiveServices Action] Saving Google Places API Key: shop=${shop}, hasKey=${Boolean(apiKey)}`);
-    const result2 = await prisma.googlePlacesConfig.upsert({
+    await prisma.googlePlacesConfig.upsert({
       where: {
         shop
       },
@@ -12742,7 +9154,7 @@ const action = async ({
       ok: true,
       type: "googleApiKey",
       action: "saved",
-      result: result2
+      hasGoogleApiKey: true
     };
   }
   if (intent === "deleteGoogleApiKey") {
@@ -12862,7 +9274,7 @@ const app_activeServices = UNSAFE_withComponentProps(function ActiveServicesPage
   const {
     services,
     timeLimitSettings,
-    googleApiKey,
+    hasGoogleApiKey,
     initialProducts
   } = useLoaderData();
   return /* @__PURE__ */ jsxs("s-page", {
@@ -12875,7 +9287,7 @@ const app_activeServices = UNSAFE_withComponentProps(function ActiveServicesPage
     }), /* @__PURE__ */ jsx(ProductTagsSection, {
       initialProducts
     }), /* @__PURE__ */ jsx(GoogleApiKeySection, {
-      initialApiKey: googleApiKey
+      initialHasKey: hasGoogleApiKey
     }), /* @__PURE__ */ jsx(MaxEditsSection, {
       initialMaxEdits: timeLimitSettings.maxEdits
     }), /* @__PURE__ */ jsx(TimeLimitSection, {
@@ -13386,29 +9798,29 @@ function ServiceRow({
   });
 }
 function GoogleApiKeySection({
-  initialApiKey
+  initialHasKey
 }) {
   var _a2, _b;
   const fetcher = useFetcher();
-  const [apiKey, setApiKey] = useEffectState(initialApiKey || "");
+  const [hasKey, setHasKey] = useState(initialHasKey);
+  const [apiKey, setApiKey] = useEffectState("");
   const [showKey, setShowKey] = useState(false);
   const [isSaved, setIsSaved] = useEffectState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [lastAction, setLastAction] = useState(null);
   useEffect(() => {
-    setApiKey(initialApiKey || "");
-  }, [initialApiKey]);
+    setHasKey(initialHasKey);
+  }, [initialHasKey]);
   useEffect(() => {
     var _a3, _b2, _c, _d;
     if (fetcher.state === "idle" && ((_a3 = fetcher.data) == null ? void 0 : _a3.ok) && ((_b2 = fetcher.data) == null ? void 0 : _b2.type) === "googleApiKey") {
       setIsSaved(true);
       const isDeleted = ((_c = fetcher.data) == null ? void 0 : _c.action) === "deleted";
       setLastAction(isDeleted ? "deleted" : "saved");
+      setHasKey(!isDeleted);
+      setApiKey("");
       const msg = isDeleted ? "Google Places API key deleted successfully!" : "Google Places API key saved successfully!";
       setActionMessage(msg);
-      if (isDeleted) {
-        setApiKey("");
-      }
       if (typeof window !== "undefined" && ((_d = window.shopify) == null ? void 0 : _d.toast)) {
         window.shopify.toast.show(msg);
       }
@@ -13420,6 +9832,7 @@ function GoogleApiKeySection({
     }
   }, [fetcher.state, fetcher.data]);
   const handleSave = () => {
+    if (!apiKey.trim()) return;
     fetcher.submit({
       intent: "saveGoogleApiKey",
       googleApiKey: apiKey
@@ -13435,7 +9848,7 @@ function GoogleApiKeySection({
     });
   };
   const isDeleting = fetcher.state !== "idle" && ((_a2 = fetcher.formData) == null ? void 0 : _a2.get("intent")) === "deleteGoogleApiKey";
-  const isConfigured = Boolean(apiKey && apiKey.trim().length > 0 || isDeleting);
+  const isConfigured = hasKey || isDeleting;
   const showDeleteButton = isConfigured || isDeleting || isSaved && lastAction === "deleted";
   return /* @__PURE__ */ jsx("s-section", {
     heading: "Google Places & Location Suggestions",
@@ -13498,7 +9911,7 @@ function GoogleApiKeySection({
                     type: showKey ? "text" : "password",
                     value: apiKey,
                     onChange: (e) => setApiKey(e.target.value),
-                    placeholder: "e.g. AIzaSyD...",
+                    placeholder: hasKey ? "API key saved — enter a new key to replace" : "e.g. AIzaSyD...",
                     style: {
                       padding: "8px 50px 8px 12px",
                       borderRadius: "6px",
@@ -13533,6 +9946,7 @@ function GoogleApiKeySection({
               }), /* @__PURE__ */ jsx("button", {
                 type: "button",
                 onClick: handleSave,
+                disabled: !apiKey.trim(),
                 style: {
                   padding: "9px 20px",
                   borderRadius: "6px",
@@ -13540,7 +9954,8 @@ function GoogleApiKeySection({
                   backgroundColor: "#008060",
                   color: "#ffffff",
                   fontWeight: "600",
-                  cursor: "pointer",
+                  cursor: apiKey.trim() ? "pointer" : "not-allowed",
+                  opacity: apiKey.trim() ? 1 : 0.6,
                   whiteSpace: "nowrap",
                   height: "36px",
                   flexShrink: 0
@@ -13890,7 +10305,7 @@ function ProductTagsSection({
     })
   });
 }
-const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action,
   default: app_activeServices,
@@ -13932,7 +10347,7 @@ const app_additional = UNSAFE_withComponentProps(function AdditionalPage() {
     })]
   });
 });
-const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_additional
 }, Symbol.toStringTag, { value: "Module" }));
@@ -14594,7 +11009,7 @@ const app_insights = UNSAFE_withComponentProps(function InsightsPage() {
     })]
   });
 });
-const route35 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_insights,
   headers: headers$1,
@@ -14616,7 +11031,7 @@ const app__index = UNSAFE_withComponentProps(function Index() {
   }, [navigate, location.search]);
   return null;
 });
-const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app__index,
   loader: loader$1
@@ -15538,13 +11953,13 @@ const app_help = UNSAFE_withComponentProps(function HelpPage() {
     })]
   });
 });
-const route37 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_help,
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-D_SMyjUh.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-BnzjYjt2.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.update-quantity": { "id": "routes/api.order-edit.update-quantity", "parentId": "root", "path": "api/order-edit/update-quantity", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.update-quantity-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.change-variant": { "id": "routes/api.order-edit.change-variant", "parentId": "root", "path": "api/order-edit/change-variant", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.change-variant-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.variant-stock": { "id": "routes/api.order-edit.variant-stock", "parentId": "root", "path": "api/order-edit/variant-stock", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.variant-stock-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.add-product": { "id": "routes/api.order-edit.add-product", "parentId": "root", "path": "api/order-edit/add-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.add-product-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.bulk-update": { "id": "routes/api.order-edit.bulk-update", "parentId": "root", "path": "api/order-edit/bulk-update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.bulk-update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.sample-csv": { "id": "routes/api.order-edit.sample-csv", "parentId": "root", "path": "api/order-edit/sample-csv", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.sample-csv-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.location-suggestions": { "id": "routes/api.location-suggestions", "parentId": "root", "path": "api/location-suggestions", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.location-suggestions-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.get-order": { "id": "routes/api.order-edit.get-order", "parentId": "root", "path": "api/order-edit/get-order", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.get-order-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.upsell-tags": { "id": "routes/api.order.upsell-tags", "parentId": "root", "path": "api/order/upsell-tags", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.upsell-tags-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.service-settings": { "id": "routes/api.service-settings", "parentId": "root", "path": "api/service-settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.service-settings-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.paid": { "id": "routes/webhooks.orders.paid", "parentId": "root", "path": "webhooks/orders/paid", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.paid-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount2": { "id": "routes/api.order.discount2", "parentId": "root", "path": "api/order/discount2", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount2-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount3": { "id": "routes/api.order.discount3", "parentId": "root", "path": "api/order/discount3", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount3-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount4": { "id": "routes/api.order.discount4", "parentId": "root", "path": "api/order/discount4", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount4-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount5": { "id": "routes/api.order.discount5", "parentId": "root", "path": "api/order/discount5", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount5-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount6": { "id": "routes/api.order.discount6", "parentId": "root", "path": "api/order/discount6", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount6-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount7": { "id": "routes/api.order.discount7", "parentId": "root", "path": "api/order/discount7", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount7-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount8": { "id": "routes/api.order.discount8", "parentId": "root", "path": "api/order/discount8", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount8-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/public.invoice-link": { "id": "routes/public.invoice-link", "parentId": "root", "path": "public/invoice-link", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/public.invoice-link-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount": { "id": "routes/api.order.discount", "parentId": "root", "path": "api/order/discount", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.shipping": { "id": "routes/api.order.shipping", "parentId": "root", "path": "api/order/shipping", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.shipping-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.address": { "id": "routes/api.order.address", "parentId": "root", "path": "api/order/address", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.address-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.contact": { "id": "routes/api.order.contact", "parentId": "root", "path": "api/order/contact", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.contact-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.invoice": { "id": "routes/api.order.invoice", "parentId": "root", "path": "api/order/invoice", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.invoice-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.cancel": { "id": "routes/api.order.cancel", "parentId": "root", "path": "api/order/cancel", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.cancel-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.note": { "id": "routes/api.order.note", "parentId": "root", "path": "api/order/note", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.note-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.login": { "id": "routes/auth.login", "parentId": "root", "path": "auth/login", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DZ80wcFk.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index": { "id": "routes/_index", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DOL2-fDy.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": ["/assets/route-BuT_mVdb.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-ClWiU-Mw.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.active-services": { "id": "routes/app.active-services", "parentId": "routes/app", "path": "active-services", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.active-services-DTGvZ6rj.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.additional": { "id": "routes/app.additional", "parentId": "routes/app", "path": "additional", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.additional-C26EtW3I.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.insights": { "id": "routes/app.insights", "parentId": "routes/app", "path": "insights", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.insights-D7NAzqqn.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-D51Vph1h.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.help": { "id": "routes/app.help", "parentId": "routes/app", "path": "help", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.help-DNBJRTX2.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-0ecb3c68.js", "version": "0ecb3c68", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-D_SMyjUh.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-BnzjYjt2.js", "imports": ["/assets/jsx-runtime-Bvlwkg9p.js", "/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.update-quantity": { "id": "routes/api.order-edit.update-quantity", "parentId": "root", "path": "api/order-edit/update-quantity", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.update-quantity-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.change-variant": { "id": "routes/api.order-edit.change-variant", "parentId": "root", "path": "api/order-edit/change-variant", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.change-variant-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.variant-stock": { "id": "routes/api.order-edit.variant-stock", "parentId": "root", "path": "api/order-edit/variant-stock", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.variant-stock-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.add-product": { "id": "routes/api.order-edit.add-product", "parentId": "root", "path": "api/order-edit/add-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.add-product-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.bulk-update": { "id": "routes/api.order-edit.bulk-update", "parentId": "root", "path": "api/order-edit/bulk-update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.bulk-update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.sample-csv": { "id": "routes/api.order-edit.sample-csv", "parentId": "root", "path": "api/order-edit/sample-csv", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.sample-csv-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.location-suggestions": { "id": "routes/api.location-suggestions", "parentId": "root", "path": "api/location-suggestions", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.location-suggestions-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order-edit.get-order": { "id": "routes/api.order-edit.get-order", "parentId": "root", "path": "api/order-edit/get-order", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order-edit.get-order-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.upsell-tags": { "id": "routes/api.order.upsell-tags", "parentId": "root", "path": "api/order/upsell-tags", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.upsell-tags-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.service-settings": { "id": "routes/api.service-settings", "parentId": "root", "path": "api/service-settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.service-settings-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.paid": { "id": "routes/webhooks.orders.paid", "parentId": "root", "path": "webhooks/orders/paid", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.paid-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.discount8": { "id": "routes/api.order.discount8", "parentId": "root", "path": "api/order/discount8", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.discount8-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/public.invoice-link": { "id": "routes/public.invoice-link", "parentId": "root", "path": "public/invoice-link", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/public.invoice-link-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.compliance": { "id": "routes/webhooks.compliance", "parentId": "root", "path": "webhooks/compliance", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.compliance-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.shipping": { "id": "routes/api.order.shipping", "parentId": "root", "path": "api/order/shipping", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.shipping-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.address": { "id": "routes/api.order.address", "parentId": "root", "path": "api/order/address", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.address-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.contact": { "id": "routes/api.order.contact", "parentId": "root", "path": "api/order/contact", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.contact-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.invoice": { "id": "routes/api.order.invoice", "parentId": "root", "path": "api/order/invoice", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.invoice-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.cancel": { "id": "routes/api.order.cancel", "parentId": "root", "path": "api/order/cancel", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.cancel-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.order.note": { "id": "routes/api.order.note", "parentId": "root", "path": "api/order/note", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.order.note-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.login": { "id": "routes/auth.login", "parentId": "root", "path": "auth/login", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DZ80wcFk.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index": { "id": "routes/_index", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DOL2-fDy.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": ["/assets/route-BuT_mVdb.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-ClWiU-Mw.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js", "/assets/AppProxyLink-BOj7VP4o.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.active-services": { "id": "routes/app.active-services", "parentId": "routes/app", "path": "active-services", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.active-services-CyKklafW.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.additional": { "id": "routes/app.additional", "parentId": "routes/app", "path": "additional", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.additional-C26EtW3I.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.insights": { "id": "routes/app.insights", "parentId": "routes/app", "path": "insights", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.insights-D7NAzqqn.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-D51Vph1h.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.help": { "id": "routes/app.help", "parentId": "routes/app", "path": "help", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.help-DNBJRTX2.js", "imports": ["/assets/chunk-62JRHF6Z-DhhUG5kk.js", "/assets/jsx-runtime-Bvlwkg9p.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-058ef036.js", "version": "058ef036", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
@@ -15667,61 +12082,13 @@ const routes = {
     caseSensitive: void 0,
     module: route13
   },
-  "routes/api.order.discount2": {
-    id: "routes/api.order.discount2",
-    parentId: "root",
-    path: "api/order/discount2",
-    index: void 0,
-    caseSensitive: void 0,
-    module: route14
-  },
-  "routes/api.order.discount3": {
-    id: "routes/api.order.discount3",
-    parentId: "root",
-    path: "api/order/discount3",
-    index: void 0,
-    caseSensitive: void 0,
-    module: route15
-  },
-  "routes/api.order.discount4": {
-    id: "routes/api.order.discount4",
-    parentId: "root",
-    path: "api/order/discount4",
-    index: void 0,
-    caseSensitive: void 0,
-    module: route16
-  },
-  "routes/api.order.discount5": {
-    id: "routes/api.order.discount5",
-    parentId: "root",
-    path: "api/order/discount5",
-    index: void 0,
-    caseSensitive: void 0,
-    module: route17
-  },
-  "routes/api.order.discount6": {
-    id: "routes/api.order.discount6",
-    parentId: "root",
-    path: "api/order/discount6",
-    index: void 0,
-    caseSensitive: void 0,
-    module: route18
-  },
-  "routes/api.order.discount7": {
-    id: "routes/api.order.discount7",
-    parentId: "root",
-    path: "api/order/discount7",
-    index: void 0,
-    caseSensitive: void 0,
-    module: route19
-  },
   "routes/api.order.discount8": {
     id: "routes/api.order.discount8",
     parentId: "root",
     path: "api/order/discount8",
     index: void 0,
     caseSensitive: void 0,
-    module: route20
+    module: route14
   },
   "routes/public.invoice-link": {
     id: "routes/public.invoice-link",
@@ -15729,15 +12096,15 @@ const routes = {
     path: "public/invoice-link",
     index: void 0,
     caseSensitive: void 0,
-    module: route21
+    module: route15
   },
-  "routes/api.order.discount": {
-    id: "routes/api.order.discount",
+  "routes/webhooks.compliance": {
+    id: "routes/webhooks.compliance",
     parentId: "root",
-    path: "api/order/discount",
+    path: "webhooks/compliance",
     index: void 0,
     caseSensitive: void 0,
-    module: route22
+    module: route16
   },
   "routes/api.order.shipping": {
     id: "routes/api.order.shipping",
@@ -15745,7 +12112,7 @@ const routes = {
     path: "api/order/shipping",
     index: void 0,
     caseSensitive: void 0,
-    module: route23
+    module: route17
   },
   "routes/api.order.address": {
     id: "routes/api.order.address",
@@ -15753,7 +12120,7 @@ const routes = {
     path: "api/order/address",
     index: void 0,
     caseSensitive: void 0,
-    module: route24
+    module: route18
   },
   "routes/api.order.contact": {
     id: "routes/api.order.contact",
@@ -15761,7 +12128,7 @@ const routes = {
     path: "api/order/contact",
     index: void 0,
     caseSensitive: void 0,
-    module: route25
+    module: route19
   },
   "routes/api.order.invoice": {
     id: "routes/api.order.invoice",
@@ -15769,7 +12136,7 @@ const routes = {
     path: "api/order/invoice",
     index: void 0,
     caseSensitive: void 0,
-    module: route26
+    module: route20
   },
   "routes/api.order.cancel": {
     id: "routes/api.order.cancel",
@@ -15777,7 +12144,7 @@ const routes = {
     path: "api/order/cancel",
     index: void 0,
     caseSensitive: void 0,
-    module: route27
+    module: route21
   },
   "routes/api.order.note": {
     id: "routes/api.order.note",
@@ -15785,7 +12152,7 @@ const routes = {
     path: "api/order/note",
     index: void 0,
     caseSensitive: void 0,
-    module: route28
+    module: route22
   },
   "routes/auth.login": {
     id: "routes/auth.login",
@@ -15793,7 +12160,7 @@ const routes = {
     path: "auth/login",
     index: void 0,
     caseSensitive: void 0,
-    module: route29
+    module: route23
   },
   "routes/_index": {
     id: "routes/_index",
@@ -15801,7 +12168,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route30
+    module: route24
   },
   "routes/auth.$": {
     id: "routes/auth.$",
@@ -15809,7 +12176,7 @@ const routes = {
     path: "auth/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route31
+    module: route25
   },
   "routes/app": {
     id: "routes/app",
@@ -15817,7 +12184,7 @@ const routes = {
     path: "app",
     index: void 0,
     caseSensitive: void 0,
-    module: route32
+    module: route26
   },
   "routes/app.active-services": {
     id: "routes/app.active-services",
@@ -15825,7 +12192,7 @@ const routes = {
     path: "active-services",
     index: void 0,
     caseSensitive: void 0,
-    module: route33
+    module: route27
   },
   "routes/app.additional": {
     id: "routes/app.additional",
@@ -15833,7 +12200,7 @@ const routes = {
     path: "additional",
     index: void 0,
     caseSensitive: void 0,
-    module: route34
+    module: route28
   },
   "routes/app.insights": {
     id: "routes/app.insights",
@@ -15841,7 +12208,7 @@ const routes = {
     path: "insights",
     index: void 0,
     caseSensitive: void 0,
-    module: route35
+    module: route29
   },
   "routes/app._index": {
     id: "routes/app._index",
@@ -15849,7 +12216,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route36
+    module: route30
   },
   "routes/app.help": {
     id: "routes/app.help",
@@ -15857,7 +12224,7 @@ const routes = {
     path: "help",
     index: void 0,
     caseSensitive: void 0,
-    module: route37
+    module: route31
   }
 };
 const allowedActionOrigins = false;
