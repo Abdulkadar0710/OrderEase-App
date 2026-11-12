@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
+import { isCustomerAuthorized } from "../utils/orderGuard.server";
 
 /**
  * GET /api/order/upsell-tags?orderId=gid://...
@@ -12,6 +13,9 @@ import { authenticate, unauthenticated } from "../shopify.server";
 const ORDER_TAGS_QUERY = `#graphql
   query GetOrderLineItemTags($id: ID!) {
     order(id: $id) {
+      customer {
+        id
+      }
       lineItems(first: 50) {
         edges {
           node {
@@ -52,8 +56,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       );
     }
 
+    const order = json.data?.order;
+    if (!order) {
+      return cors(Response.json({ error: "Order not found" }, { status: 404 }));
+    }
+    if (!isCustomerAuthorized(order.customer?.id, sessionToken.sub)) {
+      return cors(Response.json({ error: "Unauthorized access to order." }, { status: 403 }));
+    }
+
     const edges: Array<{ node: { currentQuantity: number; product?: { tags: string[] } | null } }> =
-      json.data?.order?.lineItems?.edges ?? [];
+      order.lineItems?.edges ?? [];
 
     // Collect tags only from active (not removed) line items
     const upsellTags = new Set<string>();

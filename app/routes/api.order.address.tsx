@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { validateOrderEditable } from "../utils/orderGuard.server";
+import { isCustomerAuthorized, validateOrderEditable } from "../utils/orderGuard.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
@@ -22,6 +22,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       `#graphql
       query getOrderAddresses($id: ID!) {
         order(id: $id) {
+          customer {
+            id
+          }
           shippingAddress {
             firstName
             lastName
@@ -51,8 +54,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       { variables: { id: orderId } },
     );
     const json = await res.json();
-    const shippingAddress = json.data?.order?.shippingAddress ?? null;
-    const billingAddress = json.data?.order?.billingAddress ?? null;
+    const order = json.data?.order;
+    if (!order) {
+      return cors(Response.json({ error: "Order not found" }, { status: 404 }));
+    }
+    if (!isCustomerAuthorized(order.customer?.id, sessionToken.sub)) {
+      return cors(Response.json({ error: "Unauthorized access to order." }, { status: 403 }));
+    }
+    const shippingAddress = order.shippingAddress ?? null;
+    const billingAddress = order.billingAddress ?? null;
     return cors(Response.json({ shippingAddress, billingAddress }));
   } catch (err) {
     return cors(Response.json({ shippingAddress: null, billingAddress: null }));

@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { validateOrderEditable } from "../utils/orderGuard.server";
+import { isCustomerAuthorized, validateOrderEditable } from "../utils/orderGuard.server";
 import { detectActiveFreeShipping, persistFreeShippingCode } from "../utils/freeShippingHelper.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -24,6 +24,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       query getOrderShippingMethod($id: ID!) {
         order(id: $id) {
           id
+          customer {
+            id
+          }
           currencyCode
           presentmentCurrencyCode
           tags
@@ -73,6 +76,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     );
     const json = await res.json();
     const order = json.data?.order;
+    if (!order) {
+      return cors(Response.json({ error: "Order not found" }, { status: 404 }));
+    }
+    if (!isCustomerAuthorized(order.customer?.id, sessionToken.sub)) {
+      return cors(Response.json({ error: "Unauthorized access to order." }, { status: 403 }));
+    }
     const shippingLine = order?.shippingLine ?? null;
     const freeShippingInfo = await detectActiveFreeShipping(admin, order);
 

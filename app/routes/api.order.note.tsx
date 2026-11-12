@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { addOrderTags } from "../utils/orderTagsHelper.server";
 import { trackOrderEdit } from "../utils/analyticsHelper.server";
-import { validateOrderEditable } from "../utils/orderGuard.server";
+import { isCustomerAuthorized, validateOrderEditable } from "../utils/orderGuard.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
@@ -23,6 +23,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       query getOrderNote($id: ID!) {
         order(id: $id) {
           id
+          customer {
+            id
+          }
           note
         }
       }`,
@@ -31,7 +34,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const json = await res.json();
     const order = json.data?.order;
 
-    return cors(Response.json({ note: order?.note || "" }));
+    if (!order) {
+      return cors(Response.json({ error: "Order not found" }, { status: 404 }));
+    }
+    if (!isCustomerAuthorized(order.customer?.id, sessionToken.sub)) {
+      return cors(Response.json({ error: "Unauthorized access to order." }, { status: 403 }));
+    }
+
+    return cors(Response.json({ note: order.note || "" }));
   } catch (err) {
     console.error("[order-note-loader] Error:", err);
     return cors(Response.json({ note: "" }));
