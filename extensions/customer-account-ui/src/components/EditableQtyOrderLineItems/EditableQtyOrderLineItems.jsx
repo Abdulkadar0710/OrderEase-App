@@ -86,7 +86,7 @@ function EditableLineItem({ line, orderId, activeLineId, setActiveLineId, onUpda
   const [quantityMsg, setQuantityMsg] = useState(null);
   const [currentSavedQuantity, setCurrentSavedQuantity] =
     useState(initialQuantity);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   useEffect(() => {
     setQuantity(initialQuantity);
@@ -135,6 +135,7 @@ function EditableLineItem({ line, orderId, activeLineId, setActiveLineId, onUpda
     clearMessages();
     try {
       setLoading(true);
+      if (typeof setIsUpdating === 'function') setIsUpdating(true);
 
       const variantId = merchandise?.id;
       // Only perform stock availability check if increasing item quantity
@@ -224,6 +225,7 @@ function EditableLineItem({ line, orderId, activeLineId, setActiveLineId, onUpda
       }
     } finally {
       setLoading(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

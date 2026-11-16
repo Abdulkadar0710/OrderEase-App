@@ -156,9 +156,9 @@ function parseCsv(rawCsv) {
 
 export function BulkUpdate({ orderId: propOrderId }) {
   const currentOrderId = propOrderId || shopify?.order?.value?.id;
-  const { notifyUpdateSuccess } = useOrderEdit
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit
     ? useOrderEdit()
-    : { notifyUpdateSuccess: () => {} };
+    : { notifyUpdateSuccess: () => {}, setIsUpdating: () => {} };
 
   const [mode, setMode] = useState('ui'); // 'ui' | 'csv'
   const [fileName, setFileName] = useState('');
@@ -258,6 +258,7 @@ export function BulkUpdate({ orderId: propOrderId }) {
     }
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setGeneralError(null);
     setErrorsList([]);
     setSuccessInfo(null);
@@ -284,6 +285,7 @@ export function BulkUpdate({ orderId: propOrderId }) {
       setGeneralError(err instanceof Error ? err.message : 'Bulk update request failed.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

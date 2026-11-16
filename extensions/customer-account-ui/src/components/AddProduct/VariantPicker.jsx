@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { formatMoney } from '../../utils/formatMoney';
 import { addProductToOrder, checkVariantQuantity } from '../../utils/api';
+import { useOrderEdit } from '../../context/OrderEditContext.jsx';
 
 /** Format a variant's selected options as "Size: M, Color: Blue". */
 function variantLabel(variant) {
@@ -25,6 +26,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
   const [error, setError] = useState(null);
   const [liveInventory, setLiveInventory] = useState(null);
   const [stockConfirmation, setStockConfirmation] = useState(null);
+  const { setIsUpdating } = useOrderEdit ? useOrderEdit() : {};
 
   const hasMultipleVariants = variants.length > 1;
   const selectedVariant = variants.find((v) => v.id === selectedVariantId) || variants[0];
@@ -76,6 +78,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
     if (!selectedVariantId) return;
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setError(null);
 
     try {
@@ -105,6 +108,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
         if (quantity > avail && !isConfirmed) {
           setStockConfirmation({ requestedQty: quantity, availableQty: avail });
           setSubmitting(false);
+          if (typeof setIsUpdating === 'function') setIsUpdating(false);
           return;
         }
       }
@@ -143,6 +147,7 @@ export function VariantPicker({ product, orderId, onBack, onAdded }) {
       }
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   }
 

@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
-import { buildSignedInvoiceUrl } from "../utils/invoice-link.server";
+import { buildSignedInvoiceUrl, storeInvoiceDownload } from "../utils/invoice-link.server";
+import { generateInvoicePdf, ORDER_INVOICE_QUERY, type InvoiceOrder } from "../utils/invoice.server";
 import { trackFeatureUsage } from "../utils/analyticsHelper.server";
 import { isServiceEnabled } from "../utils/orderGuard.server";
 
@@ -43,18 +44,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Confirm the order actually belongs to the customer making the request
     // before handing out an invoice link for it.
-    const response = await admin.graphql(
-      `#graphql
-      query getOrderOwner($id: ID!) {
-        order(id: $id) {
-          id
-          customer { id }
-        }
-      }`,
-      { variables: { id: orderId } },
-    );
+    const response = await admin.graphql(ORDER_INVOICE_QUERY, {
+      variables: { id: orderId },
+    });
     const json = await response.json();
-    const order = json.data?.order;
+    const order: InvoiceOrder | undefined = json.data?.order;
 
     if (!order) {
       return cors(Response.json({ error: "Order not found" }, { status: 404 }));
@@ -68,12 +62,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return cors(Response.json({ error: "Not authorized to access this order" }, { status: 403 }));
     }
 
+    const pdfBuffer = await generateInvoicePdf(order);
+    const filename = `invoice-${order.name.replace(/[^a-zA-Z0-9-_]/g, "")}.pdf`;
+    const token = storeInvoiceDownload(pdfBuffer, filename);
+
     const appUrl = process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
-    const invoiceUrl = buildSignedInvoiceUrl(appUrl, {
-      shop: storeDomain,
-      orderId,
-      customerId: customerAccountId,
-    });
+    const invoiceUrl = buildSignedInvoiceUrl(appUrl, token);
 
     // Track feature usage for download-invoice
     await trackFeatureUsage({

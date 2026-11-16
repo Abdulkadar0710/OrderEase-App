@@ -83,7 +83,7 @@ export function ChangeContactInfo() {
   const [emailError, setEmailError] = useState(null);
   const [phoneError, setPhoneError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   const emailDirty = email.trim() !== '';
   const phoneDirty = phone.trim() !== '';
@@ -122,6 +122,7 @@ export function ChangeContactInfo() {
     }
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     try {
       const result = await updateContactInfo({
         orderId: order.id,
@@ -139,6 +140,7 @@ export function ChangeContactInfo() {
       setError(err instanceof Error ? err.message : 'Failed to update notification preferences.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

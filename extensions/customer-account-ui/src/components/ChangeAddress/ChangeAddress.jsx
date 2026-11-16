@@ -26,7 +26,7 @@ export function ChangeAddress() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   // Service Settings & Merchant Google Places API Key Check
   const [hasGoogleKey, setHasGoogleKey] = useState(false);
@@ -216,6 +216,7 @@ export function ChangeAddress() {
     if (err) { setError(err); return; }
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setError(null);
     try {
       const result = await updateOrderAddress({ orderId: order.id, addressType: 'shipping', address: form });
@@ -225,6 +226,7 @@ export function ChangeAddress() {
       setError(e instanceof Error ? e.message : 'Failed to update shipping address.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   }
 

@@ -12,7 +12,7 @@ import { useOrderEdit } from '../../context/OrderEditContext.jsx';
 export function UpsellSlider() {
   const order = shopify.order.value;
   const { products, loading, error, addExcludedProductId } = useUpsellProducts(order?.id);
-  const { notifyUpdateSuccess, needsRefresh, startRefreshCountdown } = useOrderEdit();
+  const { notifyUpdateSuccess, needsRefresh, startRefreshCountdown, isUpdating, setOpenModalId } = useOrderEdit();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -292,14 +292,29 @@ export function UpsellSlider() {
           heading={selectedProduct ? selectedProduct.title : "Add product to order"}
           size="large"
           padding="base"
-          onHide={handleCloseModal}
+          onShow={() => {
+            setModalOpen(true);
+            if (typeof setOpenModalId === "function") setOpenModalId(modalId);
+          }}
+          onHide={() => {
+            if (isUpdating) {
+              if (modalRef.current && typeof modalRef.current.showOverlay === "function") {
+                modalRef.current.showOverlay();
+              }
+              return;
+            }
+            if (typeof setOpenModalId === "function") setOpenModalId(null);
+            handleCloseModal();
+          }}
         >
           {selectedProduct && (
             <s-box paddingBlockStart="small-200" inlineSize="100%">
               <VariantPicker
                 product={selectedProduct}
                 orderId={order?.id}
-                onBack={handleCloseModal}
+                onBack={() => {
+                  if (!isUpdating) handleCloseModal();
+                }}
                 onAdded={(res) => {
                   handleAdded(res);
                   handleCloseModal();
@@ -311,8 +326,9 @@ export function UpsellSlider() {
             slot="secondary-actions"
             commandFor={modalId}
             command="--hide"
+            disabled={isUpdating}
           >
-            Close
+            {isUpdating ? "Updating..." : "Close"}
           </s-button>
         </s-modal>
       </s-stack>

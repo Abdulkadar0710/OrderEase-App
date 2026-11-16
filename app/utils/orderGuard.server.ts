@@ -1,5 +1,6 @@
 import db from "../db.server";
 import { checkOrderEditLimit } from "./editLimitHelper.server";
+import { getMerchantPlan, getMonthlyQuotaStatus, normalizeShop } from "./planHelper.server";
 
 export interface AdminGraphQL {
   graphql: (
@@ -22,7 +23,7 @@ export interface ValidateOrderOptions {
 
 /**
  * Checks whether at least one of the specified merchant ServiceSettings features
- * is enabled for the shop.
+ * is enabled for the shop AND allowed under the merchant's active plan.
  */
 export async function isServiceEnabled(
   shop: string,
@@ -30,17 +31,28 @@ export async function isServiceEnabled(
 ): Promise<boolean> {
   const ids = Array.isArray(serviceId) ? serviceId : [serviceId];
   if (ids.length === 0) return false;
-  const normalizedShop = shop
-    .replace(/^https?:\/\//, "")
-    .replace(/\/.*$/, "")
-    .toLowerCase()
-    .trim();
+  const normalizedShop = normalizeShop(shop);
   if (!normalizedShop) return false;
 
+  // 1. Verify merchant's active plan and monthly quota
+  const plan = await getMerchantPlan(normalizedShop);
+  const quota = await getMonthlyQuotaStatus(normalizedShop);
+
+  if (quota.isExceeded) {
+    return false;
+  }
+
+  // 2. Filter requested ids by allowedServices for this plan
+  const planAllowedIds = ids.filter((id) => plan.allowedServices.includes(id));
+  if (planAllowedIds.length === 0) {
+    return false;
+  }
+
+  // 3. Check if enabled in merchant's ServiceSettings
   const row = await db.serviceSettings.findFirst({
     where: {
       shop: normalizedShop,
-      id: { in: ids },
+      id: { in: planAllowedIds },
       enabled: true,
     },
     select: { id: true },
@@ -94,7 +106,13 @@ export function getTimeLimitInMs(
     customValue?: number | null;
     customUnit?: string | null;
   } | null,
+  planId: string = "free",
 ): number {
+  // Free plan is strictly 1 hour
+  if (planId === "free") {
+    return 60 * 60 * 1000;
+  }
+
   if (!record || !record.timeLimit) return 60 * 60 * 1000; // default 1 hour
   const preset = record.timeLimit;
   if (preset === "15m") return 15 * 60 * 1000;
@@ -103,7 +121,12 @@ export function getTimeLimitInMs(
   if (preset === "2h") return 2 * 60 * 60 * 1000;
   if (preset === "1d") return 24 * 60 * 60 * 1000;
   if (preset === "2d") return 48 * 60 * 60 * 1000;
+
   if (preset === "custom") {
+    // Only Pro plan allows custom durations; fall back to 1h otherwise
+    if (planId !== "pro") {
+      return 60 * 60 * 1000;
+    }
     const val = Number(record.customValue) || 1;
     if (record.customUnit === "minutes") return val * 60 * 1000;
     if (record.customUnit === "hours") return val * 60 * 60 * 1000;
@@ -133,16 +156,18 @@ const ORDER_GUARD_QUERY = `#graphql
  * Centralized server-side guard to validate that an order can be edited or cancelled.
  *
  * Checks performed:
- * 1. Existence: Verifies order exists in Shopify.
- * 2. Ownership: Verifies order belongs to the authenticated customer (sessionToken.sub).
- * 3. Cancellation: Rejects if order has already been cancelled.
- * 4. Fulfillment: Rejects if order is already fulfilled or shipped.
- * 5. Time Window: Rejects if order creation time exceeds merchant's configured time limit.
- * 6. Edit Limits: Rejects if order edit count exceeds merchant's max edits limit.
+ * 1. Plan & Service Eligibility: Verifies store plan allows the requested service.
+ * 2. Monthly Quota: Verifies store has not exceeded its monthly edited orders quota.
+ * 3. Existence: Verifies order exists in Shopify.
+ * 4. Ownership: Verifies order belongs to the authenticated customer (sessionToken.sub).
+ * 5. Cancellation: Rejects if order has already been cancelled.
+ * 6. Fulfillment: Rejects if order is already fulfilled or shipped.
+ * 7. Time Window: Rejects if order creation time exceeds merchant's configured (or plan-enforced) time limit.
+ * 8. Edit Limits: Rejects if order edit count exceeds merchant's max edits limit (enforced 3 on Free).
  */
 export async function validateOrderEditable({
   admin,
-  shop,
+  shop: rawShop,
   orderId,
   customerAccountId,
   checkFulfillment = true,
@@ -155,22 +180,26 @@ export async function validateOrderEditable({
     return { allowed: false, status: 400, message: "Missing order ID." };
   }
 
+  const shop = normalizeShop(rawShop);
+
+  // 1. Plan & Service Eligibility Check
   if (requiredServiceId) {
     const enabled = await isServiceEnabled(shop, requiredServiceId);
     if (!enabled) {
       return {
         allowed: false,
         status: 403,
-        message: "This feature is not enabled by the merchant.",
+        message: "This feature is not enabled or not included in the store's current plan.",
       };
     }
   }
 
+  const plan = await getMerchantPlan(shop);
   const normalizedOrderId = orderId.includes("gid://shopify/Order/")
     ? orderId
     : `gid://shopify/Order/${orderId}`;
 
-  // 1. Fetch order details from Shopify Admin GraphQL
+  // 2. Fetch order details from Shopify Admin GraphQL
   try {
     const res = await admin.graphql(ORDER_GUARD_QUERY, {
       variables: { id: normalizedOrderId },
@@ -182,7 +211,7 @@ export async function validateOrderEditable({
       return { allowed: false, status: 404, message: "Order not found." };
     }
 
-    // 2. CHECK: Ownership
+    // 3. CHECK: Ownership
     if (!isCustomerAuthorized(order.customer?.id, customerAccountId)) {
       return {
         allowed: false,
@@ -191,7 +220,7 @@ export async function validateOrderEditable({
       };
     }
 
-    // 3. CHECK: Cancellation status
+    // 4. CHECK: Cancellation status
     if (checkCancellation && order.cancelledAt) {
       return {
         allowed: false,
@@ -200,7 +229,7 @@ export async function validateOrderEditable({
       };
     }
 
-    // 4. CHECK: Fulfillment status
+    // 5. CHECK: Fulfillment status
     // Only UNFULFILLED or ON_HOLD can be modified/cancelled by customers
     if (
       checkFulfillment &&
@@ -216,12 +245,12 @@ export async function validateOrderEditable({
       };
     }
 
-    // 5. CHECK: Server-side Time Window
+    // 6. CHECK: Server-side Time Window (strictly 1 hour on Free)
     if (checkTimeLimit && order.createdAt) {
       const timeLimitRecord = await db.orderEditTimeLimit.findUnique({
         where: { shop },
       });
-      const limitMs = getTimeLimitInMs(timeLimitRecord);
+      const limitMs = getTimeLimitInMs(timeLimitRecord, plan.id);
 
       if (limitMs > 0) {
         const orderCreatedTime = new Date(order.createdAt).getTime();
@@ -235,17 +264,20 @@ export async function validateOrderEditable({
       }
     }
 
-    // 6. CHECK: Max Edits Limit
+    // 7. CHECK: Max Edits Limit (strictly 3 edits on Free)
     if (checkEditLimit) {
       const editLimitCheck = await checkOrderEditLimit({
         shop,
         orderId: normalizedOrderId,
       });
       if (editLimitCheck.isLimitReached) {
+        const msg = editLimitCheck.quotaExceeded
+          ? (editLimitCheck.quotaMessage || "This store has reached its monthly order edit quota.")
+          : `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`;
         return {
           allowed: false,
           status: 422,
-          message: `You have reached the maximum allowed edits (${editLimitCheck.maxEdits} edits) for this order.`,
+          message: msg,
         };
       }
     }

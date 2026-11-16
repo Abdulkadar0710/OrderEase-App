@@ -8,6 +8,15 @@ import type {
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import {
+  getRequiredPlanForService,
+  isServiceAllowedOnPlan,
+  isTimeLimitAllowedOnPlan,
+  isMaxEditsAllowedOnPlan,
+  isGooglePlacesAllowedOnPlan,
+  isUpsellAllowedOnPlan,
+} from "../config/plans";
+import { getMerchantPlan, getMonthlyQuotaStatus } from "../utils/planHelper.server";
 
 const SSwitch = "s-switch" as any;
 
@@ -163,7 +172,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .toLowerCase()
     .trim();
 
-  // 1. Fetch existing settings rows for this shop
+  // 1. Fetch merchant's active plan and monthly quota
+  const plan = await getMerchantPlan(shop);
+  const quota = await getMonthlyQuotaStatus(shop);
+
+  // 2. Fetch existing settings rows for this shop
   let rows = await db.serviceSettings.findMany({
     where: { shop },
   });
@@ -171,7 +184,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const existingIds = new Set(rows.map((r) => r.id));
   const missingServices = SERVICES.filter((s) => !existingIds.has(s.id));
 
-  // 2. Auto-seed any missing service rows in the database as enabled: false
+  // Auto-seed any missing service rows in the database as enabled: false
   if (missingServices.length > 0) {
     console.log(
       `[ActiveServices Loader] Seeding ${missingServices.length} missing services in DB with enabled=false for shop ${shop}`,
@@ -190,19 +203,47 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     });
   }
 
-  // 3. Build a lookup map: serviceId -> enabled
+  // 3. Auto-fix: if any service is marked enabled in DB but NOT allowed on current plan, reset it to false
+  const unallowedEnabledServices = rows.filter(
+    (r) => r.enabled && !isServiceAllowedOnPlan(plan.id, r.id),
+  );
+  if (unallowedEnabledServices.length > 0) {
+    console.log(
+      `[ActiveServices Loader] Disabling ${unallowedEnabledServices.length} unallowed services for shop ${shop} on plan ${plan.id}`,
+    );
+    await db.serviceSettings.updateMany({
+      where: {
+        shop,
+        id: { in: unallowedEnabledServices.map((s) => s.id) },
+      },
+      data: { enabled: false },
+    });
+    rows = await db.serviceSettings.findMany({ where: { shop } });
+  }
+
+  // 4. Build a lookup map: serviceId -> enabled
   const dbMap: Record<string, boolean> = {};
   rows.forEach((row) => {
     dbMap[row.id] = row.enabled;
   });
 
-  // 4. Map services with DB state (defaulting to false)
-  const services = SERVICES.map((s) => ({
-    ...s,
-    enabled: dbMap[s.id] ?? false,
-  }));
+  // 5. Map services with DB state and plan gating metadata
+  const services = SERVICES.map((s) => {
+    const isAllowed = isServiceAllowedOnPlan(plan.id, s.id);
+    const requiredPlan = getRequiredPlanForService(s.id);
+    return {
+      ...s,
+      isAllowed,
+      requiredPlan: {
+        id: requiredPlan.id,
+        name: requiredPlan.name,
+        monthlyPrice: requiredPlan.monthlyPrice,
+      },
+      enabled: isAllowed ? (dbMap[s.id] ?? false) : false,
+    };
+  });
 
-  // 5. Fetch time limit setting for this shop
+  // 6. Fetch time limit setting for this shop
   let timeLimitRecord = await db.orderEditTimeLimit.findUnique({
     where: { shop },
   });
@@ -214,16 +255,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         timeLimit: "1h",
         customValue: 1,
         customUnit: "hours",
+        maxEdits: 3,
       },
     });
   }
 
-  // 6. Fetch Google Places API Key configuration for this shop
+  // 7. Fetch Google Places API Key configuration for this shop
   const googleConfig = await db.googlePlacesConfig.findUnique({
     where: { shop },
   });
 
-  // 7. Initial products array (populated upon user search)
+  // 8. Initial products array (populated upon user search)
   const initialProducts: Array<{
     id: string;
     title: string;
@@ -232,18 +274,44 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     imageUrl: string;
   }> = [];
 
+  const effectiveTimeLimit = plan.id === "free" ? "1h" : (timeLimitRecord.timeLimit || "1h");
+  let effectiveMaxEdits = timeLimitRecord.maxEdits ?? 3;
+  if (plan.id === "free") {
+    effectiveMaxEdits = 3;
+  } else if (plan.id === "pro") {
+    effectiveMaxEdits =
+      timeLimitRecord.maxEdits && timeLimitRecord.maxEdits !== 3
+        ? timeLimitRecord.maxEdits
+        : 0;
+  }
+
   return {
     shop,
+    plan: {
+      id: plan.id,
+      name: plan.name,
+      monthlyPrice: plan.monthlyPrice,
+      monthlyOrderLimit: plan.monthlyOrderLimit,
+    },
+    quota: {
+      usedCount: quota.usedCount,
+      limit: quota.limit,
+      isExceeded: quota.isExceeded,
+    },
     services,
     timeLimitSettings: {
-      timeLimit: timeLimitRecord.timeLimit,
+      timeLimit: effectiveTimeLimit,
       customValue: timeLimitRecord.customValue ?? 1,
       customUnit: timeLimitRecord.customUnit ?? "hours",
-      maxEdits: timeLimitRecord.maxEdits ?? null,
+      maxEdits: effectiveMaxEdits,
     },
     hasGoogleApiKey: Boolean(
-      googleConfig?.apiKey && googleConfig.apiKey.trim().length > 0,
+      isGooglePlacesAllowedOnPlan(plan.id) &&
+        googleConfig?.apiKey &&
+        googleConfig.apiKey.trim().length > 0,
     ),
+    isGooglePlacesAllowed: isGooglePlacesAllowedOnPlan(plan.id),
+    isUpsellAllowed: isUpsellAllowedOnPlan(plan.id),
     initialProducts,
   };
 };
@@ -258,10 +326,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .toLowerCase()
     .trim();
 
+  const plan = await getMerchantPlan(shop);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
   if (intent === "addProductTag") {
+    if (!isUpsellAllowedOnPlan(plan.id)) {
+      return {
+        ok: false,
+        error:
+          "Product Upsells & Recommendations require the Growth plan ($29/mo) or higher.",
+      };
+    }
     const productId = formData.get("productId") as string;
     const tag = (formData.get("tag") as string)?.trim();
 
@@ -286,6 +362,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "removeProductTag") {
+    if (!isUpsellAllowedOnPlan(plan.id)) {
+      return {
+        ok: false,
+        error:
+          "Product Upsells & Recommendations require the Growth plan ($29/mo) or higher.",
+      };
+    }
     const productId = formData.get("productId") as string;
     const tag = (formData.get("tag") as string)?.trim();
 
@@ -310,6 +393,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "searchProducts") {
+    if (!isUpsellAllowedOnPlan(plan.id)) {
+      return {
+        ok: false,
+        error:
+          "Product Upsells & Recommendations require the Growth plan ($29/mo) or higher.",
+      };
+    }
     const query = (formData.get("query") as string)?.trim() || "";
     console.log(
       `[ActiveServices Action] Searching products with query "${query}"`,
@@ -335,6 +425,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "saveGoogleApiKey") {
+    if (!isGooglePlacesAllowedOnPlan(plan.id)) {
+      return {
+        ok: false,
+        type: "googleApiKey",
+        error:
+          "Google Places address autocomplete requires the Growth plan ($29/mo) or higher.",
+      };
+    }
     const apiKeyRaw = formData.get("googleApiKey") as string;
     const apiKey = apiKeyRaw ? apiKeyRaw.trim() : null;
 
@@ -399,6 +497,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         ? 0
         : parseInt(maxEditsStr, 10);
 
+    if (!isMaxEditsAllowedOnPlan(plan.id, maxEdits)) {
+      return {
+        ok: false,
+        type: "maxEdits",
+        error:
+          "The Free plan is locked to 3 edits per order. Upgrade to Starter to configure limits.",
+      };
+    }
+
     console.log(
       `[ActiveServices Action] Saving max edits limit: shop=${shop}, maxEdits=${maxEdits}`,
     );
@@ -422,6 +529,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const customValueStr = formData.get("customValue") as string;
     const customUnit = (formData.get("customUnit") as string) || "hours";
     const customValue = customValueStr ? parseInt(customValueStr, 10) : null;
+
+    if (!isTimeLimitAllowedOnPlan(plan.id, timeLimit)) {
+      return {
+        ok: false,
+        type: "timeLimit",
+        error:
+          "This time window is not permitted on your plan. Free plan is limited to 1 Hour, and custom durations require Pro.",
+      };
+    }
 
     console.log(
       `[ActiveServices Action] Saving time limit setting: shop=${shop}, timeLimit=${timeLimit}, customValue=${customValue}, customUnit=${customUnit}`,
@@ -449,6 +565,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const enabledStr = formData.get("enabled") as string;
   const enabled = enabledStr === "true";
 
+  if (enabled && !isServiceAllowedOnPlan(plan.id, serviceId)) {
+    const requiredPlan = getRequiredPlanForService(serviceId);
+    return {
+      ok: false,
+      error: `"${serviceId}" requires the ${requiredPlan.name} plan ($${requiredPlan.monthlyPrice}/mo). Please upgrade your plan to activate it.`,
+    };
+  }
+
   console.log(
     `[ActiveServices Action] Saving service setting: shop=${shop}, serviceId=${serviceId}, enabled=${enabled}`,
   );
@@ -474,30 +598,97 @@ export const headers: HeadersFunction = (headersArgs) => {
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export default function ActiveServicesPage(): JSX.Element {
-  const { services, timeLimitSettings, hasGoogleApiKey, initialProducts } =
-    useLoaderData<typeof loader>();
+  const {
+    shop,
+    plan,
+    quota,
+    services,
+    timeLimitSettings,
+    hasGoogleApiKey,
+    isGooglePlacesAllowed,
+    isUpsellAllowed,
+    initialProducts,
+  } = useLoaderData<typeof loader>();
 
   return (
     <s-page heading="Active Services">
+      {/* ── Active Plan Status Banner ── */}
+      <s-section>
+        <s-box padding="base" border="base" borderRadius="base" background="subdued">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <s-text type="strong" style={{ fontSize: "15px" }}>
+                Active Plan:{" "}
+                <span style={{ color: "#008060", textTransform: "capitalize" }}>
+                  {plan.name} (${plan.monthlyPrice}/mo)
+                </span>
+              </s-text>
+              <s-paragraph color="subdued" style={{ marginTop: "3px" }}>
+                {plan.monthlyOrderLimit === null
+                  ? `Unlimited monthly edited orders (${quota.usedCount} edits used this month).`
+                  : `${quota.usedCount} of ${plan.monthlyOrderLimit} monthly edited orders used this cycle.`}
+                {plan.id === "free" &&
+                  " Features beyond the Free plan are locked and require an upgrade to enable."}
+              </s-paragraph>
+            </div>
+            <a
+              href="/app/pricing"
+              style={{
+                padding: "8px 16px",
+                borderRadius: "6px",
+                backgroundColor: "#008060",
+                color: "#ffffff",
+                fontWeight: "600",
+                fontSize: "13px",
+                textDecoration: "none",
+                display: "inline-block",
+              }}
+            >
+              {plan.id === "pro" ? "View Pricing Plans" : "Upgrade Plan"}
+            </a>
+          </div>
+        </s-box>
+      </s-section>
+
       <s-section heading="Order Edit App Capabilities">
         <s-paragraph>
-          Manage and monitor all active customer-facing services provided by
-          your Order Edit App. Use the toggles on the right to enable or disable
-          specific functionalities for your store customers.
+          Manage and monitor all active customer-facing services provided by your
+          Order Edit App. Only features included in your active pricing plan can
+          be enabled.
         </s-paragraph>
       </s-section>
 
       {/* ── Product Tags & Upsell Management Section ── */}
-      <ProductTagsSection initialProducts={initialProducts} />
+      <ProductTagsSection
+        initialProducts={initialProducts}
+        isAllowed={isUpsellAllowed}
+      />
 
       {/* ── Google Location Autocomplete Key Section ── */}
-      <GoogleApiKeySection initialHasKey={hasGoogleApiKey} />
+      <GoogleApiKeySection
+        initialHasKey={hasGoogleApiKey}
+        isAllowed={isGooglePlacesAllowed}
+      />
 
       {/* ── Max Edits Limit Configuration Box ── */}
-      <MaxEditsSection initialMaxEdits={timeLimitSettings.maxEdits} />
+      <MaxEditsSection
+        initialMaxEdits={timeLimitSettings.maxEdits}
+        planId={plan.id}
+      />
 
       {/* ── Time Limit Configuration Box ── */}
-      <TimeLimitSection initialSettings={timeLimitSettings} />
+      <TimeLimitSection
+        initialSettings={timeLimitSettings}
+        planId={plan.id}
+      />
 
       <s-section heading="Services Overview">
         <s-stack direction="block" gap="base">
@@ -509,6 +700,8 @@ export default function ActiveServicesPage(): JSX.Element {
               description={service.description}
               category={service.category}
               enabled={service.enabled}
+              isAllowed={service.isAllowed}
+              requiredPlan={service.requiredPlan}
             />
           ))}
         </s-stack>
@@ -530,6 +723,7 @@ const MAX_EDITS_PRESETS = [
 
 interface MaxEditsSectionProps {
   initialMaxEdits: number | null;
+  planId: string;
 }
 
 const getMaxEditsPreset = (val: number | null | undefined): string => {
@@ -545,12 +739,12 @@ const getMaxEditsPreset = (val: number | null | undefined): string => {
 
 function MaxEditsSection({
   initialMaxEdits,
+  planId,
 }: MaxEditsSectionProps): JSX.Element {
+  const isFree = planId === "free";
   const fetcher = useFetcher();
-  const initialPreset = getMaxEditsPreset(initialMaxEdits);
+  const initialPreset = isFree ? "3" : getMaxEditsPreset(initialMaxEdits);
 
-  // Use a ref to track the last explicitly saved value so we can prevent
-  // stale loader data from overriding an in-progress or just-saved selection.
   const lastSavedPresetRef = useRef<string | null>(null);
 
   const [selectedPreset, setSelectedPreset] = useState(initialPreset);
@@ -560,52 +754,60 @@ function MaxEditsSection({
       : 3,
   );
   const [isSaved, setIsSaved] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Sync from loader data ONLY when there is no in-flight or just-completed save.
-  // This prevents the loader re-validation from overriding the user's click.
   useEffect(() => {
-    if (lastSavedPresetRef.current === null) {
+    if (isFree) {
+      setSelectedPreset("3");
+    } else if (lastSavedPresetRef.current === null) {
       setSelectedPreset(getMaxEditsPreset(initialMaxEdits));
       if (typeof initialMaxEdits === "number" && initialMaxEdits > 0) {
         setCustomVal(initialMaxEdits);
       }
     }
-  }, [initialMaxEdits]);
+  }, [initialMaxEdits, isFree]);
 
   useEffect(() => {
     if (fetcher.state === "submitting") {
-      // Mark that a save is in progress; block loader sync until confirmed.
       return;
     }
-    if (
-      fetcher.state === "idle" &&
-      fetcher.data?.ok &&
-      fetcher.data?.type === "maxEdits"
-    ) {
-      const savedMax = fetcher.data.result?.maxEdits;
-      const savedPreset = getMaxEditsPreset(savedMax);
-      lastSavedPresetRef.current = savedPreset;
-      setSelectedPreset(savedPreset);
-      if (typeof savedMax === "number" && savedMax > 0) {
-        setCustomVal(savedMax);
+    if (fetcher.state === "idle" && fetcher.data) {
+      if (!fetcher.data.ok && fetcher.data.error) {
+        setErrorMessage(fetcher.data.error);
+        const timer = setTimeout(() => setErrorMessage(null), 4000);
+        return () => clearTimeout(timer);
       }
-      setIsSaved(true);
-      if (typeof window !== "undefined" && (window as any).shopify?.toast) {
-        (window as any).shopify.toast.show(
-          "Maximum order edit limit updated successfully!",
-        );
+      if (fetcher.data.ok && fetcher.data.type === "maxEdits") {
+        const savedMax = fetcher.data.result?.maxEdits;
+        const savedPreset = getMaxEditsPreset(savedMax);
+        lastSavedPresetRef.current = savedPreset;
+        setSelectedPreset(savedPreset);
+        if (typeof savedMax === "number" && savedMax > 0) {
+          setCustomVal(savedMax);
+        }
+        setIsSaved(true);
+        if (typeof window !== "undefined" && (window as any).shopify?.toast) {
+          (window as any).shopify.toast.show(
+            "Maximum order edit limit updated successfully!",
+          );
+        }
+        const timer = setTimeout(() => {
+          setIsSaved(false);
+          lastSavedPresetRef.current = null;
+        }, 4000);
+        return () => clearTimeout(timer);
       }
-      const timer = setTimeout(() => {
-        setIsSaved(false);
-        // Allow loader to sync again after toast clears.
-        lastSavedPresetRef.current = null;
-      }, 4000);
-      return () => clearTimeout(timer);
     }
   }, [fetcher.state, fetcher.data]);
 
   const handleSave = (preset: string, cVal?: number) => {
-    // Optimistically lock the selection immediately.
+    if (isFree && preset !== "3") {
+      setErrorMessage(
+        "The Free plan is locked to 3 edits per order. Upgrade to Starter to configure limits.",
+      );
+      const timer = setTimeout(() => setErrorMessage(null), 4000);
+      return;
+    }
     lastSavedPresetRef.current = preset;
     let valToSend = preset;
     if (preset === "custom") {
@@ -639,6 +841,18 @@ function MaxEditsSection({
             </s-paragraph>
           </s-stack>
 
+          {isFree && (
+            <s-banner tone="info">
+              The Free plan includes a fixed <strong>3 Edits Per Order</strong> limit.{" "}
+              <a href="/app/pricing" style={{ color: "#008060", fontWeight: "bold" }}>
+                Upgrade to Starter ($10/mo)
+              </a>{" "}
+              to unlock custom or unlimited edits.
+            </s-banner>
+          )}
+
+          {errorMessage && <s-banner tone="critical">{errorMessage}</s-banner>}
+
           {/* Presets Grid */}
           <s-stack direction="block" gap="small">
             <s-text type="strong">Limit Options</s-text>
@@ -648,6 +862,7 @@ function MaxEditsSection({
             >
               {MAX_EDITS_PRESETS.map((preset) => {
                 const isActive = selectedPreset === preset.value;
+                const isLocked = isFree && preset.value !== "3";
                 return (
                   <button
                     key={preset.value}
@@ -658,21 +873,36 @@ function MaxEditsSection({
                       border: isActive
                         ? "2px solid #008060"
                         : "1px solid #c9cccf",
-                      backgroundColor: isActive ? "#eaf4f0" : "#ffffff",
-                      color: isActive ? "#004c3f" : "#202223",
+                      backgroundColor: isActive
+                        ? "#eaf4f0"
+                        : isLocked
+                        ? "#f4f6f8"
+                        : "#ffffff",
+                      color: isActive
+                        ? "#004c3f"
+                        : isLocked
+                        ? "#8c9196"
+                        : "#202223",
                       fontWeight: isActive ? "600" : "400",
-                      cursor: "pointer",
+                      cursor: isLocked ? "not-allowed" : "pointer",
                       textAlign: "center",
+                      opacity: isLocked ? 0.6 : 1,
                       transition: "all 0.15s ease-in-out",
                     }}
                     onClick={() => {
+                      if (isLocked) {
+                        setErrorMessage(
+                          "The Free plan is locked to 3 edits per order. Upgrade to Starter to configure limits.",
+                        );
+                        return;
+                      }
                       setSelectedPreset(preset.value);
                       if (preset.value !== "custom") {
                         handleSave(preset.value);
                       }
                     }}
                   >
-                    {preset.label}
+                    {isLocked ? `🔒 ${preset.label}` : preset.label}
                   </button>
                 );
               })}
@@ -764,14 +994,18 @@ interface TimeLimitSectionProps {
     customValue: number;
     customUnit: string;
   };
+  planId: string;
 }
 
 function TimeLimitSection({
   initialSettings,
+  planId,
 }: TimeLimitSectionProps): JSX.Element {
+  const isFree = planId === "free";
+  const isPro = planId === "pro";
   const fetcher = useFetcher();
   const [selectedPreset, setSelectedPreset] = useEffectState(
-    initialSettings.timeLimit || "1h",
+    isFree ? "1h" : initialSettings.timeLimit || "1h",
   );
   const [customVal, setCustomVal] = useEffectState(
     initialSettings.customValue || 1,
@@ -779,33 +1013,49 @@ function TimeLimitSection({
   const [customUnitVal, setCustomUnitVal] = useEffectState(
     initialSettings.customUnit || "hours",
   );
-  const [isSaved, setIsSaved] = useEffectState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Sync state if reloaded
   useEffect(() => {
-    setSelectedPreset(initialSettings.timeLimit || "1h");
+    setSelectedPreset(isFree ? "1h" : initialSettings.timeLimit || "1h");
     setCustomVal(initialSettings.customValue || 1);
     setCustomUnitVal(initialSettings.customUnit || "hours");
-  }, [initialSettings]);
+  }, [initialSettings, isFree]);
 
   useEffect(() => {
-    if (
-      fetcher.state === "idle" &&
-      fetcher.data?.ok &&
-      fetcher.data?.type === "timeLimit"
-    ) {
-      setIsSaved(true);
-      if (typeof window !== "undefined" && (window as any).shopify?.toast) {
-        (window as any).shopify.toast.show(
-          "Order edit time limit updated successfully!",
-        );
+    if (fetcher.state === "idle" && fetcher.data) {
+      if (!fetcher.data.ok && fetcher.data.error) {
+        setErrorMessage(fetcher.data.error);
+        const timer = setTimeout(() => setErrorMessage(null), 4000);
+        return () => clearTimeout(timer);
       }
-      const timer = setTimeout(() => setIsSaved(false), 4000);
-      return () => clearTimeout(timer);
+      if (fetcher.data.ok && fetcher.data.type === "timeLimit") {
+        setIsSaved(true);
+        if (typeof window !== "undefined" && (window as any).shopify?.toast) {
+          (window as any).shopify.toast.show(
+            "Order edit time limit updated successfully!",
+          );
+        }
+        const timer = setTimeout(() => setIsSaved(false), 4000);
+        return () => clearTimeout(timer);
+      }
     }
   }, [fetcher.state, fetcher.data]);
 
   const handleSave = (preset: string, cVal?: number, cUnit?: string) => {
+    if (isFree && preset !== "1h") {
+      setErrorMessage(
+        "The Free plan includes a fixed 1-Hour edit window. Upgrade to Starter or Pro to change it.",
+      );
+      const timer = setTimeout(() => setErrorMessage(null), 4000);
+      return;
+    }
+    if (!isPro && preset === "custom") {
+      setErrorMessage("Custom time windows require the Pro plan ($60/mo).");
+      const timer = setTimeout(() => setErrorMessage(null), 4000);
+      return;
+    }
     fetcher.submit(
       {
         intent: "saveTimeLimit",
@@ -835,6 +1085,24 @@ function TimeLimitSection({
             </s-paragraph>
           </s-stack>
 
+          {isFree && (
+            <s-banner tone="info">
+              The Free plan includes a fixed <strong>1-Hour edit window</strong>.{" "}
+              <a href="/app/pricing" style={{ color: "#008060", fontWeight: "bold" }}>
+                Upgrade to Starter ($10/mo)
+              </a>{" "}
+              for preset windows, or Pro ($60/mo) for custom durations.
+            </s-banner>
+          )}
+
+          {!isFree && !isPro && (
+            <s-paragraph color="subdued">
+              Preset time windows unlocked. <em>Custom durations (exact minutes or hours) require the Pro plan ($60/mo).</em>
+            </s-paragraph>
+          )}
+
+          {errorMessage && <s-banner tone="critical">{errorMessage}</s-banner>}
+
           {/* Presets Grid */}
           <s-stack direction="block" gap="small">
             <s-text type="strong">Preset Options</s-text>
@@ -844,6 +1112,9 @@ function TimeLimitSection({
             >
               {TIME_LIMIT_PRESETS.map((preset) => {
                 const isActive = selectedPreset === preset.value;
+                const isLocked = isFree
+                  ? preset.value !== "1h"
+                  : !isPro && preset.value === "custom";
                 return (
                   <button
                     key={preset.value}
@@ -854,19 +1125,40 @@ function TimeLimitSection({
                       border: isActive
                         ? "2px solid #008060"
                         : "1px solid #c9cccf",
-                      backgroundColor: isActive ? "#eaf4f0" : "#ffffff",
-                      color: isActive ? "#004c3f" : "#202223",
+                      backgroundColor: isActive
+                        ? "#eaf4f0"
+                        : isLocked
+                        ? "#f4f6f8"
+                        : "#ffffff",
+                      color: isActive
+                        ? "#004c3f"
+                        : isLocked
+                        ? "#8c9196"
+                        : "#202223",
                       fontWeight: isActive ? "600" : "400",
-                      cursor: "pointer",
+                      cursor: isLocked ? "not-allowed" : "pointer",
                       textAlign: "center",
+                      opacity: isLocked ? 0.6 : 1,
                       transition: "all 0.15s ease-in-out",
                     }}
                     onClick={() => {
+                      if (isLocked) {
+                        if (isFree) {
+                          setErrorMessage(
+                            "The Free plan includes a fixed 1-Hour edit window. Upgrade to Starter or Pro to change it.",
+                          );
+                        } else {
+                          setErrorMessage(
+                            "Custom time windows require the Pro plan ($60/mo).",
+                          );
+                        }
+                        return;
+                      }
                       setSelectedPreset(preset.value);
                       handleSave(preset.value);
                     }}
                   >
-                    {preset.label}
+                    {isLocked ? `🔒 ${preset.label}` : preset.label}
                   </button>
                 );
               })}
@@ -981,6 +1273,12 @@ interface ServiceRowProps {
   description: string;
   category: string;
   enabled: boolean;
+  isAllowed: boolean;
+  requiredPlan: {
+    id: string;
+    name: string;
+    monthlyPrice: number;
+  };
 }
 
 function ServiceRow({
@@ -989,17 +1287,21 @@ function ServiceRow({
   description,
   category,
   enabled,
+  isAllowed,
+  requiredPlan,
 }: ServiceRowProps): JSX.Element {
   const fetcher = useFetcher();
   const switchRef = useRef<any>(null);
 
   // Optimistic state: if a submission is in-flight, show the pending value
   const optimisticEnabled =
-    fetcher.state !== "idle"
+    isAllowed &&
+    (fetcher.state !== "idle"
       ? fetcher.formData?.get("enabled") === "true"
-      : enabled;
+      : enabled);
 
   const toggleService = (nextState: boolean): void => {
+    if (!isAllowed) return;
     console.log(`[ServiceRow] Toggling service ${id} to ${nextState}`);
     fetcher.submit(
       { serviceId: id, enabled: String(nextState) },
@@ -1009,7 +1311,7 @@ function ServiceRow({
 
   useEffect(() => {
     const el = switchRef.current;
-    if (!el) return;
+    if (!el || !isAllowed) return;
 
     const handleCustomEvent = (e: Event) => {
       e.stopPropagation();
@@ -1023,7 +1325,7 @@ function ServiceRow({
     return () => {
       el.removeEventListener("change", handleCustomEvent);
     };
-  }, [id, optimisticEnabled]);
+  }, [id, optimisticEnabled, isAllowed]);
 
   return (
     <s-box
@@ -1043,20 +1345,52 @@ function ServiceRow({
           <s-paragraph color="subdued">{description}</s-paragraph>
         </s-stack>
 
-        <s-badge tone={optimisticEnabled ? "success" : "neutral"}>
-          <SSwitch
-            tone={optimisticEnabled ? "success" : "neutral"}
-            ref={switchRef}
-            label={optimisticEnabled ? "Active" : "Inactive"}
-            name={id}
-            checked={optimisticEnabled}
-            onClick={() => {
-              if (fetcher.state === "idle") {
-                toggleService(!optimisticEnabled);
-              }
-            }}
-          />
-        </s-badge>
+        {!isAllowed ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span
+              style={{
+                fontSize: "12px",
+                backgroundColor: "#fff4e5",
+                color: "#914400",
+                padding: "4px 8px",
+                borderRadius: "6px",
+                fontWeight: "600",
+              }}
+            >
+              🔒 {requiredPlan.name} (${requiredPlan.monthlyPrice}/mo)
+            </span>
+            <a
+              href="/app/pricing"
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                backgroundColor: "#008060",
+                color: "#ffffff",
+                fontSize: "12px",
+                fontWeight: "600",
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Upgrade
+            </a>
+          </div>
+        ) : (
+          <s-badge tone={optimisticEnabled ? "success" : "neutral"}>
+            <SSwitch
+              tone={optimisticEnabled ? "success" : "neutral"}
+              ref={switchRef}
+              label={optimisticEnabled ? "Active" : "Inactive"}
+              name={id}
+              checked={optimisticEnabled}
+              onClick={() => {
+                if (fetcher.state === "idle") {
+                  toggleService(!optimisticEnabled);
+                }
+              }}
+            />
+          </s-badge>
+        )}
       </s-grid>
     </s-box>
   );
@@ -1066,11 +1400,52 @@ function ServiceRow({
 
 interface GoogleApiKeySectionProps {
   initialHasKey: boolean;
+  isAllowed: boolean;
 }
 
 function GoogleApiKeySection({
   initialHasKey,
+  isAllowed,
 }: GoogleApiKeySectionProps): JSX.Element {
+  if (!isAllowed) {
+    return (
+      <s-section heading="Google Places & Location Suggestions">
+        <s-box padding="large" border="base" borderRadius="base" background="subdued">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <s-text type="strong">Google Places Address Autocomplete</s-text>
+              <s-paragraph color="subdued" style={{ marginTop: "4px" }}>
+                Eliminate address typos and delivery delays with Google Places autocomplete. Available on the <strong>Growth ($29/mo)</strong> and <strong>Pro ($60/mo)</strong> plans.
+              </s-paragraph>
+            </div>
+            <a
+              href="/app/pricing"
+              style={{
+                padding: "8px 14px",
+                borderRadius: "6px",
+                backgroundColor: "#008060",
+                color: "#ffffff",
+                fontWeight: "600",
+                fontSize: "13px",
+                textDecoration: "none",
+              }}
+            >
+              Upgrade to Growth
+            </a>
+          </div>
+        </s-box>
+      </s-section>
+    );
+  }
+
   const fetcher = useFetcher();
   const [hasKey, setHasKey] = useState(initialHasKey);
   const [apiKey, setApiKey] = useEffectState("");
@@ -1309,11 +1684,60 @@ interface ProductItem {
 
 interface ProductTagsSectionProps {
   initialProducts: ProductItem[];
+  isAllowed: boolean;
 }
 
 function ProductTagsSection({
   initialProducts,
+  isAllowed,
 }: ProductTagsSectionProps): JSX.Element {
+  if (!isAllowed) {
+    return (
+      <s-section heading="Product Tags & Upsell Management">
+        <s-box
+          padding="large"
+          border="base"
+          borderRadius="base"
+          background="subdued"
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <s-text type="strong">Product Upsell & Recommendations</s-text>
+              <s-paragraph color="subdued" style={{ marginTop: "4px" }}>
+                Offer smart product recommendations and add-ons directly on
+                customer order edit pages to increase revenue. Available on the{" "}
+                <strong>Growth ($29/mo)</strong> and{" "}
+                <strong>Pro ($60/mo)</strong> plans.
+              </s-paragraph>
+            </div>
+            <a
+              href="/app/pricing"
+              style={{
+                padding: "8px 14px",
+                borderRadius: "6px",
+                backgroundColor: "#008060",
+                color: "#ffffff",
+                fontWeight: "600",
+                fontSize: "13px",
+                textDecoration: "none",
+              }}
+            >
+              Upgrade to Growth
+            </a>
+          </div>
+        </s-box>
+      </s-section>
+    );
+  }
+
   const [products, setProducts] = useState<ProductItem[]>(
     initialProducts || [],
   );

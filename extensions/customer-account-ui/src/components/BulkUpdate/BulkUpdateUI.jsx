@@ -65,9 +65,9 @@ function getVariantLabel(variant) {
 
 export function BulkUpdateUI({ orderId: propOrderId }) {
   const currentOrderId = propOrderId || shopify?.order?.value?.id;
-  const { notifyUpdateSuccess } = useOrderEdit
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit
     ? useOrderEdit()
-    : { notifyUpdateSuccess: () => {} };
+    : { notifyUpdateSuccess: () => {}, setIsUpdating: () => {} };
 
   const { lineItems: lines, loading: loadingLines, error: linesError, refetch } = useOrderSearch(currentOrderId);
 
@@ -250,6 +250,7 @@ export function BulkUpdateUI({ orderId: propOrderId }) {
     }
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setGeneralError(null);
     setErrorsList([]);
     setSuccessInfo(null);
@@ -315,6 +316,7 @@ export function BulkUpdateUI({ orderId: propOrderId }) {
       setGeneralError(err instanceof Error ? err.message : 'Bulk update request failed.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

@@ -12,7 +12,7 @@ export function AddOrderNote() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   useEffect(() => {
     async function loadNote() {
@@ -42,6 +42,7 @@ export function AddOrderNote() {
     if (!orderId || !hasChanged) return;
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setError(null);
     setSuccess(false);
 
@@ -58,6 +59,7 @@ export function AddOrderNote() {
       setError(err instanceof Error ? err.message : 'Could not update order note.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

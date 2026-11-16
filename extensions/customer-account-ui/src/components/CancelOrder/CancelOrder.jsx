@@ -12,7 +12,7 @@ export function CancelOrder({ isCancelled: propIsCancelled, order: propOrder, or
   const [success, setSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [alreadyCancelled, setAlreadyCancelled] = useState(false);
-  const { isCancelled: contextIsCancelled, setIsCancelled } = useOrderEdit();
+  const { isCancelled: contextIsCancelled, setIsCancelled, notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   const isOrderCancelled = Boolean(
     success ||
@@ -47,6 +47,7 @@ export function CancelOrder({ isCancelled: propIsCancelled, order: propOrder, or
     if (isOrderCancelled) return;
     try {
       setSubmitting(true);
+      setIsUpdating?.(true);
       setError(null);
       const targetId = shopifyOrder?.id || propOrderId || propOrder?.id;
       await cancelOrder({ orderId: targetId });
@@ -55,6 +56,7 @@ export function CancelOrder({ isCancelled: propIsCancelled, order: propOrder, or
       if (typeof setIsCancelled === 'function') {
         setIsCancelled(true);
       }
+      notifyUpdateSuccess?.(shopifyOrder?.statusPageUrl ?? propOrder?.statusPageUrl ?? null);
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : 'Could not cancel order';
@@ -73,6 +75,7 @@ export function CancelOrder({ isCancelled: propIsCancelled, order: propOrder, or
       }
     } finally {
       setSubmitting(false);
+      setIsUpdating?.(false);
       setShowConfirm(false);
     }
   };

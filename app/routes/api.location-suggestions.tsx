@@ -2,6 +2,8 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { isServiceEnabled } from "../utils/orderGuard.server";
+import { getMerchantPlan } from "../utils/planHelper.server";
+import { isGooglePlacesAllowedOnPlan } from "../config/plans";
 
 interface SuggestionItem {
   id: string;
@@ -32,6 +34,10 @@ async function handleLocationSuggestions(
 ): Promise<Response> {
   if (!storeDomain) {
     return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
+  }
+  const plan = await getMerchantPlan(storeDomain);
+  if (!isGooglePlacesAllowedOnPlan(plan.id)) {
+    return cors(Response.json({ suggestions: [] }));
   }
   if (!(await isServiceEnabled(storeDomain, "change-address"))) {
     return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));

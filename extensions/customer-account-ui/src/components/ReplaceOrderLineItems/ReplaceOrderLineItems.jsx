@@ -105,7 +105,7 @@ function ReplacementPicker({ selectedLine, orderId, onBack, onReplaced }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [quantityMsg, setQuantityMsg] = useState(null);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   const { results, loading: searching, error: searchError } = useProductSearch(
     selectedProduct ? '' : searchTerm,
@@ -122,6 +122,7 @@ function ReplacementPicker({ selectedLine, orderId, onBack, onReplaced }) {
     if (!selectedVariantId) return;
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setError(null);
     setQuantityMsg(null);
 
@@ -164,6 +165,7 @@ function ReplacementPicker({ selectedLine, orderId, onBack, onReplaced }) {
       setError(err instanceof Error ? err.message : 'Could not replace product.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

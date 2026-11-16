@@ -6,6 +6,12 @@ export const OrderEditContext = createContext({
   triggerTopPageRefresh: () => {},
   isCancelled: false,
   setIsCancelled: () => {},
+  isUpdating: false,
+  setIsUpdating: () => {},
+  openModalId: null,
+  setOpenModalId: () => {},
+  needsRefresh: false,
+  startRefreshCountdown: () => {},
 });
 
 export const useOrderEdit = () => useContext(OrderEditContext);

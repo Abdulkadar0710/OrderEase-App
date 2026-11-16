@@ -26,12 +26,32 @@ export default async () => {
 
 function ModalSection({ title, subtitle, iconType, tone = "neutral", children }) {
   const modalId = "modal-" + title.toLowerCase().replace(/[^a-z0-9]/g, "-");
-  const { needsRefresh, startRefreshCountdown } = useOrderEdit();
+  const { needsRefresh, startRefreshCountdown, isUpdating, setOpenModalId } = useOrderEdit();
+  const modalRef = useRef(null);
+
+  const handleShow = () => {
+    if (typeof setOpenModalId === "function") {
+      setOpenModalId(modalId);
+    }
+  };
 
   const handleClose = () => {
+    if (typeof setOpenModalId === "function") {
+      setOpenModalId(null);
+    }
     if (needsRefresh) {
       startRefreshCountdown();
     }
+  };
+
+  const handleHide = (e) => {
+    if (isUpdating) {
+      if (modalRef.current && typeof modalRef.current.showOverlay === "function") {
+        modalRef.current.showOverlay();
+      }
+      return;
+    }
+    handleClose();
   };
 
   return (
@@ -43,6 +63,7 @@ function ModalSection({ title, subtitle, iconType, tone = "neutral", children })
         accessibilityLabel={title}
         commandFor={modalId}
         command="--show"
+        onClick={handleShow}
       >
         <s-stack direction="block" gap="small-300" inlineSize="100%">
           <s-stack
@@ -71,11 +92,13 @@ function ModalSection({ title, subtitle, iconType, tone = "neutral", children })
       </s-clickable>
 
       <s-modal
+        ref={modalRef}
         id={modalId}
         heading={title}
         size="large"
         padding="base"
-        onHide={handleClose}
+        onShow={handleShow}
+        onHide={handleHide}
       >
         <s-box paddingBlockStart="small-200" inlineSize="100%">
           <s-stack direction="block" gap="large" inlineSize="100%">
@@ -86,8 +109,9 @@ function ModalSection({ title, subtitle, iconType, tone = "neutral", children })
           slot="secondary-actions"
           commandFor={modalId}
           command="--hide"
+          disabled={isUpdating}
         >
-          Close
+          {isUpdating ? "Updating..." : "Close"}
         </s-button>
       </s-modal>
     </s-box>
@@ -154,6 +178,10 @@ function Extension() {
   const [editLimit, setEditLimit] = useState(null);
   const [remainingTime, setRemainingTime] = useState("--:--:--");
   const [isOrderCancelled, setIsOrderCancelled] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [openModalId, setOpenModalId] = useState(null);
+  const openModalIdRef = useRef(null);
+  openModalIdRef.current = openModalId;
 
   // Detect whether the order is cancelled either via shopify API or our backend response or local state
   const orderCancelledAt = shopify?.order?.value?.cancelledAt || order?.cancelledAt;
@@ -186,7 +214,11 @@ function Extension() {
 
   // Fetch merchant service settings and edit limit
   useEffect(() => {
-    const currentOrderId = order?.id || shopify?.order?.value?.id;
+    const rawId = order?.id || shopify?.order?.value?.id;
+    const currentOrderId = rawId
+      ? (String(rawId).match(/\d+/) ? `gid://shopify/Order/${String(rawId).match(/\d+/)[0]}` : String(rawId))
+      : null;
+
     getServiceSettings(currentOrderId)
       .then(({ settings, timeLimit: dbTimeLimit, editLimit: dbEditLimit }) => {
         setServiceSettings(settings || {});
@@ -198,7 +230,7 @@ function Extension() {
         setTimeLimit(null);
         setEditLimit(null);
       });
-  }, [order?.id]);
+  }, [order?.id, shopify?.order?.value?.id]);
 
   useEffect(() => {
     if (isCancelled) {
@@ -242,6 +274,10 @@ function Extension() {
     setNeedsRefresh(true);
     if (url) {
       setTargetStatusUrl(url);
+    }
+    // If no modal is currently open when update finishes, trigger refresh countdown immediately
+    if (!openModalIdRef.current) {
+      startRefreshCountdown();
     }
   };
 
@@ -309,7 +345,18 @@ function Extension() {
   }
 
   return (
-    <OrderEditContext.Provider value={{ notifyUpdateSuccess, needsRefresh, startRefreshCountdown, topPageCountdown, isCancelled, setIsCancelled: setIsOrderCancelled }}>
+    <OrderEditContext.Provider value={{
+      notifyUpdateSuccess,
+      needsRefresh,
+      startRefreshCountdown,
+      topPageCountdown,
+      isCancelled,
+      setIsCancelled: setIsOrderCancelled,
+      isUpdating,
+      setIsUpdating,
+      openModalId,
+      setOpenModalId,
+    }}>
 
       {topPageCountdown !== null ? (
         <s-box inlineSize="100%" padding="large">
@@ -376,7 +423,7 @@ function Extension() {
                   iconType="order"
                 >
                   <s-stack direction="block" gap="large" inlineSize="100%">
-                    <DownloadInvoice />
+                    <DownloadInvoice orderId={order?.id} />
                   </s-stack>
                 </ModalSection>
               </s-stack>
@@ -592,7 +639,7 @@ function Extension() {
                       iconType="order"
                     >
                       <s-stack direction="block" gap="large" inlineSize="100%">
-                        <DownloadInvoice />
+                        <DownloadInvoice orderId={order?.id} />
                       </s-stack>
                     </ModalSection>
                   );

@@ -33,7 +33,7 @@ export function ChangeShippingMethod() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [lastResult, setLastResult] = useState(null);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   useEffect(() => {
     async function loadShipping() {
@@ -105,6 +105,7 @@ export function ChangeShippingMethod() {
     if (!orderId || !selectedOption || isSameAsCurrent) return;
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setError(null);
     setSuccess(false);
 
@@ -135,6 +136,7 @@ export function ChangeShippingMethod() {
       setError(err instanceof Error ? err.message : 'Could not update shipping method.');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { getInvoiceLink } from '../../utils/api.js';
-import { getExtensionOrderId, formatOrderId, safeNavigate } from '../../utils/shopifyHelpers.js';
+import { getExtensionOrderId, formatOrderId } from '../../utils/shopifyHelpers.js';
 
 export function DownloadInvoice({ orderId: propOrderId }) {
   const [loading, setLoading] = useState(false);
@@ -9,6 +9,17 @@ export function DownloadInvoice({ orderId: propOrderId }) {
   const orderId = formatOrderId(propOrderId) || getExtensionOrderId();
 
   const handleDownload = async () => {
+    // Open a blank tab synchronously on click to satisfy browser user gesture requirements
+    // and avoid popup blocker interference when redirecting after async fetch.
+    let newTab = null;
+    try {
+      if (typeof window !== 'undefined' && typeof window.open === 'function') {
+        newTab = window.open('about:blank', '_blank');
+      }
+    } catch (e) {
+      console.warn('Could not pre-open blank tab:', e);
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -20,8 +31,23 @@ export function DownloadInvoice({ orderId: propOrderId }) {
       }
       
       setInvoiceUrl(url);
-      safeNavigate(url);
+
+      // If the blank tab was successfully opened, navigate it to the PDF in that new tab
+      if (newTab && !newTab.closed) {
+        try {
+          newTab.location.href = url;
+        } catch (e) {
+          console.warn('Failed to assign new tab URL:', e);
+        }
+      }
     } catch (err) {
+      if (newTab && !newTab.closed) {
+        try {
+          newTab.close();
+        } catch (e) {
+          // ignore
+        }
+      }
       console.error('Failed to download invoice:', err);
       setError(err instanceof Error ? err.message : 'Could not generate official invoice PDF at this time.');
     } finally {
@@ -78,5 +104,3 @@ export function DownloadInvoice({ orderId: propOrderId }) {
     </s-stack>
   );
 }
-
-

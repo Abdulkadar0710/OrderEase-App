@@ -9,13 +9,14 @@ export function ApplyDiscountCode() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   async function handleApply() {
     const trimmed = code.trim();
     if (!trimmed) { setError('Please enter a valid promotion code.'); return; }
 
     setSubmitting(true);
+    setIsUpdating?.(true);
     setError(null);
     setResult(null);
 
@@ -34,6 +35,7 @@ export function ApplyDiscountCode() {
       setError(err instanceof Error ? err.message : 'Failed to apply discount code.');
     } finally {
       setSubmitting(false);
+      setIsUpdating?.(false);
     }
   }
 

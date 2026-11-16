@@ -161,7 +161,7 @@ function ChangeVariantPicker({ line, orderId, onBack, onChanged }) {
   const [success, setSuccess] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [isCheaper, setIsCheaper] = useState(false);
-  const { notifyUpdateSuccess } = useOrderEdit();
+  const { notifyUpdateSuccess, setIsUpdating } = useOrderEdit();
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -194,6 +194,7 @@ function ChangeVariantPicker({ line, orderId, onBack, onChanged }) {
     if (!selectedVariantId || selectedVariantId === line.merchandise.id) return;
 
     setSubmitting(true);
+    if (typeof setIsUpdating === 'function') setIsUpdating(true);
     setError(null);
     setSuccess(false);
     setIsCheaper(false);
@@ -227,6 +228,7 @@ function ChangeVariantPicker({ line, orderId, onBack, onChanged }) {
       setError(err instanceof Error ? err.message : 'Could not change product options');
     } finally {
       setSubmitting(false);
+      if (typeof setIsUpdating === 'function') setIsUpdating(false);
     }
   };
 

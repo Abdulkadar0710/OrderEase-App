@@ -1,80 +1,39 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { unauthenticated } from "../shopify.server";
-import { verifySignedInvoiceUrl } from "../utils/invoice-link.server";
-import { generateInvoicePdf, ORDER_INVOICE_QUERY, type InvoiceOrder } from "../utils/invoice.server";
-import { isServiceEnabled } from "../utils/orderGuard.server";
+import { getInvoiceDownload } from "../utils/invoice-link.server";
 
 /**
- * Public (no session-token) endpoint that streams a real invoice PDF.
+ * Public streaming endpoint for pre-authorized invoice PDFs.
  *
- * This is opened directly by the browser (window.open) from the customer
- * account extension, so it can't carry an Authorization header — instead the
- * URL itself is signed and time-limited (see utils/invoice-link.server.ts),
- * and re-checks that the order belongs to the requesting customer.
+ * The PDF is authorized and rendered in `/api/order/invoice` under customer account
+ * session authentication, stored in a short-lived single-session cache, and retrieved
+ * here via an unguessable UUID download token.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
-  const verified = verifySignedInvoiceUrl(url.searchParams);
+  const token = url.searchParams.get("token");
 
-  if (!verified) {
+  if (!token) {
+    return new Response("Missing download token.", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  const download = getInvoiceDownload(token);
+  if (!download) {
     return new Response("This invoice link is invalid or has expired.", {
       status: 403,
       headers: { "Content-Type": "text/plain" },
     });
   }
 
-  const { shop, orderId, customerId } = verified;
-
-  if (!(await isServiceEnabled(shop, "download-invoice"))) {
-    return new Response("Invoice download is not enabled by the merchant.", {
-      status: 403,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-
-  try {
-    const { admin } = await unauthenticated.admin(shop);
-
-    const response = await admin.graphql(ORDER_INVOICE_QUERY, {
-      variables: { id: orderId },
-    });
-    const json = await response.json();
-    const order: InvoiceOrder | undefined = json.data?.order;
-
-    if (!order) {
-      return new Response("Order not found.", {
-        status: 404,
-        headers: { "Content-Type": "text/plain" },
-      });
-    }
-
-    const numericId = (gidOrId?: string | null) => gidOrId?.match(/\d+$/)?.[0];
-    if (!order.customer?.id || numericId(order.customer.id) !== numericId(customerId)) {
-      return new Response("Not authorized to access this order.", {
-        status: 403,
-        headers: { "Content-Type": "text/plain" },
-      });
-    }
-
-    const pdfBuffer = await generateInvoicePdf(order);
-    const filename = `invoice-${order.name.replace(/[^a-zA-Z0-9-_]/g, "")}.pdf`;
-
-    return new Response(new Uint8Array(pdfBuffer), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        // "inline" lets the browser open/preview it in the new tab rather
-        // than forcing a save dialog, matching the previous window.open UX.
-        "Content-Disposition": `inline; filename="${filename}"`,
-        "Content-Length": String(pdfBuffer.length),
-        "Cache-Control": "no-store",
-      },
-    });
-  } catch (err: unknown) {
-    console.error("[invoice-link] Unexpected error:", err);
-    return new Response("Failed to generate invoice.", {
-      status: 500,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
+  return new Response(new Uint8Array(download.pdfBuffer), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${download.filename}"`,
+      "Content-Length": String(download.pdfBuffer.length),
+      "Cache-Control": "no-store",
+    },
+  });
 }
