@@ -383,7 +383,7 @@ export default function InsightsPage(): JSX.Element {
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#008060" }}>
                 {currentData.totalEditedOrders}
               </div>
-              <s-text size="small" color="subdued">
+              <s-text color="subdued">
                 Unique customer orders updated {timeframeLabel.toLowerCase()}
               </s-text>
             </s-stack>
@@ -396,7 +396,7 @@ export default function InsightsPage(): JSX.Element {
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#1a1d1f" }}>
                 {totalStoreOrders}
               </div>
-              <s-text size="small" color="subdued">
+              <s-text color="subdued">
                 Active orders currently pending fulfillment
               </s-text>
             </s-stack>
@@ -412,7 +412,7 @@ export default function InsightsPage(): JSX.Element {
                   / {totalFeatures} Enabled
                 </span>
               </div>
-              <s-text size="small" color="subdued">
+              <s-text color="subdued">
                 Self-service features available to customers
               </s-text>
             </s-stack>
@@ -514,7 +514,7 @@ export default function InsightsPage(): JSX.Element {
               <s-box padding="large" background="subdued" borderRadius="base">
                 <s-stack direction="block" gap="small" alignItems="center">
                   <s-text type="strong">No customer order updates for {timeframeLabel.toLowerCase()}</s-text>
-                  <s-text color="subdued" size="small">
+                  <s-text color="subdued">
                     When customers edit their items, addresses, or options, their update activity will be recorded and displayed here.
                   </s-text>
                 </s-stack>
@@ -539,7 +539,7 @@ export default function InsightsPage(): JSX.Element {
                             rel="noopener noreferrer"
                             style={{ textDecoration: "none", color: "#2c6ecb", fontWeight: "700" }}
                           >
-                            <s-text type="strong" color="interactive">
+                            <s-text type="strong">
                               {update.orderName}
                             </s-text>
                           </a>
@@ -558,7 +558,7 @@ export default function InsightsPage(): JSX.Element {
                             </s-badge>
                           )}
                           {update.orderTotal && (
-                            <s-text size="small" color="subdued">
+                            <s-text color="subdued">
                               • {update.orderTotal}
                             </s-text>
                           )}
@@ -566,11 +566,11 @@ export default function InsightsPage(): JSX.Element {
 
                         <s-stack direction="inline" gap="small" alignItems="center">
                           {update.customerEmail && (
-                            <s-text size="small" color="subdued">
+                            <s-text color="subdued">
                               {update.customerEmail} •
                             </s-text>
                           )}
-                          <s-text size="small" color="subdued">
+                          <s-text color="subdued">
                             Updated {formatUpdateDate(update.createdAt)}
                           </s-text>
                         </s-stack>

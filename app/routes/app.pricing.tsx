@@ -2,34 +2,78 @@ import { useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
+import { authenticate, PLAN_NAMES } from "../shopify.server";
 import db from "../db.server";
 import { PLANS, getPlan } from "../config/plans";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const shop = session.shop
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
     .toLowerCase()
     .trim();
 
-  // 1. Fetch current subscription for this shop
+  // 1. Check with Shopify Billing for any active paid plan
+  let activePaidPlanId: "starter" | "growth" | "pro" | null = null;
+  let activeBillingCycle: "monthly" | "yearly" = "monthly";
+
+  try {
+    const isTest = process.env.NODE_ENV !== "production";
+    const billingCheck = await billing.check({
+      plans: Object.values(PLAN_NAMES),
+      isTest,
+    });
+
+    if (billingCheck.hasActivePayment && billingCheck.appSubscriptions?.length > 0) {
+      const activeSub = billingCheck.appSubscriptions[0];
+      const match = Object.entries(PLAN_NAMES).find(([_, name]) => name === activeSub.name);
+      if (match) {
+        const [planKey] = match;
+        const [pId, cycle] = planKey.split("_") as [
+          "starter" | "growth" | "pro",
+          "monthly" | "yearly",
+        ];
+        activePaidPlanId = pId;
+        activeBillingCycle = cycle;
+      }
+    }
+  } catch (err) {
+    console.warn("[app.pricing] Error checking Shopify billing:", err);
+  }
+
+  // 2. Fetch or sync current subscription in database
   let subscription = await db.merchantSubscription.findUnique({
     where: { shop },
   });
+
+  const verifiedPlanId = activePaidPlanId || "free";
+  const verifiedBillingCycle = activePaidPlanId
+    ? activeBillingCycle
+    : subscription?.billingCycle || "monthly";
 
   if (!subscription) {
     subscription = await db.merchantSubscription.create({
       data: {
         shop,
-        planId: "free",
-        billingCycle: "monthly",
+        planId: verifiedPlanId,
+        billingCycle: verifiedBillingCycle,
+      },
+    });
+  } else if (
+    subscription.planId !== verifiedPlanId ||
+    (activePaidPlanId && subscription.billingCycle !== verifiedBillingCycle)
+  ) {
+    subscription = await db.merchantSubscription.update({
+      where: { shop },
+      data: {
+        planId: verifiedPlanId,
+        billingCycle: verifiedBillingCycle,
       },
     });
   }
 
-  // 2. Count edited orders for current month
+  // 3. Count edited orders for current month
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const editedOrdersCount = await db.editedOrder.count({
@@ -48,7 +92,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const shop = session.shop
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
@@ -61,59 +105,87 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const billingCycle = (formData.get("billingCycle") as string) || "monthly";
 
   if (intent === "selectPlan" && targetPlanId && PLANS[targetPlanId]) {
-    const updated = await db.merchantSubscription.upsert({
-      where: { shop },
-      create: {
-        shop,
-        planId: targetPlanId,
-        billingCycle,
-      },
-      update: {
-        planId: targetPlanId,
-        billingCycle,
-      },
-    });
+    const isTest = process.env.NODE_ENV !== "production";
 
-    const targetPlan = PLANS[targetPlanId];
-    // Automatically disable any active services that are not allowed on the new plan
-    const allServices = await db.serviceSettings.findMany({ where: { shop } });
-    const disallowed = allServices.filter(
-      (s) => s.enabled && !targetPlan.allowedServices.includes(s.id),
-    );
-    if (disallowed.length > 0) {
-      await db.serviceSettings.updateMany({
-        where: {
-          shop,
-          id: { in: disallowed.map((d) => d.id) },
-        },
-        data: { enabled: false },
-      });
-    }
-
+    // 1. If merchant selects the Free plan, cancel any active paid Shopify subscriptions
     if (targetPlanId === "free") {
+      try {
+        const billingCheck = await billing.check({
+          plans: Object.values(PLAN_NAMES),
+          isTest,
+        });
+        if (billingCheck.hasActivePayment && billingCheck.appSubscriptions?.length > 0) {
+          for (const sub of billingCheck.appSubscriptions) {
+            await billing.cancel({
+              subscriptionId: sub.id,
+              isTest,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[app.pricing] Error cancelling existing subscriptions:", err);
+      }
+
+      const updated = await db.merchantSubscription.upsert({
+        where: { shop },
+        create: {
+          shop,
+          planId: "free",
+          billingCycle,
+        },
+        update: {
+          planId: "free",
+          billingCycle,
+        },
+      });
+
+      const targetPlan = PLANS.free;
+      const allServices = await db.serviceSettings.findMany({ where: { shop } });
+      const disallowed = allServices.filter(
+        (s) => s.enabled && !targetPlan.allowedServices.includes(s.id),
+      );
+      if (disallowed.length > 0) {
+        await db.serviceSettings.updateMany({
+          where: {
+            shop,
+            id: { in: disallowed.map((d) => d.id) },
+          },
+          data: { enabled: false },
+        });
+      }
+
       await db.orderEditTimeLimit.upsert({
         where: { shop },
         create: { shop, timeLimit: "1h", maxEdits: 3 },
         update: { timeLimit: "1h", maxEdits: 3 },
       });
-    } else if (targetPlanId === "pro") {
-      // Pro includes Unlimited edited orders by default (0 represents unlimited)
-      await db.orderEditTimeLimit.upsert({
-        where: { shop },
-        create: { shop, timeLimit: "1h", maxEdits: 0 },
-        update: { maxEdits: 0 },
-      });
-    } else if (targetPlanId !== "pro") {
-      const tl = await db.orderEditTimeLimit.findUnique({ where: { shop } });
-      if (tl?.timeLimit === "custom") {
-        await db.orderEditTimeLimit.update({
-          where: { shop },
-          data: { timeLimit: "1h" },
-        });
-      }
+
+      return { ok: true, subscription: updated };
     }
 
-    return { ok: true, subscription: updated };
+    // 2. Paid plans (starter, growth, pro):
+    // Do NOT directly update db.merchantSubscription!
+    // Request billing from Shopify. When approved, Shopify redirects back to the app,
+    // and loader verifies the active subscription before updating the DB.
+    const planKey = `${targetPlanId}_${
+      billingCycle === "yearly" ? "yearly" : "monthly"
+    }` as keyof typeof PLAN_NAMES;
+    const planName = PLAN_NAMES[planKey];
+
+    if (!planName) {
+      return { ok: false, error: "Invalid plan or billing cycle" };
+    }
+
+    const host = new URL(request.url).searchParams.get("host") || "";
+    const returnUrl = `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/pricing${
+      host ? `?host=${encodeURIComponent(host)}` : ""
+    }`;
+
+    return await billing.request({
+      plan: planName,
+      isTest,
+      returnUrl,
+    });
   }
 
   return { ok: false, error: "Invalid action" };
@@ -155,14 +227,18 @@ export default function PricingPage(): JSX.Element {
           <s-stack direction="block" gap="small">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
               <div>
-                <s-text type="strong" style={{ fontSize: "16px" }}>
-                  Current Plan: <span style={{ textTransform: "capitalize", color: "#008060" }}>{activePlan.name}</span>
-                </s-text>
-                <s-paragraph color="subdued" style={{ marginTop: "4px" }}>
-                  {activePlan.monthlyOrderLimit === null
-                    ? `Unlimited monthly edited orders (${editedOrdersCount} edits this month)`
-                    : `${editedOrdersCount} of ${activePlan.monthlyOrderLimit} monthly edited orders used`}
-                </s-paragraph>
+                <div style={{ fontSize: "16px" }}>
+                  <s-text type="strong">
+                    Current Plan: <span style={{ textTransform: "capitalize", color: "#008060" }}>{activePlan.name}</span>
+                  </s-text>
+                </div>
+                <div style={{ marginTop: "4px" }}>
+                  <s-paragraph color="subdued">
+                    {activePlan.monthlyOrderLimit === null
+                      ? `Unlimited monthly edited orders (${editedOrdersCount} edits this month)`
+                      : `${editedOrdersCount} of ${activePlan.monthlyOrderLimit} monthly edited orders used`}
+                  </s-paragraph>
+                </div>
               </div>
 
               {/* Billing Toggle (Monthly vs Yearly) */}

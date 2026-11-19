@@ -59,12 +59,28 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // For a real app you might want to create a return or just tag the order, 
-    // but here we demonstrate the orderCancel mutation.
+    const VALID_CANCEL_REASONS = new Set([
+      "CUSTOMER",
+      "DECLINED",
+      "FRAUD",
+      "INVENTORY",
+      "OTHER",
+      "STAFF",
+    ]);
+
+    const sanitizedReason =
+      typeof reason === "string" && VALID_CANCEL_REASONS.has(reason.trim().toUpperCase())
+        ? reason.trim().toUpperCase()
+        : "CUSTOMER";
+
+    // Only attempt an automated payment refund if the order has paid funds captured
+    const financialStatus = guard.order.displayFinancialStatus;
+    const isPaid = financialStatus === "PAID" || financialStatus === "PARTIALLY_PAID";
+
     const cancelResponse = await admin.graphql(
       `#graphql
-      mutation OrderCancel($orderId: ID!, $reason: OrderCancelReason!) {
-        orderCancel(orderId: $orderId, reason: $reason, notifyCustomer: true, restock: true, refundMethod: { originalPaymentMethodsRefund: true }) {
+      mutation OrderCancel($orderId: ID!, $reason: OrderCancelReason!, $restock: Boolean!, $refundMethod: OrderCancelRefundMethodInput) {
+        orderCancel(orderId: $orderId, reason: $reason, notifyCustomer: true, restock: $restock, refundMethod: $refundMethod) {
           job { id }
           orderCancelUserErrors { field message }
         }
@@ -72,7 +88,9 @@ export async function action({ request }: ActionFunctionArgs) {
       { 
         variables: { 
           orderId,
-          reason: reason || "CUSTOMER"
+          reason: sanitizedReason,
+          restock: true,
+          refundMethod: isPaid ? { originalPaymentMethodsRefund: true } : null,
         } 
       },
     );

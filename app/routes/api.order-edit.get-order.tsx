@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { releasePaymentPendingHold } from "../utils/fulfillmentHoldHelper.server";
+import { validateOrderEditable } from "../utils/orderGuard.server";
 
 const GET_ORDER_DETAILS_QUERY = `#graphql
   query GetOrderLineItems($id: ID!) {
@@ -96,6 +97,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return cors(Response.json({ error: "Missing orderId" }, { status: 400 }));
   }
 
+  // Centralized security guard (Ownership, Existence, Quota)
+  const baseGuard = await validateOrderEditable({
+    admin,
+    shop: storeDomain,
+    orderId,
+    customerAccountId: sessionToken.sub,
+    checkFulfillment: false,
+    checkCancellation: false,
+    checkTimeLimit: false,
+    checkEditLimit: false,
+  });
+
+  if (!baseGuard.allowed) {
+    return cors(Response.json({ error: baseGuard.message }, { status: baseGuard.status }));
+  }
+
+  // Check full order editability (Fulfillment, Cancellation, Time Window, Max Edits)
+  const editGuard = await validateOrderEditable({
+    admin,
+    shop: storeDomain,
+    orderId,
+    customerAccountId: sessionToken.sub,
+    checkFulfillment: true,
+    checkCancellation: true,
+    checkTimeLimit: true,
+    checkEditLimit: true,
+  });
+
   try {
     const response = await admin.graphql(GET_ORDER_DETAILS_QUERY, {
       variables: { id: orderId },
@@ -110,14 +139,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const orderData = json.data?.order;
     if (!orderData) {
       return cors(Response.json({ error: "Order not found" }, { status: 404 }));
-    }
-
-    const numericId = (gidOrId?: string | null) => gidOrId?.match(/\d+$/)?.[0];
-    if (
-      !orderData.customer?.id ||
-      numericId(orderData.customer.id) !== numericId(sessionToken.sub)
-    ) {
-      return cors(Response.json({ error: "Unauthorized access to order." }, { status: 403 }));
     }
 
     const rawEdges = json.data?.order?.lineItems?.edges ?? [];
@@ -210,6 +231,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
           currentTotalPriceSet: orderData.currentTotalPriceSet ?? null,
           hasPaymentPending: Boolean(hasPaymentPending),
           totalOutstanding,
+          isEditable: editGuard.allowed,
+          editRestrictionReason: editGuard.allowed ? null : editGuard.message,
         },
         lineItems,
       }),

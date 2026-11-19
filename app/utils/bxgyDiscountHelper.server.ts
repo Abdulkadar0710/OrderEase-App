@@ -165,6 +165,7 @@ export async function getBxgyRuleForCode(
   getVariantIds: string[];
   getProductIds: string[];
   getCollectionIds: string[];
+  getQuantity: number;
 } | null> {
   try {
     const res = await admin.graphql(

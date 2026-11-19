@@ -2,10 +2,20 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
+  BillingInterval,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
+
+export const PLAN_NAMES = {
+  starter_monthly: "Starter Plan (Monthly)",
+  starter_yearly: "Starter Plan (Annual)",
+  growth_monthly: "Growth Plan (Monthly)",
+  growth_yearly: "Growth Plan (Annual)",
+  pro_monthly: "Pro Plan (Monthly)",
+  pro_yearly: "Pro Plan (Annual)",
+} as const;
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -18,6 +28,68 @@ const shopify = shopifyApp({
   distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,
+  },
+  billing: {
+    [PLAN_NAMES.starter_monthly]: {
+      lineItems: [
+        {
+          amount: 10,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+      trialDays: 14,
+    },
+    [PLAN_NAMES.starter_yearly]: {
+      lineItems: [
+        {
+          amount: 96,
+          currencyCode: "USD",
+          interval: BillingInterval.Annual,
+        },
+      ],
+      trialDays: 14,
+    },
+    [PLAN_NAMES.growth_monthly]: {
+      lineItems: [
+        {
+          amount: 29,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+      trialDays: 14,
+    },
+    [PLAN_NAMES.growth_yearly]: {
+      lineItems: [
+        {
+          amount: 278.4,
+          currencyCode: "USD",
+          interval: BillingInterval.Annual,
+        },
+      ],
+      trialDays: 14,
+    },
+    [PLAN_NAMES.pro_monthly]: {
+      lineItems: [
+        {
+          amount: 60,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+      trialDays: 14,
+    },
+    [PLAN_NAMES.pro_yearly]: {
+      lineItems: [
+        {
+          amount: 576,
+          currencyCode: "USD",
+          interval: BillingInterval.Annual,
+        },
+      ],
+      trialDays: 14,
+    },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }

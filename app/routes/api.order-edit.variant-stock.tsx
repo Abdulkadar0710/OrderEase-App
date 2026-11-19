@@ -49,7 +49,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       { variables: { id: variantId } },
     );
 
-    const json = await response.json();
+    const json: any = await response.json();
     if (json.errors?.length) {
       return cors(Response.json({ error: json.errors[0].message }, { status: 400 }));
     }

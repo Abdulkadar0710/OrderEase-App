@@ -625,19 +625,23 @@ export default function ActiveServicesPage(): JSX.Element {
             }}
           >
             <div>
-              <s-text type="strong" style={{ fontSize: "15px" }}>
-                Active Plan:{" "}
-                <span style={{ color: "#008060", textTransform: "capitalize" }}>
-                  {plan.name} (${plan.monthlyPrice}/mo)
-                </span>
-              </s-text>
-              <s-paragraph color="subdued" style={{ marginTop: "3px" }}>
-                {plan.monthlyOrderLimit === null
-                  ? `Unlimited monthly edited orders (${quota.usedCount} edits used this month).`
-                  : `${quota.usedCount} of ${plan.monthlyOrderLimit} monthly edited orders used this cycle.`}
-                {plan.id === "free" &&
-                  " Features beyond the Free plan are locked and require an upgrade to enable."}
-              </s-paragraph>
+              <div style={{ fontSize: "15px" }}>
+                <s-text type="strong">
+                  Active Plan:{" "}
+                  <span style={{ color: "#008060", textTransform: "capitalize" }}>
+                    {plan.name} (${plan.monthlyPrice}/mo)
+                  </span>
+                </s-text>
+              </div>
+              <div style={{ marginTop: "3px" }}>
+                <s-paragraph color="subdued">
+                  {plan.monthlyOrderLimit === null
+                    ? `Unlimited monthly edited orders (${quota.usedCount} edits used this month).`
+                    : `${quota.usedCount} of ${plan.monthlyOrderLimit} monthly edited orders used this cycle.`}
+                  {plan.id === "free" &&
+                    " Features beyond the Free plan are locked and require an upgrade to enable."}
+                </s-paragraph>
+              </div>
             </div>
             <a
               href="/app/pricing"
@@ -1422,9 +1426,11 @@ function GoogleApiKeySection({
           >
             <div>
               <s-text type="strong">Google Places Address Autocomplete</s-text>
-              <s-paragraph color="subdued" style={{ marginTop: "4px" }}>
-                Eliminate address typos and delivery delays with Google Places autocomplete. Available on the <strong>Growth ($29/mo)</strong> and <strong>Pro ($60/mo)</strong> plans.
-              </s-paragraph>
+              <div style={{ marginTop: "4px" }}>
+                <s-paragraph color="subdued">
+                  Eliminate address typos and delivery delays with Google Places autocomplete. Available on the <strong>Growth ($29/mo)</strong> and <strong>Pro ($60/mo)</strong> plans.
+                </s-paragraph>
+              </div>
             </div>
             <a
               href="/app/pricing"
@@ -1556,7 +1562,7 @@ function GoogleApiKeySection({
             padding="base"
             border="base"
             borderRadius="base"
-            background="surface"
+            background="base"
           >
             <s-stack direction="block" gap="base">
               <s-text type="strong">Merchant API Key</s-text>
@@ -1711,12 +1717,14 @@ function ProductTagsSection({
           >
             <div>
               <s-text type="strong">Product Upsell & Recommendations</s-text>
-              <s-paragraph color="subdued" style={{ marginTop: "4px" }}>
-                Offer smart product recommendations and add-ons directly on
-                customer order edit pages to increase revenue. Available on the{" "}
-                <strong>Growth ($29/mo)</strong> and{" "}
-                <strong>Pro ($60/mo)</strong> plans.
-              </s-paragraph>
+              <div style={{ marginTop: "4px" }}>
+                <s-paragraph color="subdued">
+                  Offer smart product recommendations and add-ons directly on
+                  customer order edit pages to increase revenue. Available on the{" "}
+                  <strong>Growth ($29/mo)</strong> and{" "}
+                  <strong>Pro ($60/mo)</strong> plans.
+                </s-paragraph>
+              </div>
             </div>
             <a
               href="/app/pricing"

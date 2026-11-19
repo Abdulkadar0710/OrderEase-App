@@ -23,6 +23,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       db.googlePlacesConfig.deleteMany(shopFilter),
       db.editedOrder.deleteMany(shopFilter),
       db.featureUsage.deleteMany(shopFilter),
+      db.merchantSubscription.deleteMany(shopFilter),
     ]);
 
     return new Response(null, { status: 200 });

@@ -49,7 +49,7 @@ type DiscountApplicationNode = {
 };
 
 type AllocationNode = {
-  allocatedAmountSet?: { shopMoney: Money } | null;
+  allocatedAmountSet?: { shopMoney: Money; presentmentMoney?: Money | null } | null;
   discountApplication?: DiscountApplicationNode | null;
 };
 
@@ -67,7 +67,7 @@ type LineItemNode = {
       collections?: { nodes: { id: string }[] } | null;
     } | null;
   } | null;
-  originalUnitPriceSet?: { shopMoney: Money } | null;
+  originalUnitPriceSet?: { shopMoney: Money; presentmentMoney?: Money | null } | null;
   calculatedDiscountAllocations?: AllocationNode[] | null;
 };
 
@@ -76,6 +76,10 @@ type ShippingLineNode = {
   title?: string | null;
   price?: {
     shopMoney?: {
+      amount: string;
+      currencyCode: string;
+    } | null;
+    presentmentMoney?: {
       amount: string;
       currencyCode: string;
     } | null;
@@ -233,6 +237,11 @@ type ResolvedDiscount =
       minimumQuantity?: number | null;
       minimumSubtotal?: { amount: number; currencyCode: string } | null;
       combinesWith: DiscountCombinesWith;
+      destinationSelection?: {
+        allCountries: boolean;
+        countries: string[];
+        includeRestOfWorld: boolean;
+      };
     };
 
 export interface ExistingDiscountSummary {
@@ -1192,7 +1201,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }`,
             { variables: { id: calculatedOrderId, discountApplicationId: incomp.id } },
           );
-          const removeJson = await removeRes.json();
+          const removeJson: any = await removeRes.json();
           const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
           if (removeJson.errors?.length || removeErrors.length) {
             const rawMsg = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
@@ -1523,7 +1532,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }`,
             { variables: { id: calculatedOrderId, discountApplicationId: incomp.id } },
           );
-          const removeJson = await removeRes.json();
+          const removeJson: any = await removeRes.json();
           const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
           if (removeJson.errors?.length || removeErrors.length) {
             const rawMsg = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
@@ -1572,7 +1581,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }`,
             { variables: { id: calculatedOrderId, discountApplicationId: state.existingApplicationId } },
           );
-          const removeJson = await removeRes.json();
+          const removeJson: any = await removeRes.json();
           if (removeJson.data?.orderEditRemoveDiscount?.userErrors?.length) {
             return cors(
               Response.json(
@@ -1650,7 +1659,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         },
       );
-      let applyJson = await applyRes.json();
+      let applyJson: any = await applyRes.json();
       let applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
 
       if (applyErrors.length) {
@@ -1880,7 +1889,7 @@ export async function action({ request }: ActionFunctionArgs) {
           }`,
           { variables: { id: calculatedOrderId, discountApplicationId: incomp.id } },
         );
-        const removeJson = await removeRes.json();
+        const removeJson: any = await removeRes.json();
         const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
         if (removeJson.errors?.length || removeErrors.length) {
           const rawMsg = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
@@ -1946,7 +1955,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }`,
             { variables: { id: calculatedOrderId, discountApplicationId: state.existingApplicationId } },
           );
-          const removeJson = await removeRes.json();
+          const removeJson: any = await removeRes.json();
           const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
           if (removeJson.errors?.length || removeErrors.length) {
             warnings.push(
@@ -1977,7 +1986,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }`,
             { variables: { id: calculatedOrderId, discountApplicationId: state.existingApplicationId } },
           );
-          const removeJson = await removeRes.json();
+          const removeJson: any = await removeRes.json();
           const removeErrors = removeJson.data?.orderEditRemoveDiscount?.userErrors ?? [];
           if (removeJson.errors?.length || removeErrors.length) {
             const rawMessage = removeErrors[0]?.message ?? removeJson.errors?.[0]?.message ?? "unknown error";
@@ -2024,7 +2033,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         },
       );
-      let applyJson = await applyRes.json();
+      let applyJson: any = await applyRes.json();
       let applyErrors = applyJson.data?.orderEditAddLineItemDiscount?.userErrors ?? [];
 
       if (applyErrors.length) {

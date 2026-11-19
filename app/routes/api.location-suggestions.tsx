@@ -18,6 +18,37 @@ interface SuggestionItem {
   country: string;
 }
 
+interface RateLimitRecord {
+  count: number;
+  resetAt: number;
+}
+
+const rateLimitMap = new Map<string, RateLimitRecord>();
+
+function checkRateLimit(key: string, limit = 40, windowMs = 60 * 1000): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(key);
+  if (!record || now > record.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (record.count >= limit) {
+    return false;
+  }
+  record.count += 1;
+  return true;
+}
+
+// Clean up expired rate limit entries every 2 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateLimitMap.entries()) {
+    if (now > v.resetAt) {
+      rateLimitMap.delete(k);
+    }
+  }
+}, 2 * 60 * 1000).unref();
+
 function normalizeShopDomain(dest?: string | null): string {
   return (dest ?? "")
     .replace(/^https?:\/\//, "")
@@ -28,6 +59,7 @@ function normalizeShopDomain(dest?: string | null): string {
 
 async function handleLocationSuggestions(
   storeDomain: string,
+  customerAccountId: string,
   cors: (response: Response) => Response,
   q: string,
   countryCode: string,
@@ -35,6 +67,34 @@ async function handleLocationSuggestions(
   if (!storeDomain) {
     return cors(Response.json({ error: "Unauthorized" }, { status: 401 }));
   }
+
+  // 1. Sliding window rate limiting (40 requests per minute per user/shop)
+  const rateLimitKey = `${storeDomain}:${customerAccountId || "anon"}`;
+  if (!checkRateLimit(rateLimitKey, 40, 60 * 1000)) {
+    return cors(
+      Response.json(
+        { error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": "15" } },
+      ),
+    );
+  }
+
+  // 2. Query bounds and sanitization
+  const sanitizedQ = (q || "").replace(/[\x00-\x1F\x7F]/g, "").trim();
+  if (sanitizedQ.length < 2) {
+    return cors(Response.json({ suggestions: [] }));
+  }
+  if (sanitizedQ.length > 100) {
+    return cors(
+      Response.json({ error: "Query exceeds maximum length of 100 characters." }, { status: 400 }),
+    );
+  }
+
+  // 3. Strict 2-letter ISO country code validation
+  const validCountryCode = countryCode && /^[A-Za-z]{2}$/.test(countryCode.trim())
+    ? countryCode.trim().toUpperCase()
+    : "";
+
   const plan = await getMerchantPlan(storeDomain);
   if (!isGooglePlacesAllowedOnPlan(plan.id)) {
     return cors(Response.json({ suggestions: [] }));
@@ -42,34 +102,33 @@ async function handleLocationSuggestions(
   if (!(await isServiceEnabled(storeDomain, "change-address"))) {
     return cors(Response.json({ error: "This feature is not enabled by the merchant." }, { status: 403 }));
   }
-  if (!q || q.length < 2) {
-    return cors(Response.json({ suggestions: [] }));
-  }
 
-  const suggestions = await fetchLocationSuggestions(q, storeDomain, countryCode);
+  const suggestions = await fetchLocationSuggestions(sanitizedQ, storeDomain, validCountryCode);
   return cors(Response.json({ suggestions }));
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
   const storeDomain = normalizeShopDomain(sessionToken.dest);
+  const customerAccountId = sessionToken.sub;
   const url = new URL(request.url);
-  const q = url.searchParams.get("q")?.trim() || "";
-  const countryCode = url.searchParams.get("countryCode")?.trim() || "";
+  const q = url.searchParams.get("q") || "";
+  const countryCode = url.searchParams.get("countryCode") || "";
 
-  return handleLocationSuggestions(storeDomain, cors, q, countryCode);
+  return handleLocationSuggestions(storeDomain, customerAccountId, cors, q, countryCode);
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
   const storeDomain = normalizeShopDomain(sessionToken.dest);
+  const customerAccountId = sessionToken.sub;
 
   try {
     const body = await request.json().catch(() => ({}));
-    const q = (body.q || "").trim();
-    const countryCode = (body.countryCode || "").trim();
+    const q = body.q || "";
+    const countryCode = body.countryCode || "";
 
-    return handleLocationSuggestions(storeDomain, cors, q, countryCode);
+    return handleLocationSuggestions(storeDomain, customerAccountId, cors, q, countryCode);
   } catch (err) {
     return cors(Response.json({ suggestions: [] }));
   }

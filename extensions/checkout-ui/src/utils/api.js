@@ -1,5 +1,7 @@
-// TODO: replace with your app's deployed URL (must match SHOPIFY_APP_URL / application_url).
-const APP_URL = 'https://orderease-app-production-2d7c0f5b.up.railway.app';
+// Backend application URL: defaults to production deployment, overrideable via build or runtime environment.
+export const APP_URL =
+  (typeof process !== 'undefined' && process?.env && (process.env.SHOPIFY_APP_URL || process.env.APP_URL)) ||
+  'https://orderease-app-production-2d7c0f5b.up.railway.app';
 
 /**
  * Normalizes any order ID string to standard Shopify Admin GID format:

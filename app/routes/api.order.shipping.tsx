@@ -5,6 +5,202 @@ import { trackOrderEdit } from "../utils/analyticsHelper.server";
 import { isCustomerAuthorized, isServiceEnabled, validateOrderEditable } from "../utils/orderGuard.server";
 import { detectActiveFreeShipping, persistFreeShippingCode } from "../utils/freeShippingHelper.server";
 
+interface ScoredMethod {
+  id: string;
+  title: string;
+  price: number;
+  score: number;
+}
+
+export async function fetchStoreShippingMethods({
+  admin,
+  session,
+  storeDomain,
+  orderCountry,
+}: {
+  admin: any;
+  session?: any;
+  storeDomain: string;
+  orderCountry: string | null;
+}): Promise<Array<{ id: string; title: string; price: number }>> {
+  const scoredMap = new Map<string, ScoredMethod>();
+
+  // Strategy 1: GraphQL deliveryProfiles with destination-zone matching
+  try {
+    const profilesRes = await admin.graphql(
+      `#graphql
+      query getStoreDeliveryProfiles {
+        deliveryProfiles(first: 20) {
+          nodes {
+            id
+            name
+            default
+            profileLocationGroups {
+              locationGroupZones(first: 20) {
+                nodes {
+                  zone {
+                    id
+                    name
+                    countries {
+                      code {
+                        countryCode
+                        restOfWorld
+                      }
+                    }
+                  }
+                  methodDefinitions(first: 20) {
+                    nodes {
+                      id
+                      name
+                      active
+                      rateProvider {
+                        __typename
+                        ... on DeliveryRateDefinition {
+                          price {
+                            amount
+                            currencyCode
+                          }
+                        }
+                        ... on DeliveryParticipant {
+                          id
+                          fixedFee {
+                            amount
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`
+    );
+    const profilesJson = await profilesRes.json();
+    const profiles = profilesJson.data?.deliveryProfiles?.nodes || [];
+
+    for (const profile of profiles) {
+      const isCustomProfile = !profile.default;
+      const groups = profile.profileLocationGroups || [];
+      for (const group of groups) {
+        const zones = group.locationGroupZones?.nodes || [];
+        for (const zoneNode of zones) {
+          const zone = zoneNode.zone;
+          const countries = zone?.countries || [];
+
+          let isExactCountryMatch = false;
+          let isRestOfWorldMatch = false;
+
+          if (orderCountry) {
+            for (const c of countries) {
+              if (c.code?.countryCode === orderCountry) {
+                isExactCountryMatch = true;
+                break;
+              }
+              if (c.code?.restOfWorld) {
+                isRestOfWorldMatch = true;
+              }
+            }
+          }
+
+          // If order has a known destination country, skip zones that don't cover it
+          if (orderCountry && !isExactCountryMatch && !isRestOfWorldMatch) {
+            continue;
+          }
+
+          let score = 5;
+          if (isExactCountryMatch) {
+            score = isCustomProfile ? 40 : 30;
+          } else if (isRestOfWorldMatch) {
+            score = isCustomProfile ? 20 : 10;
+          }
+
+          const defs = zoneNode.methodDefinitions?.nodes || [];
+          for (const def of defs) {
+            const name = def.name;
+            if (!name) continue;
+
+            let price = 0;
+            if (def.rateProvider?.__typename === "DeliveryRateDefinition" && def.rateProvider.price?.amount) {
+              price = parseFloat(def.rateProvider.price.amount);
+            } else if (def.rateProvider?.__typename === "DeliveryParticipant" && def.rateProvider.fixedFee?.amount) {
+              price = parseFloat(def.rateProvider.fixedFee.amount);
+            }
+
+            const key = name.toLowerCase().trim();
+            const existing = scoredMap.get(key);
+            if (!existing || score > existing.score) {
+              scoredMap.set(key, {
+                id: def.id || key,
+                title: name,
+                price,
+                score,
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[order-shipping] GraphQL deliveryProfiles fetch error:", e);
+  }
+
+  // Strategy 2: REST shipping_zones.json fallback if GraphQL returned nothing
+  if (scoredMap.size === 0 && session?.accessToken) {
+    try {
+      const restRes = await fetch(`https://${storeDomain}/admin/api/2026-04/shipping_zones.json`, {
+        headers: {
+          "X-Shopify-Access-Token": session.accessToken,
+          "Content-Type": "application/json",
+        },
+      });
+      if (restRes.ok) {
+        const restJson = await restRes.json();
+        const zones = restJson.shipping_zones || [];
+        for (const zone of zones) {
+          const priceRates = zone.price_based_shipping_rates || [];
+          const weightRates = zone.weight_based_shipping_rates || [];
+          const carrierProviders = zone.carrier_shipping_rate_providers || [];
+
+          for (const rate of [...priceRates, ...weightRates]) {
+            const name = rate.name;
+            const price = parseFloat(rate.price || "0.00");
+            if (name && !scoredMap.has(name.toLowerCase())) {
+              scoredMap.set(name.toLowerCase(), {
+                id: String(rate.id || name.toLowerCase()),
+                title: name,
+                price,
+                score: 1,
+              });
+            }
+          }
+          for (const provider of carrierProviders) {
+            const name = provider.service_discovery_name || provider.carrier_service_id || "Carrier Shipping";
+            const price = parseFloat(provider.flat_modifier || "0.00");
+            if (name && !scoredMap.has(name.toLowerCase())) {
+              scoredMap.set(name.toLowerCase(), {
+                id: String(provider.id || name.toLowerCase()),
+                title: name,
+                price,
+                score: 1,
+              });
+            }
+          }
+        }
+      }
+    } catch (restErr) {
+      console.warn("[order-shipping] REST shipping_zones fetch error:", restErr);
+    }
+  }
+
+  return Array.from(scoredMap.values()).map(({ id, title, price }) => ({
+    id,
+    title,
+    price,
+  }));
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const { sessionToken, cors } = await authenticate.public.customerAccount(request);
 
@@ -107,198 +303,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       : null;
 
-    let availableMethods: Array<{ id: string; title: string; price: number }> = [];
     const orderCountry = order?.shippingAddress?.countryCode || null;
-
-    interface ScoredMethod {
-      id: string;
-      title: string;
-      price: number;
-      score: number;
-    }
-
-    const scoredMap = new Map<string, ScoredMethod>();
-
-    // Strategy 1: GraphQL deliveryProfiles with destination-zone matching
-    try {
-      const profilesRes = await admin.graphql(
-        `#graphql
-        query getStoreDeliveryProfiles {
-          deliveryProfiles(first: 20) {
-            nodes {
-              id
-              name
-              default
-              profileLocationGroups {
-                locationGroupZones(first: 20) {
-                  nodes {
-                    zone {
-                      id
-                      name
-                      countries {
-                        code {
-                          countryCode
-                          restOfWorld
-                        }
-                      }
-                    }
-                    methodDefinitions(first: 20) {
-                      nodes {
-                        id
-                        name
-                        active
-                        rateProvider {
-                          __typename
-                          ... on DeliveryRateDefinition {
-                            price {
-                              amount
-                              currencyCode
-                            }
-                          }
-                          ... on DeliveryParticipant {
-                            id
-                            fixedFee {
-                              amount
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }`
-      );
-      const profilesJson = await profilesRes.json();
-      const profiles = profilesJson.data?.deliveryProfiles?.nodes || [];
-
-      for (const profile of profiles) {
-        const isCustomProfile = !profile.default;
-        const groups = profile.profileLocationGroups || [];
-        for (const group of groups) {
-          const zones = group.locationGroupZones?.nodes || [];
-          for (const zoneNode of zones) {
-            const zone = zoneNode.zone;
-            const countries = zone?.countries || [];
-
-            let isExactCountryMatch = false;
-            let isRestOfWorldMatch = false;
-
-            if (orderCountry) {
-              for (const c of countries) {
-                if (c.code?.countryCode === orderCountry) {
-                  isExactCountryMatch = true;
-                  break;
-                }
-                if (c.code?.restOfWorld) {
-                  isRestOfWorldMatch = true;
-                }
-              }
-            }
-
-            // If order has a known destination country, skip zones that don't cover it
-            if (orderCountry && !isExactCountryMatch && !isRestOfWorldMatch) {
-              continue;
-            }
-
-            // Priority scoring:
-            // 40: Custom profile with exact country match (e.g. dedicated North America profile for US)
-            // 30: Default profile with exact country match
-            // 20: Custom profile with rest of world match
-            // 10: Default profile with rest of world match
-            // 5: Generic fallback when no destination country is known
-            let score = 5;
-            if (isExactCountryMatch) {
-              score = isCustomProfile ? 40 : 30;
-            } else if (isRestOfWorldMatch) {
-              score = isCustomProfile ? 20 : 10;
-            }
-
-            const defs = zoneNode.methodDefinitions?.nodes || [];
-            for (const def of defs) {
-              const name = def.name;
-              if (!name) continue;
-
-              let price = 0;
-              if (def.rateProvider?.__typename === "DeliveryRateDefinition" && def.rateProvider.price?.amount) {
-                price = parseFloat(def.rateProvider.price.amount);
-              } else if (def.rateProvider?.__typename === "DeliveryParticipant" && def.rateProvider.fixedFee?.amount) {
-                price = parseFloat(def.rateProvider.fixedFee.amount);
-              }
-
-              const key = name.toLowerCase().trim();
-              const existing = scoredMap.get(key);
-              if (!existing || score > existing.score) {
-                scoredMap.set(key, {
-                  id: def.id || key,
-                  title: name,
-                  price,
-                  score,
-                });
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[order-shipping-loader] GraphQL deliveryProfiles fetch error:", e);
-    }
-
-    // Strategy 2: REST shipping_zones.json fallback if GraphQL returned nothing
-    if (scoredMap.size === 0 && session?.accessToken) {
-      try {
-        const restRes = await fetch(`https://${storeDomain}/admin/api/2026-04/shipping_zones.json`, {
-          headers: {
-            "X-Shopify-Access-Token": session.accessToken,
-            "Content-Type": "application/json",
-          },
-        });
-        if (restRes.ok) {
-          const restJson = await restRes.json();
-          const zones = restJson.shipping_zones || [];
-          for (const zone of zones) {
-            const priceRates = zone.price_based_shipping_rates || [];
-            const weightRates = zone.weight_based_shipping_rates || [];
-            const carrierProviders = zone.carrier_shipping_rate_providers || [];
-
-            for (const rate of [...priceRates, ...weightRates]) {
-              const name = rate.name;
-              const price = parseFloat(rate.price || "0.00");
-              if (name && !scoredMap.has(name.toLowerCase())) {
-                scoredMap.set(name.toLowerCase(), {
-                  id: String(rate.id || name.toLowerCase()),
-                  title: name,
-                  price,
-                  score: 1,
-                });
-              }
-            }
-            for (const provider of carrierProviders) {
-              const name = provider.service_discovery_name || provider.carrier_service_id || "Carrier Shipping";
-              const price = parseFloat(provider.flat_modifier || "0.00");
-              if (name && !scoredMap.has(name.toLowerCase())) {
-                scoredMap.set(name.toLowerCase(), {
-                  id: String(provider.id || name.toLowerCase()),
-                  title: name,
-                  price,
-                  score: 1,
-                });
-              }
-            }
-          }
-        }
-      } catch (restErr) {
-        console.warn("[order-shipping-loader] REST shipping_zones fetch error:", restErr);
-      }
-    }
-
-    availableMethods = Array.from(scoredMap.values()).map(({ id, title, price }) => ({
-      id,
-      title,
-      price,
-    }));
+    let availableMethods = await fetchStoreShippingMethods({
+      admin,
+      session,
+      storeDomain,
+      orderCountry,
+    });
 
     if (freeShippingInfo.hasFreeShipping) {
       availableMethods = availableMethods.map((m) => {
@@ -339,7 +350,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const storeDomain = sessionToken.dest.replace(/^https?:\/\//, "");
   const customerAccountId = sessionToken.sub;
-  const { admin } = await unauthenticated.admin(storeDomain);
+  const { admin, session } = await unauthenticated.admin(storeDomain);
 
   const body = await request.json();
   const { orderId, title, price, currencyCode = "USD" } = body;
@@ -420,26 +431,69 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // Check if active free shipping discount exists on this order
-    const freeShippingInfo = await detectActiveFreeShipping(admin, order);
     const numericPrice = typeof price === "number" ? price : parseFloat(String(price));
+    if (isNaN(numericPrice) || numericPrice < 0) {
+      return cors(Response.json({ userErrors: [{ message: "Invalid shipping price." }] }, { status: 400 }));
+    }
+
     const cleanTitle = (title || "")
       .replace(/\s*\(Free(?:\s*-\s*[^)]+)?\)/gi, "")
       .replace(/\s*\(Already Applied\)/gi, "")
       .trim();
 
-    let finalPrice = numericPrice;
-    let finalTitle = cleanTitle;
+    if (!cleanTitle) {
+      return cors(Response.json({ userErrors: [{ message: "Shipping method title cannot be empty." }] }, { status: 400 }));
+    }
+
+    // Server-side rate validation: fetch legitimate store shipping methods for order destination
+    const orderCountry = order.shippingAddress?.countryCode || null;
+    const storeMethods = await fetchStoreShippingMethods({
+      admin,
+      session,
+      storeDomain,
+      orderCountry,
+    });
+
+    const matchingMethod = storeMethods.find(
+      (m) => m.title.trim().toLowerCase() === cleanTitle.toLowerCase()
+    );
+
+    // If store has defined shipping methods for this destination, ensure requested method exists
+    if (storeMethods.length > 0 && !matchingMethod) {
+      return cors(
+        Response.json(
+          { userErrors: [{ message: `Shipping method "${cleanTitle}" is not available for this destination.` }] },
+          { status: 400 },
+        ),
+      );
+    }
+
+    // Check if active free shipping discount exists on this order
+    const freeShippingInfo = await detectActiveFreeShipping(admin, order);
+    const expectedBasePrice = matchingMethod ? matchingMethod.price : numericPrice;
 
     const qualifiesForFreeShipping =
       freeShippingInfo.hasFreeShipping &&
-      (freeShippingInfo.maxPrice == null || numericPrice <= freeShippingInfo.maxPrice);
+      (freeShippingInfo.maxPrice == null || expectedBasePrice <= freeShippingInfo.maxPrice);
 
+    const expectedFinalPrice = qualifiesForFreeShipping ? 0 : expectedBasePrice;
+
+    // Reject caller price tampering (allow 0.01 margin for roundoff)
+    if (matchingMethod && Math.abs(numericPrice - (qualifiesForFreeShipping ? 0 : matchingMethod.price)) > 0.01) {
+      return cors(
+        Response.json(
+          { userErrors: [{ message: "Submitted shipping price does not match the store rate." }] },
+          { status: 400 },
+        ),
+      );
+    }
+
+    const finalPrice = expectedFinalPrice;
+    let finalTitle = matchingMethod ? matchingMethod.title : cleanTitle;
     if (qualifiesForFreeShipping) {
-      finalPrice = 0;
       finalTitle = freeShippingInfo.code
-        ? `${cleanTitle} (Free - ${freeShippingInfo.code})`
-        : `${cleanTitle} (Free)`;
+        ? `${finalTitle} (Free - ${freeShippingInfo.code})`
+        : `${finalTitle} (Free)`;
     }
 
     // Step 1: Begin order edit session

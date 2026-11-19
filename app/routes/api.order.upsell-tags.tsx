@@ -51,7 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       variables: { id: orderId },
     });
 
-    const json = await response.json();
+    const json: any = await response.json();
 
     if (json.errors?.length) {
       return cors(

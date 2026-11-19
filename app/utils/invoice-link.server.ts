@@ -1,43 +1,83 @@
 import crypto from "node:crypto";
 
-const LINK_TTL_MS = 5 * 60 * 1000; // 5 minutes — plenty of time to open the download
+const LINK_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-interface StoredInvoice {
-  pdfBuffer: Buffer | Uint8Array;
-  filename: string;
-  expires: number;
+interface SignedInvoicePayload {
+  shop: string;
+  orderId: string;
+  customerAccountId: string;
+  exp: number;
 }
 
-const invoiceCache = new Map<string, StoredInvoice>();
+function getSecret(): string {
+  return process.env.SHOPIFY_API_SECRET || "orderease-secure-invoice-secret";
+}
 
-// Clean up expired entries every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of invoiceCache.entries()) {
-    if (val.expires < now) {
-      invoiceCache.delete(key);
+export function createSignedInvoiceToken(params: {
+  shop: string;
+  orderId: string;
+  customerAccountId: string;
+}): string {
+  const payload: SignedInvoicePayload = {
+    shop: params.shop,
+    orderId: params.orderId,
+    customerAccountId: params.customerAccountId,
+    exp: Date.now() + LINK_TTL_MS,
+  };
+
+  const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getSecret())
+    .update(payloadBase64)
+    .digest("base64url");
+
+  return `${payloadBase64}.${signature}`;
+}
+
+export function verifySignedInvoiceToken(token: string): {
+  shop: string;
+  orderId: string;
+  customerAccountId: string;
+} | null {
+  if (!token || typeof token !== "string") return null;
+
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+
+  const [payloadBase64, signature] = parts;
+  if (!payloadBase64 || !signature) return null;
+
+  const expectedSignature = crypto
+    .createHmac("sha256", getSecret())
+    .update(payloadBase64)
+    .digest("base64url");
+
+  if (signature.length !== expectedSignature.length) return null;
+
+  const sigBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (!crypto.timingSafeEqual(sigBuffer, expectedBuffer)) return null;
+
+  try {
+    const jsonStr = Buffer.from(payloadBase64, "base64url").toString("utf-8");
+    const data: SignedInvoicePayload = JSON.parse(jsonStr);
+
+    if (!data.shop || !data.orderId || !data.customerAccountId || !data.exp) {
+      return null;
     }
-  }
-}, 60 * 1000).unref();
 
-export function storeInvoiceDownload(pdfBuffer: Buffer | Uint8Array, filename: string): string {
-  const token = crypto.randomUUID();
-  invoiceCache.set(token, {
-    pdfBuffer,
-    filename,
-    expires: Date.now() + LINK_TTL_MS,
-  });
-  return token;
-}
+    if (Date.now() > data.exp) {
+      return null;
+    }
 
-export function getInvoiceDownload(token: string): { pdfBuffer: Buffer | Uint8Array; filename: string } | null {
-  const entry = invoiceCache.get(token);
-  if (!entry) return null;
-  if (entry.expires < Date.now()) {
-    invoiceCache.delete(token);
+    return {
+      shop: data.shop,
+      orderId: data.orderId,
+      customerAccountId: data.customerAccountId,
+    };
+  } catch {
     return null;
   }
-  return { pdfBuffer: entry.pdfBuffer, filename: entry.filename };
 }
 
 export function buildSignedInvoiceUrl(appUrl: string, token: string): string {

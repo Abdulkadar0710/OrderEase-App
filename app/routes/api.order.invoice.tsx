@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { authenticate, unauthenticated } from "../shopify.server";
-import { buildSignedInvoiceUrl, storeInvoiceDownload } from "../utils/invoice-link.server";
+import { buildSignedInvoiceUrl, createSignedInvoiceToken } from "../utils/invoice-link.server";
 import { generateInvoicePdf, ORDER_INVOICE_QUERY, type InvoiceOrder } from "../utils/invoice.server";
 import { trackFeatureUsage } from "../utils/analyticsHelper.server";
 import { isServiceEnabled } from "../utils/orderGuard.server";
@@ -62,9 +62,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return cors(Response.json({ error: "Not authorized to access this order" }, { status: 403 }));
     }
 
-    const pdfBuffer = await generateInvoicePdf(order);
-    const filename = `invoice-${order.name.replace(/[^a-zA-Z0-9-_]/g, "")}.pdf`;
-    const token = storeInvoiceDownload(pdfBuffer, filename);
+    const token = createSignedInvoiceToken({
+      shop: storeDomain,
+      orderId,
+      customerAccountId,
+    });
 
     const appUrl = process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
     const invoiceUrl = buildSignedInvoiceUrl(appUrl, token);
