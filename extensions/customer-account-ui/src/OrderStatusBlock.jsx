@@ -46,12 +46,6 @@ function ModalSection({ title, subtitle, iconType, tone = "neutral", children })
 
   const handleHide = (e) => {
     if (isUpdating) {
-      if (e && typeof e.preventDefault === "function") {
-        e.preventDefault();
-      }
-      if (e && typeof e.stopPropagation === "function") {
-        e.stopPropagation();
-      }
       if (modalRef.current && typeof modalRef.current.showOverlay === "function") {
         modalRef.current.showOverlay();
       }
@@ -59,64 +53,6 @@ function ModalSection({ title, subtitle, iconType, tone = "neutral", children })
     }
     handleClose();
   };
-
-  useEffect(() => {
-    const modalEl = modalRef.current;
-    if (!modalEl) return;
-
-    const updateCloseBtnState = () => {
-      const roots = [modalEl, modalEl.shadowRoot].filter(Boolean);
-      roots.forEach((root) => {
-        const candidates = root.querySelectorAll(
-          'button:not([slot="secondary-actions"]):not([slot="primary-action"]), [part*="close"], [aria-label*="close" i], [aria-label*="Close" i], .close-button, s-clickable[command="--hide"]'
-        );
-        candidates.forEach((btn) => {
-          if (isUpdating) {
-            btn.setAttribute("disabled", "true");
-            btn.setAttribute("aria-disabled", "true");
-            btn.style.pointerEvents = "none";
-            btn.style.opacity = "0.35";
-            btn.style.cursor = "not-allowed";
-          } else {
-            btn.removeAttribute("disabled");
-            btn.removeAttribute("aria-disabled");
-            btn.style.pointerEvents = "";
-            btn.style.opacity = "";
-            btn.style.cursor = "";
-          }
-        });
-      });
-    };
-
-    updateCloseBtnState();
-    const timer = setTimeout(updateCloseBtnState, 60);
-
-    const handleIntercept = (e) => {
-      if (!isUpdating) return;
-      const target = e.target;
-      if (target?.closest?.('[slot="secondary-actions"]')) return;
-
-      const label = (target?.getAttribute?.("aria-label") || target?.getAttribute?.("accessibilityLabel") || "").toLowerCase();
-      const isClose = label.includes("close") || label.includes("dismiss");
-      const rect = modalEl.getBoundingClientRect?.();
-      const isTopRight = rect && e.clientY < rect.top + 70 && e.clientX > rect.right - 70;
-
-      if (isClose || isTopRight) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
-      }
-    };
-
-    modalEl.addEventListener("click", handleIntercept, true);
-    modalEl.addEventListener("pointerdown", handleIntercept, true);
-
-    return () => {
-      clearTimeout(timer);
-      modalEl.removeEventListener("click", handleIntercept, true);
-      modalEl.removeEventListener("pointerdown", handleIntercept, true);
-    };
-  }, [isUpdating]);
 
   return (
     <s-box background="subdued" borderWidth="base" borderRadius="large" inlineSize="100%">
@@ -164,27 +100,6 @@ function ModalSection({ title, subtitle, iconType, tone = "neutral", children })
         onShow={handleShow}
         onHide={handleHide}
       >
-        {isUpdating && (
-          <div
-            style={{
-              position: "absolute",
-              top: "8px",
-              right: "8px",
-              width: "48px",
-              height: "48px",
-              zIndex: 9999,
-              cursor: "not-allowed",
-              backgroundColor: "rgba(255, 255, 255, 0.4)",
-              borderRadius: "50%",
-              pointerEvents: "auto",
-            }}
-            title="Update in progress..."
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          />
-        )}
         <s-box paddingBlockStart="small-200" inlineSize="100%">
           <s-stack direction="block" gap="large" inlineSize="100%">
             {children}
