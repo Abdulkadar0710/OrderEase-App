@@ -6,8 +6,46 @@ import { authenticate, PLAN_NAMES } from "../shopify.server";
 import db from "../db.server";
 import { PLANS, getPlan } from "../config/plans";
 
+async function isTestBilling(admin: any, shop: string): Promise<boolean> {
+  if (process.env.BILLING_TEST_MODE === "true" || process.env.SHOPIFY_BILLING_TEST === "true") {
+    return true;
+  }
+  if (process.env.BILLING_TEST_MODE === "false") {
+    return false;
+  }
+  if (process.env.NODE_ENV !== "production") {
+    return true;
+  }
+
+  // Auto-detect partner development / test stores via Shopify Admin GraphQL
+  try {
+    const res = await admin.graphql(`#graphql
+      query getShopPlan {
+        shop {
+          plan {
+            partnerDevelopment
+          }
+        }
+      }
+    `);
+    const json: any = await res.json();
+    if (json.data?.shop?.plan?.partnerDevelopment) {
+      return true;
+    }
+  } catch (e) {
+    console.warn("[app.pricing] Failed to query shop plan:", e);
+  }
+
+  // Fallback domain check for dev / test stores
+  if (shop.includes("test") || shop.includes("dev")) {
+    return true;
+  }
+
+  return false;
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session, billing } = await authenticate.admin(request);
+  const { session, billing, admin } = await authenticate.admin(request);
   const shop = session.shop
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
@@ -19,11 +57,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let activeBillingCycle: "monthly" | "yearly" = "monthly";
 
   try {
-    const isTest = process.env.NODE_ENV !== "production";
-    const billingCheck = await billing.check({
+    const isTest = await isTestBilling(admin, shop);
+    let billingCheck = await billing.check({
       plans: Object.values(PLAN_NAMES),
       isTest,
     });
+
+    if (!billingCheck.hasActivePayment) {
+      try {
+        const fallbackCheck = await billing.check({
+          plans: Object.values(PLAN_NAMES),
+          isTest: !isTest,
+        });
+        if (fallbackCheck.hasActivePayment) {
+          billingCheck = fallbackCheck;
+        }
+      } catch (_) {}
+    }
 
     if (billingCheck.hasActivePayment && billingCheck.appSubscriptions?.length > 0) {
       const activeSub = billingCheck.appSubscriptions[0];
@@ -92,7 +142,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session, billing } = await authenticate.admin(request);
+  const { session, billing, admin } = await authenticate.admin(request);
   const shop = session.shop
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
@@ -105,20 +155,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const billingCycle = (formData.get("billingCycle") as string) || "monthly";
 
   if (intent === "selectPlan" && targetPlanId && PLANS[targetPlanId]) {
-    const isTest = process.env.NODE_ENV !== "production";
+    const isTest = await isTestBilling(admin, shop);
 
     // 1. If merchant selects the Free plan, cancel any active paid Shopify subscriptions
     if (targetPlanId === "free") {
       try {
-        const billingCheck = await billing.check({
+        let billingCheck = await billing.check({
           plans: Object.values(PLAN_NAMES),
           isTest,
         });
+        if (!billingCheck.hasActivePayment) {
+          try {
+            const fallbackCheck = await billing.check({
+              plans: Object.values(PLAN_NAMES),
+              isTest: !isTest,
+            });
+            if (fallbackCheck.hasActivePayment) {
+              billingCheck = fallbackCheck;
+            }
+          } catch (_) {}
+        }
         if (billingCheck.hasActivePayment && billingCheck.appSubscriptions?.length > 0) {
           for (const sub of billingCheck.appSubscriptions) {
             await billing.cancel({
               subscriptionId: sub.id,
-              isTest,
+              isTest: sub.test ?? isTest,
             });
           }
         }
@@ -180,6 +241,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const returnUrl = `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/pricing${
       host ? `?host=${encodeURIComponent(host)}` : ""
     }`;
+
+    console.log(
+      `[app.pricing] Requesting subscription "${planName}" for shop "${shop}" (isTest: ${isTest})`,
+    );
 
     return await billing.request({
       plan: planName,
